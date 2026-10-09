@@ -1,0 +1,29 @@
+# Flutter/Dart
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+pubspec.lock
+*.g.dart
+
+# Android
+android/.gradle/
+android/local.properties
+android/app/debug
+android/app/profile
+android/app/release
+*.apk
+*.aab
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# ReTune capture: decoded APK artifacts are regenerable (see tools/retune/README.md)
+tools/retune/decoded/
+
+# flutter_agent_lens screenshot baselines
+build/mcp_screenshots/

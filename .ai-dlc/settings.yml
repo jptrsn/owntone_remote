@@ -1,0 +1,14 @@
+# ai-dlc project settings (manual mode — see .ai-dlc/README.md)
+default_workflow: default
+default_passes: [dev]
+
+# Gate commands (intent/unit frontmatter references these)
+gates:
+  analyze: "flutter analyze"
+  format: "dart format --output=none --set-exit-if-changed ."
+  test: "flutter test --exclude-tags live"
+  build_debug: "flutter build apk --debug"
+
+commit_on_unit_complete: true
+push: never-unless-asked
+supervised_steps: skip-when-unattended   # record BLOCKED-PENDING-SUPERVISION
