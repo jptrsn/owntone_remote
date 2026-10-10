@@ -1,0 +1,42 @@
+name: owntone_remote
+description: "OwnTone Remote — a remote control for a self-hosted OwnTone server."
+publish_to: 'none'
+
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # Networking
+  dio: ^5.7.0
+  web_socket_channel: ^3.0.0
+
+  # Media session / notification / volume rocker
+  audio_service: ^0.18.13
+
+  # State management
+  provider: ^6.1.2
+
+  # Local settings
+  shared_preferences: ^2.5.4
+
+  # Formatting (times)
+  intl: ^0.20.0
+
+  # Logging
+  logger: ^2.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

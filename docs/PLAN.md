@@ -51,7 +51,7 @@ reference and the origin of the dependency choices — not a code dependency.
 | D16 | Audio safety | **No unattended, unconfirmed audible playback on the real server.** Full rule in `AGENTS.md` §1. This project may run overnight; music must never start playing unexpectedly. |
 | D17 | ReTune install | Read-only reference (paired instance). No `pm clear`/uninstall/reinstall/settings changes. `am force-stop` allowed. |
 | D18 | ai-dlc | Work is organized as ai-dlc intents + units with explicit completion criteria and quality gates (backpressure). Artifacts committed per completed unit — that is the handoff mechanism. |
-| D19 | Other session's emulator | `emulator-5554` / `Pixel_9_Pro_API_36` is owned by a separate session on this host. Never touched by this project. |
+| D19 | Other session's emulator | `Pixel_9_Pro_API_36` is owned by a separate session on this host. Never touched by this project. (Serial at last check: `emulator-5556` — serials shift, always re-verify; this project's dev AVD `RemoteDev_API_36` currently occupies `emulator-5554`.) |
 
 ## 3. Scope — v1 (in)
 
@@ -89,9 +89,9 @@ Detailed requirements with acceptance criteria: `docs/REQUIREMENTS.md`.
 
 | Role | Device | Serial | State (2026-10-08) |
 |---|---|---|---|
-| Other session — **HANDS OFF** | `emulator-5554` / `Pixel_9_Pro_API_36` (Android 16) | `emulator-5554` | running `owntone_sync` |
+| Other session — **HANDS OFF** | `Pixel_9_Pro_API_36` (Android 16) | `emulator-5556` (2026-10-09; was `-5554` — serials shift) | running headless |
 | Capture | `Retune_API_33` (Android 13, `google_apis`, arm64) | _record on creation_ | not created; needs `sdkmanager "system-images;android-33;google_apis;arm64-v8a"` |
-| Dev / test / QA | `RemoteDev_API_36` (Android 16, `google_apis`, arm64) | _record on creation_ | not created; image installed |
+| Dev / test / QA | `RemoteDev_API_36` (Android 16, `google_apis`, arm64) | `emulator-5554` (2026-10-09) | created + running |
 | Release candidate | Pixel 10 (GrapheneOS) | _record when connected_ | user's daily driver; Phase 5 only |
 
 Rules: `adb -s <serial>` always; re-verify `adb devices -l` before any adb

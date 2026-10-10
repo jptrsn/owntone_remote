@@ -27,3 +27,7 @@ tools/retune/decoded/
 
 # flutter_agent_lens screenshot baselines
 build/mcp_screenshots/
+
+# IDE
+.idea/
+*.iml
