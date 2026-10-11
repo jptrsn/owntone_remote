@@ -271,3 +271,58 @@ evidence in `.ai-dlc/audio-service-spike/units/001-spike-app.md`.
   provider/client/handler/call-channel, delete the hardcoding. Spike
   intent + unit 001 are both `done`; its `## Result` is the reference
   for every audio/volume/call assumption (findings 1–14).
+
+## 2026-10-11 — remote-app unit 001 done (opencode)
+
+- **Unit 001 (connection-settings, R-01/R-02) is `done`** — all 8
+  criteria (7 original + 1 added mid-unit) verified with evidence in
+  the unit's `## Result`. New code: `ServerConfig`, typed
+  `ConnectionError` (DNS/refused/timeout/401), `SettingsStore`
+  (shared_preferences), `ConnectionController` (idle|connecting|
+  connected|offline|error + WsPhase, REST probe per reconnect
+  attempt, full refetch on every open after the first),
+  `OutputsController`, app-wide `ConnectionBanner`, settings +
+  now-playing + error screens, audio init on first connect, mirror
+  wake guard.
+- **User requirement added mid-unit (recorded in R-03 + unit
+  criterion 8):** now-playing must not overflow the viewport — the
+  artwork shrinks (1:1 preserved) so all controls are visible
+  without scrolling. Implemented as `Column` +
+  `Expanded(Center(ArtworkBox))` (AspectRatio takes
+  `min(availW, availH)`); widget-tested at three surface sizes and
+  verified on-device (volume row y≤1857 on a 1920-tall screen).
+- **Device verification on `RemoteDev_API_36` (emulator-5554):**
+  relaunch auto-connect; typed errors captured verbatim on-device by
+  prefs-surgery relaunch (`FlutterSharedPreferences.xml` edited with
+  adb root — `input text` is unreliable here, see findings); WS
+  volume propagation <2 s both ways; **supervised OwnTone
+  disable/re-enable (user)** — app went offline (banner, witnessed
+  by the user), backoff-reconnected in <1 s of server return,
+  post-reconnect state matched the server exactly (stop, 75,
+  Office-Airsync).
+- **Key finding — no WS keepalive:** a silent network partition
+  (route removed, socket not torn down) is *not* detected; the app
+  stays `sync: live`. Socket-teardown drops are detected. Needs a
+  client ping/no-activity timeout → force reconnect. Candidate for
+  unit 002 hardening.
+- **SDK/harness quirks documented in the unit Result** (Dart
+  3.11.5: SocketException prints the *local* port, no
+  `InternetAddress.port`; uiautomator single-quotes content-desc
+  containing `"`; `flutter run` auto-restarts the app on
+  force-stop; MinuteMaid gms dialogs steal focus and can kill the
+  Flutter a11y bridge; `adb input text` needs the IME hidden).
+- **Gates green:** analyze 0 / format clean / 60/60 unit+widget /
+  4/4 live / `flutter build apk --debug` OK.
+- **Environment:** server left at `state=stop, volume=75` (the
+  supervised restart returned it to stop; queue was cleared by the
+  server itself — no library data touched). No playback occurred at
+  any point. Dev AVD still running windowed (emulator-5554);
+  `flutter run` session ended.
+- **Next:** `.ai-dlc/remote-app` unit 002 (now-playing: screen +
+  notification hardening, R-03/R-04/R-05/R-07) — before building it,
+  read spike finding 14 (slider drag-state design) **and** unit
+  001's no-keepalive finding (WS partition detection). Unit 003
+  (volume-rocker + call-handling) will additionally need spike
+  findings 5, 10, 11 (one-shot media-button dispatch; volume-key
+  release = `same` no-op; volume-key routing needs the real Pixel 6
+  `25071FDF600953`).

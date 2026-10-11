@@ -4,146 +4,142 @@ import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 
 import '../api/owntone_api.dart';
-import '../api/ws_client.dart';
+import '../connection/connection_controller.dart';
 import 'pause_origin.dart';
 import 'player_state.dart';
 
-/// The single source of truth for the server's player state.
+/// The single source of truth for the server's player slice (R-02, R-03).
 ///
-/// Flow: WS event (invalidation) → refetch the slice → notify. Every app
-/// action goes through here so the pause-origin tracker stays consistent.
+/// Flow (D2): [ConnectionController] event = invalidation → refetch the
+/// slice → notify. Every app action goes through here so the pause-origin
+/// tracker stays consistent (D9). Actions are no-ops while disconnected
+/// (the UI disables the controls too — unit 001 criterion 6).
 class PlayerController extends ChangeNotifier {
-  PlayerController({required OwntoneApi api})
-    : _api = api,
+  PlayerController({required ConnectionController connection})
+    : _conn = connection,
       _logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
-  static const _wsSubscriptions = [
-    'player',
-    'volume',
-    'outputs',
-    'queue',
-    'options',
-  ];
-
-  final OwntoneApi _api;
+  final ConnectionController _conn;
   final Logger _logger;
   final PauseOriginTracker _tracker = PauseOriginTracker();
-  WsClient? _ws;
-  StreamSubscription<List<String>>? _wsEvents;
-  StreamSubscription<String>? _wsStatus;
+
+  StreamSubscription<List<String>>? _eventsSub;
+  StreamSubscription<void>? _refetchSub;
+  ConnectionPhase? _lastPhase;
+  bool _initialized = false;
+  bool _disposed = false;
 
   PlayerState? _player;
   NowPlayingItem? _nowPlaying;
-  String _wsState = 'disconnected';
-  String? _error;
-  bool _initialized = false;
+  String? _syncError;
 
   PlayerState? get player => _player;
   NowPlayingItem? get nowPlaying => _nowPlaying;
-  String get wsState => _wsState;
-  String? get error => _error;
+
+  /// Last refetch failure (transient; cleared by the next success).
+  String? get syncError => _syncError;
+
   bool get initialized => _initialized;
   bool get isPlaying => _player?.isPlaying ?? false;
+  bool get connected => _conn.isConnected;
 
-  /// Connects (fetches config + first player slice, then starts the WS).
-  /// Never throws: failures are surfaced via [error].
+  /// Wires the controller to the connection and fetches the first slice
+  /// if the connection is already up. Idempotent.
   Future<void> init() async {
-    try {
-      final config = await _api.getConfig();
-      final wsPort = config['websocket_port'] as int? ?? 0;
-      if (wsPort > 0) {
-        final wsUri = _api.baseUrl.replace(
-          scheme: 'ws',
-          port: wsPort,
-          path: '/',
-          query: '',
-        );
-        _ws = WsClient(uri: wsUri, subscriptions: _wsSubscriptions);
-        _wsEvents = _ws!.events.listen(_onWsEvents);
-        _wsStatus = _ws!.status.listen((s) {
-          _wsState = s == 'reconnecting' ? 'reconnecting' : s;
-          notifyListeners();
-        });
-      }
-      await _refreshAll();
-      _ws?.start();
-      _initialized = true;
-    } catch (e) {
-      _logger.e('init failed', error: e);
-      _error = 'Cannot reach server: $e';
-    }
-    notifyListeners();
+    if (_initialized) return;
+    _initialized = true;
+    _lastPhase = _conn.phase;
+    _conn.addListener(_onConnectionChanged);
+    _eventsSub = _conn.events.listen(_onWsEvents);
+    _refetchSub = _conn.refetchAll.listen((_) => unawaited(_refreshAll()));
+    if (_conn.isConnected) unawaited(_refreshAll());
   }
 
-  @override
-  void dispose() {
-    _wsEvents?.cancel();
-    _wsStatus?.cancel();
-    _ws?.stop();
-    super.dispose();
+  void _onConnectionChanged() {
+    final phase = _conn.phase;
+    final prev = _lastPhase;
+    _lastPhase = phase;
+    if (phase == ConnectionPhase.connected &&
+        prev != ConnectionPhase.connected) {
+      unawaited(_refreshAll());
+    }
+  }
+
+  /// R-02: every WS event is an invalidation — refetch the affected slice.
+  /// Only player-relevant events; `outputs` belongs to OutputsController.
+  void _onWsEvents(List<String> events) {
+    final relevant = events.any(
+      (e) => e == 'player' || e == 'volume' || e == 'options' || e == 'queue',
+    );
+    if (!relevant || !_conn.isConnected) return;
+    unawaited(_refreshAll());
   }
 
   Future<void> _refreshAll() async {
-    final p = await _api.getPlayer();
-    _player = p;
-    _tracker.onServerStateChanged(p.isPlaying);
-    _nowPlaying = p.isStopped ? null : await _api.getNowPlaying();
-    _error = null;
-    notifyListeners();
+    final api = _conn.api;
+    if (api == null) return;
+    try {
+      final p = await api.getPlayer();
+      _player = p;
+      _tracker.onServerStateChanged(p.isPlaying);
+      _nowPlaying = p.isStopped ? null : await api.getNowPlaying();
+      _syncError = null;
+    } catch (e) {
+      _logger.e('player refetch failed', error: e);
+      _syncError = 'Sync failed — showing last known state.';
+    }
+    if (!_disposed) notifyListeners();
   }
 
-  void _onWsEvents(List<String> events) {
-    // The spike only cares about the player slice; any of these may change
-    // what the now-playing screen shows (R-02: re-fetch on every event).
-    final relevant = events
-        .where(
-          (e) =>
-              e == 'player' || e == 'volume' || e == 'options' || e == 'queue',
-        )
-        .isNotEmpty;
-    if (!relevant) return;
-    unawaited(() async {
-      try {
-        await _refreshAll();
-      } catch (e) {
-        _logger.e('refetch failed', error: e);
-      }
-    }());
+  /// Runs a server call, surfacing failures in [syncError]. Returns false
+  /// when the call was skipped (offline) or failed.
+  Future<bool> _call(String label, Future<void> Function(OwntoneApi) fn) async {
+    final api = _conn.api;
+    if (api == null || !_conn.isConnected) return false;
+    try {
+      await fn(api);
+    } catch (e) {
+      _logger.e('$label failed', error: e);
+      _syncError = '$label failed: $e';
+      if (!_disposed) notifyListeners();
+      return false;
+    }
+    return true;
   }
 
   // -- user actions --------------------------------------------------------
 
   Future<void> play() async {
+    if (!await _call('Play', (api) => api.play())) return;
     _tracker.onUserPlay();
-    await _api.play();
     await _refreshAll();
   }
 
-  Future<void> pause() => _doPause(byCall: false);
+  Future<void> pause() => _callPause(byCall: false);
 
   Future<void> stop() async {
+    if (!await _call('Stop', (api) => api.stop())) return;
     _tracker.onUserStop();
-    await _api.stop();
     await _refreshAll();
   }
 
   Future<void> next() async {
-    await _api.next();
+    if (!await _call('Next', (api) => api.next())) return;
     await _refreshAll();
   }
 
   Future<void> previous() async {
-    await _api.previous();
+    if (!await _call('Previous', (api) => api.previous())) return;
     await _refreshAll();
   }
 
   Future<void> seekMs(int ms) async {
-    await _api.seekMs(ms);
+    if (!await _call('Seek', (api) => api.seekMs(ms))) return;
     await _refreshAll();
   }
 
   Future<void> setShuffle(bool on) async {
-    await _api.setShuffle(on);
+    if (!await _call('Shuffle', (api) => api.setShuffle(on))) return;
     await _refreshAll();
   }
 
@@ -159,22 +155,23 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> setRepeat(Repeat mode) async {
-    await _api.setRepeat(mode);
+    if (!await _call('Repeat', (api) => api.setRepeat(mode))) return;
     await _refreshAll();
   }
 
   Future<void> setConsume(bool on) async {
-    await _api.setConsume(on);
+    if (!await _call('Consume', (api) => api.setConsume(on))) return;
     await _refreshAll();
   }
 
   Future<void> setVolume(int volume) async {
-    await _api.setVolume(volume);
+    if (!await _call('Volume', (api) => api.setVolume(volume))) return;
     await _refreshAll();
   }
 
+  /// Relative volume change — the hardware-rocker path (R-06, unit 003).
   Future<void> stepVolume(int step) async {
-    await _api.stepVolume(step);
+    if (!await _call('Volume', (api) => api.stepVolume(step))) return;
     await _refreshAll();
   }
 
@@ -183,23 +180,17 @@ class PlayerController extends ChangeNotifier {
   /// RINGING: pause the server *only if it is playing*; otherwise the call
   /// must not claim the pause (no auto-resume later).
   void onCallRinging() {
-    unawaited(_doPause(byCall: true));
+    unawaited(_callPause(byCall: true));
   }
 
   /// IDLE: resume only if this app paused the server for the call.
   Future<void> onCallEnded() async {
     if (!_tracker.takeCallResume()) return;
-    try {
-      await _api.play();
-      await _refreshAll();
-    } catch (e) {
-      _logger.e('call-end resume failed', error: e);
-      _error = 'Call-end resume failed: $e';
-      notifyListeners();
-    }
+    if (!await _call('Resume', (api) => api.play())) return;
+    await _refreshAll();
   }
 
-  Future<void> _doPause({required bool byCall}) async {
+  Future<void> _callPause({required bool byCall}) async {
     final wasPlaying = _player?.isPlaying ?? false;
     if (byCall) {
       _tracker.onCallStart(wasPlaying: wasPlaying);
@@ -207,13 +198,16 @@ class PlayerController extends ChangeNotifier {
       _tracker.onUserPause();
     }
     if (!wasPlaying) return; // nothing to pause — and the pause is not ours
-    try {
-      await _api.pause();
-      await _refreshAll();
-    } catch (e) {
-      _logger.e('pause failed', error: e);
-      _error = 'Pause failed: $e';
-      notifyListeners();
-    }
+    if (!await _call('Pause', (api) => api.pause())) return;
+    await _refreshAll();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _conn.removeListener(_onConnectionChanged);
+    _eventsSub?.cancel();
+    _refetchSub?.cancel();
+    super.dispose();
   }
 }

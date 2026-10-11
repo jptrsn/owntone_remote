@@ -14,13 +14,16 @@ Clean-room re-implementation of ReTune's UX in Material 3, speaking only the
 OwnTone JSON API + websocket. No DACP/DAAP, no ReTune code/assets, no
 iTunes-specific features.
 
-Status: **spike complete (2026-10-10) — GO for Flutter + audio_service.**
-Next: `.ai-dlc/remote-app` unit 001 (connection-settings). Before
-building unit 003 (volume-rocker + call-handling), read the spike
-unit's `## Result` findings — esp. 5 (one-shot media-button
-dispatch), 10 (volume-key release = `same`, must no-op), 11
-(volume-key routing only testable on a real device, not the AVD),
-14 (slider drag-state design).
+Status: **remote-app unit 001 (connection-settings) done (2026-10-11).**
+Next: `.ai-dlc/remote-app` unit 002 (now-playing: screen +
+notification hardening, R-03/R-04/R-05/R-07). Before building it,
+read spike finding 14 (slider drag-state design) and unit 001's
+`## Result` finding on the **missing WS keepalive** (silent network
+partitions are not detected — needs a client ping/timeout). Before
+unit 003 (volume-rocker + call-handling), also read spike findings
+5 (one-shot media-button dispatch), 10 (volume-key release = `same`,
+must no-op), 11 (volume-key routing only testable on a real device,
+not the AVD).
 
 ## Hard rules (read before anything else)
 

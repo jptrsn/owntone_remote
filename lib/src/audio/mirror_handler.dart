@@ -34,6 +34,14 @@ class MirrorAudioHandler extends BaseAudioHandler {
     if (_started) return;
     _started = true;
     _player.addListener(_onPlayerChanged);
+    // The one-shot wake must carry real metadata: wait briefly for the
+    // first server state (the controller may still be fetching its first
+    // slice when the audio service starts).
+    var waited = 0;
+    while (_player.player == null && waited < 100) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      waited++;
+    }
     await _sync();
     await _wakeMediaSession();
   }
@@ -126,12 +134,14 @@ class MirrorAudioHandler extends BaseAudioHandler {
     _positionTicker = null;
   }
 
-  /// The one-shot wake described in the class docs.
+  /// The one-shot wake described in the class docs. Skipped entirely when
+  /// no server state exists yet — a disconnected app must not post a bogus
+  /// "playing" notification.
   Future<void> _wakeMediaSession() async {
     if (_woken) return;
     _woken = true;
     final p = _player.player;
-    if (p == null || !p.isPlaying) {
+    if (p != null && !p.isPlaying) {
       playbackState.add(
         PlaybackState(
           controls: [

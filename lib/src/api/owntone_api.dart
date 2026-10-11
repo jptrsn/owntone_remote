@@ -1,9 +1,10 @@
 import 'package:dio/dio.dart';
 
+import '../outputs/output.dart';
 import '../player/player_state.dart';
 
-/// Thin OwnTone JSON API client (docs/API.md). Spike: single hardcoded
-/// server; auth is added in remote-app if/when the server enables it.
+/// Thin OwnTone JSON API client (docs/API.md). One instance per configured
+/// server; the base URL is set by the ConnectionController (R-01).
 class OwntoneApi {
   OwntoneApi({required Dio dio, required Uri baseUrl})
     : _dio = dio,
@@ -37,6 +38,13 @@ class OwntoneApi {
       items.first as Map<String, dynamic>,
       _baseUrl,
     );
+  }
+
+  Future<List<Output>> getOutputs() async {
+    final res = await _dio.get('/api/outputs');
+    final data = res.data as Map<String, dynamic>;
+    final list = data['outputs'] as List<dynamic>? ?? const [];
+    return [for (final e in list) Output.fromJson(e as Map<String, dynamic>)];
   }
 
   Future<void> play() => _put('/api/player/play');

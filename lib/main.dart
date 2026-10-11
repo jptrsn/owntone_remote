@@ -1,24 +1,24 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 
-import 'src/api/owntone_api.dart';
 import 'src/audio/mirror_handler.dart';
 import 'src/call/call_state.dart';
+import 'src/connection/connection_controller.dart';
+import 'src/outputs/outputs_controller.dart';
 import 'src/player/player_controller.dart';
-import 'src/ui/now_playing_screen.dart';
-
-/// Spike server (hardcoded per unit 001; manual entry is remote-app work).
-const _serverBase = 'http://192.168.1.13:3689';
+import 'src/settings/settings_store.dart';
+import 'src/ui/root_screen.dart';
 
 /// Debug handle for the UI-debug loop (evaluate_expression).
 Object? debugGlobals;
 
 final _logger = Logger(printer: PrettyPrinter(methodCount: 0));
+
+bool _audioStarted = false;
 
 Future<void> main() async {
   // Debug builds: expose the semantics tree to uiautomator so UI checks can
@@ -31,16 +31,13 @@ Future<void> main() async {
   final pending = await callState.requestPermissions();
   _logger.i('pending runtime permissions after request: ${pending.keys}');
 
-  final dio = Dio(
-    BaseOptions(
-      baseUrl: _serverBase,
-      connectTimeout: const Duration(seconds: 5),
-      receiveTimeout: const Duration(seconds: 10),
-    ),
-  );
-  final api = OwntoneApi(dio: dio, baseUrl: Uri.parse(_serverBase));
-  final player = PlayerController(api: api);
-  debugGlobals = {'player': player, 'api': api};
+  final store = await SettingsStore.create();
+  final conn = ConnectionController(logger: _logger);
+  final player = PlayerController(connection: conn);
+  final outputs = OutputsController(connection: conn);
+  await player.init();
+  await outputs.init();
+  debugGlobals = {'conn': conn, 'player': player, 'outputs': outputs};
 
   // Call handling (D9): pause on ringing, auto-resume on idle when the call
   // caused the pause.
@@ -58,27 +55,53 @@ Future<void> main() async {
     }
   });
 
-  // First fetch (so the wake below sees real metadata), then the handler.
-  await player.init();
+  // The media session / FGS/notification come up on the first successful
+  // connection (R-07: present "while the app is connected").
+  conn.addListener(() {
+    if (conn.isConnected && !_audioStarted) {
+      _audioStarted = true;
+      unawaited(_initAudio(player));
+    }
+  });
 
-  // androidStopForegroundOnPause: false — keep the mediaPlayback FGS alive
-  // while the server is paused. This is the survival behaviour under test
-  // (unit 001 criterion 7).
-  final handler = await AudioService.init(
-    builder: () => MirrorAudioHandler(player),
-    config: const AudioServiceConfig(
-      androidStopForegroundOnPause: false,
-      androidNotificationChannelName: 'OwnTone Remote',
-    ),
-  );
-  await handler.start();
+  // R-01: auto-connect on launch when a server is configured.
+  final saved = store.config;
+  if (saved != null) {
+    _logger.i('auto-connecting to $saved');
+    await conn.connectTo(saved);
+  }
 
   runApp(
-    ChangeNotifierProvider<PlayerController>.value(
-      value: player,
+    MultiProvider(
+      providers: [
+        Provider<SettingsStore>.value(value: store),
+        ChangeNotifierProvider<ConnectionController>.value(value: conn),
+        ChangeNotifierProvider<PlayerController>.value(value: player),
+        ChangeNotifierProvider<OutputsController>.value(value: outputs),
+      ],
       child: const OwntoneRemoteApp(),
     ),
   );
+}
+
+/// audio_service wiring — the FGS/notification plumbing (spike-validated).
+/// Failures here degrade to a headless app (controls still work in-UI);
+/// they must never take the app down.
+Future<void> _initAudio(PlayerController player) async {
+  try {
+    // androidStopForegroundOnPause: false — keep the mediaPlayback FGS
+    // alive while the server is paused (spike criterion 7, Finding 3).
+    final handler = await AudioService.init(
+      builder: () => MirrorAudioHandler(player),
+      config: const AudioServiceConfig(
+        androidStopForegroundOnPause: false,
+        androidNotificationChannelName: 'OwnTone Remote',
+      ),
+    );
+    await handler.start();
+  } catch (e) {
+    _logger.e('audio init failed (app stays functional)', error: e);
+  }
 }
 
 class OwntoneRemoteApp extends StatelessWidget {
@@ -92,7 +115,7 @@ class OwntoneRemoteApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF7C5CBF)),
       ),
-      home: const NowPlayingScreen(),
+      home: const RootScreen(),
     );
   }
 }

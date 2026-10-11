@@ -46,7 +46,10 @@ Artwork (with fallback), title, artist, album, progress bar (seekable via
 - all fields render from `GET /api/player` + `artwork_url` (relative URLs
   resolved against the web root; `maxwidth` param used; 404 → placeholder);
 - progress tracks the server (WS + periodic refetch while playing);
-- seek from the UI lands within ±1 s of the requested position.
+- seek from the UI lands within ±1 s of the requested position;
+- the screen never overflows the visible viewport: all controls are visible
+  without scrolling — the artwork shrinks to make room, preserving its 1:1
+  aspect ratio (added 2026-10-11, user requirement).
 
 ### R-04 Transport controls — P0
 Play/pause (toggle), next, previous — in the app, in the notification, and on
