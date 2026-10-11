@@ -1,6 +1,6 @@
 ---
 name: 001-spike-app
-status: blocked
+status: done
 intent: audio-service-spike
 supervised_steps: [3, 5, 6]
 ---
@@ -97,18 +97,29 @@ dev AVD against the real server. Deliverables: working spike APK +
 
 ## Result
 
-**State: `blocked` — NO-GO declared 2026-10-10.** Supervised window
-executed 2026-10-10 (user-confirmed) on `RemoteDev_API_36` (serial
-`emulator-5554`). **Criterion 4 FAILED** (volume rocker never changes
-the server's volume — the system never selects our session for volume
-key routing, in paused *or* playing state) → per the unit's GO/NO-GO
-clause, **NO-GO for Flutter/audio_service** is declared; the
-Kotlin+Media3 fallback is sketched below. Build work stops pending the
-user's stack re-decision.
+**State: `done` — GO (2026-10-10, NO-GO retracted).** The NO-GO was
+declared on the strength of criterion 4 failing on the **emulator**
+(the system never selected our session for volume keys — "Media button
+session is null"). Re-testing on a **real Pixel 6** (oriole, Android
+16/API 36, same platform as the emulator) with the same debug APK
+proved the selection failure was an **emulator artifact**: on the
+device the session is selected, volume keys route to the app, and the
+rocker changes the server volume — after fixing a real app bug found
+during re-testing (the key-release `same`-direction marker was mapped
+to "lower", silently cancelling every press; Finding 10). The user
+then re-scoped criterion 4: the *backgrounded + screen-off* rocker form
+is dropped as a requirement ("if the app is in the background, volume
+control should work without interference"); verified the app does not
+interfere (3-min backgrounded+locked watch: zero server-volume drift,
+Finding 13 context). Criterion 6 (call pause + auto-resume) was then
+completed on the emulator with the app backgrounded — both halves
+PASS. All criteria now pass; **GO for Flutter + audio_service stands**
+(the original default).
 
-Scoreboard: 1 PASS · 2 PASS (stop + pause) · 3 mechanism PASS (literal
-web-UI form BLOCKED — emulator shut down) · **4 FAIL** · 5 PASS (with
-caveats) · 6 negative PASS (resume half BLOCKED) · 7 PASS.
+Scoreboard: 1 PASS · 2 PASS (stop + pause) · 3 PASS (literal web-UI
+form, verified on Pixel 6) · 4 PASS (re-scoped form; real-device
+rocker) · 5 PASS (with caveats) · 6 PASS (both halves, app
+backgrounded) · 7 PASS.
 
 ### Gates (all green 2026-10-09)
 
@@ -150,22 +161,60 @@ event re-emit, malformed-frame tolerance, reconnect-with-backoff) and
   (See incident below — the unconfirmed tap that started incident 1
   is *not* counted as criterion evidence.)
 
-### Criterion 3 — server-side change → app in ~2 s via WS: mechanism
-PASS, literal web-UI form BLOCKED
+### Criterion 3 — server-side change → app in ~2 s via WS: PASS
 
 - WS subscription fixed (see Findings): after the fix, server-side
   changes reach the app live. Measured (shell-only, app foreground):
   `PUT /api/player/volume?volume=80` → app UI volume text updated
   within one uiautomator poll, **total < 3 s including ~1.5 s of dump
   overhead** (event → refetch → render is the fast part).
-- The criterion's exact "web UI action → ~2 s" form needs a user click
-  in the web UI. **BLOCKED:** the dev AVD was shut down mid-window
-  (broken emulator GUI — sidebar controls dead; see Findings 7).
-  Re-runnable in any later window; the WS pipeline is already proven
-  end-to-end by the mechanism test and by the app tracking live
-  server state (item advances, progress, volume) throughout the window.
+- **Literal web-UI form verified 2026-10-10 on the Pixel 6** (user
+  dragging the volume slider in the OwnTone web UI while a lockstep
+  monitor sampled server volume + app uiautomator dump each cycle):
+  every change (83→21→3→27→69→100→17) appeared in the app UI within
+  the same ~3.2 s sampling cycle, and one cycle caught **mid-drag
+  values on both sides** (server 21 vs app 3%) — the app receives
+  live WS `volume` notifications *while the slider is being dragged*
+  and converges on release. Latency is sub-second (WS push), bounded
+  only by the coarse sampling.
+- Bonus: a web-UI volume change made while the device screen was off
+  (dozing) still propagated to the app UI — WS survives doze.
 
-### Criterion 4 — rocker changes master (server) volume: **FAIL**
+### Criterion 4 — rocker changes master (server) volume: **PASS
+(re-scoped; real device)**
+
+**Re-scope (user, 2026-10-10):** the *backgrounded + screen-off*
+rocker form is dropped as a requirement — "if the app is in the
+background, volume control should work without interference."
+Verified non-interference: 3-min watch, app backgrounded + phone
+locked, no key presses by anyone → server volume held at 75 for all
+180 s (zero drift; the app does not autonomously move the server
+volume in the background).
+
+**Real device (Pixel 6, oriole, Android 16/API 36), supervised,
+2026-10-10:**
+
+| Test | Result |
+|---|---|
+| Session selection | **Selected.** Volume keys route to the app's session (Cast-style volume UI appears; `onAdjustVolume` callbacks fire; server volume changes). The emulator's "Media button session is null" (Finding 6) does **not** occur on the device — it is an emulator artifact (Finding 11). |
+| Rocker UP, one press, app foreground, playing | 75 → **80**, exactly one `adjustRemoteVolume(dir=1)` call (probed), volume held at 80 for 18+ s. |
+| Backgrounded + locked, no key presses | 75 → 75 for 180 s (no interference; see re-scope). |
+
+**App bug found and fixed during re-testing (Finding 10):** before
+the fix, every physical press generated *two* callbacks — `raise` on
+press and `same` on key release (Android's end-of-sequence marker).
+The old code mapped `same` to "lower" (−step), so each press was +5
+and −5 (net zero, with a race that lost some raises → observed
+downward drift 75→25→30→25→20 and the visible "volume indicator
+bounces up, then reverts"). Fix: `androidAdjustRemoteVolume` treats
+`AndroidVolumeDirection.same` as a no-op (matches the documented
+semantics: "Keep the previous ringer volume").
+
+The emulator evidence below is retained as the record that triggered
+the (wrong) NO-GO and as the basis for Findings 6/11.
+
+— emulator evidence (2026-10-09/10, superseded for GO/NO-GO by the
+real-device result above) —
 
 The rocker never changed the server's volume in any tested
 configuration. Evidence (2026-10-09 paused test + 2026-10-10
@@ -241,20 +290,40 @@ proven; literal button tap impossible on this device)
   in the MediaBrowser bind. A real user could therefore press one
   notification button per app lifecycle on this stack.
 
-### Criterion 6 — call pause/auto-resume: negative half PASS,
-resume half BLOCKED
+### Criterion 6 — call pause/auto-resume: PASS (both halves, app
+backgrounded)
 
-- App backgrounded, server **user-paused**: `adb emu gsm call` → app
-  log `call state: ringing` (21:33:12) → server stayed paused (the app
+- **Full cycle, `RemoteDev_API_36` (2026-10-10 21:13, supervised,
+  windowed emulator):** play started via the notification-Play path
+  (`DebugMediaButtonReceiver`, keycode 126) → `state: play` → app
+  backgrounded (`keyevent 3`) → `adb emu gsm call 5551234567`:
+
+  | t | event |
+  |---|---|
+  | 21:13:04.526 | guest telephony `IDLE → INCOMING` (ring starts; audible) |
+  | 21:13:04.652 | **app log `call state: ringing`** (126 ms after guest transition) |
+  | t+4 s | **server `state: pause`** (auto-pause, app not in foreground) |
+  | 21:13:11.540 | guest telephony `INCOMING → DISCONNECTED` (`gsm cancel 5551234567`) |
+  | 21:13:11.590 | **app log `call state: idle`** (50 ms after) |
+  | t+6 s | **server `state: play`** (auto-resume) |
+
+  Then paused again immediately (audio no longer needed). The Kotlin
+  `TelephonyCallback` is engine-scoped (`onAttachedToEngine`), so
+  backgrounding cannot drop the listener — confirmed by the events
+  arriving with the app backgrounded.
+- **Negative half (earlier, app backgrounded, server *user-paused*):**
+  `gsm call` → `call state: ringing` → server stayed paused (the app
   did not claim a pause it didn't cause) → `gsm cancel` →
-  `call state: idle` (21:33:38) → server **still paused, no
-  auto-resume**. D9 pause-origin logic behaves correctly on device.
-- "Call pauses a *playing* server + auto-resume on end" — the other
-  GO/NO-GO clause — **BLOCKED**: the dev AVD was shut down mid-window
-  (broken emulator GUI, Finding 7) before this test ran. It remains
-  the one safety behavior unverified on device; re-runnable in a
-  later window (needs: play → `adb emu gsm call 5551234567` →
-  verify auto-pause → `gsm cancel` → verify auto-resume → pause).
+  `call state: idle` → **still paused, no auto-resume**. D9
+  pause-origin logic behaves correctly on device.
+- Note: an earlier *headless* emulator run showed a hung guest
+  (call registered but ringer never started — "Null ringtone …
+  stopRinging without startRinging" — and no `ringing` event reached
+  the app; Finding 12). The windowed re-run above is the valid
+  evidence.
+- Correct cancel syntax: `gsm cancel <phonenumber>` (bare `gsm
+  cancel` is a console error) — per the Android emulator console
+  docs.
 
 ### Criterion 7 — paused-state survival report (the point of the spike)
 
@@ -357,7 +426,52 @@ Kill + relaunch:
    behavior, operationally significant): during supervised playback
    the current item drifted 195997 → 196001. Any "leave it playing
    briefly" test must bracket playback tightly, and the queue
-   position is not restorable without supervised queue ops.
+   position is not restorable without supervised queue ops. During
+   the re-test window a full playlist ran to completion and the
+   queue ended empty (`state: stop`, `item_id: 0`); restored with
+   `POST /api/queue/items/add?uris=library:playlist:19` (Recently
+   Played, 168 tracks, no `playback` param — never auto-starts).
+10. **The volume-key *release* sends `AndroidVolumeDirection.same`
+   (0) — it is not a volume change.** Each physical press produces
+   `raise`/`lower` on press and `same` on release (end-of-sequence
+   marker; documented: "Keep the previous ringer volume"). Mapping
+   `same` to a step silently cancels every press (the +5/−5 race
+   behind the observed downward drift and the "cast indicator
+   reverts" symptom). `androidAdjustRemoteVolume` now no-ops on
+   `same`. Any future re-implementation must preserve this.
+11. **The "Media button session is null" failure (Finding 6) is an
+   emulator artifact, not an architecture failure.** Same APK, same
+   API 36: on the Pixel 6 the session is selected and volume keys
+   route to it (rocker → server volume, Cast-style volume UI); on
+   `RemoteDev_API_36` the session was never selected in any state.
+   Consequence: criterion-4-style checks must run on a real device;
+   the dev AVD is valid for everything except volume-key routing.
+12. **The headless emulator guest hung mid-session** (2026-10-10
+   ~20:47): `gsm call` registered a call but the ringer never started
+   (Dialer: "Null ringtone. Was stopRinging called without calling
+   startRinging?"), the app's `TelephonyCallback` received no
+   `ringing` (only `idle` on cancel), and the app's Flutter engine
+   later stalled at boot until force-stop+relaunch. A windowed
+   re-boot made all telephony behaviour work (criterion 6 above).
+   During that hung window the user also observed Apple Music
+   opening on the Mac host when the ringing "ended" — no command in
+   the test script targets the host; unexplained, not reproduced,
+   logged here so it isn't investigated twice. Treat `RemoteDev_API_36`
+   GUI/headless sessions with suspicion (extends Finding 8).
+13. **Unexplained 80→100 server-volume jump on the Pixel 6**
+   (2026-10-10 ~19:10): app backgrounded, phone locked, user reports
+   no key presses. Not reproduced (3-min controlled watch: zero
+   drift), no system-side volume events in the window (`dumpsys
+   audio`), app log buffer rotated. Leading candidate: a change made
+   server-side (e.g. OwnTone web-UI tab re-applying its slider),
+   which leaves no trace on the phone. Unresolved; watch for a
+   recurrence and catch it red-handed with the lockstep monitor.
+14. **Volume slider design flaw (deferred to `remote-app`):**
+   `Slider(value: p.volume.toDouble())` + `onChanged → absolute
+   setVolume` means any remote volume update (rocker, web UI, call)
+   yanks the slider under the user's finger, and a finger in contact
+   at that moment fires a stray absolute set. Fix: local drag state,
+   commit on release.
 
 ### Incident (full log in `docs/SESSION-LOG.md`)
 
@@ -371,45 +485,52 @@ toggles, seek and volume are unattended-safe; the center toggle and any
 play-capable control are touched only inside a supervised window with
 explicit per-action confirmation.
 
-### Environment left as (2026-10-10, window end)
+### Environment left as (2026-10-10, re-test window end)
 
-`state=pause`, `volume=75` (restored; had drifted to 28 during
-window), `consume=false`. Queue current item = 196001 (drifted from
-the pre-session position by auto-advance during supervised playback;
-restoring the original position needs supervised queue ops — not
-done). Dev AVD **shut down by the user** (broken GUI). Adbd was left
-running as **root** on the emulator before shutdown (`adb root` was
-used for `sendevent`; normal emulators reset on next boot).
+Server: `state=pause`, `volume=75` (restored), `consume=false`.
+Queue: "Recently Played" (id 19, 168 tracks) — the previous queue had
+run to completion and ended empty (`state: stop`, `item_id: 0`);
+re-enqueued per user request.
 
-### GO / NO-GO — **NO-GO** (declared 2026-10-10)
+Devices: **Pixel 6** (`25071FDF600953`, oriole, Android 16, no SIM)
+connected and in use as the real-device test rig — app installed
+(current debug APK), both runtime permissions granted; its
+`screen_off_timeout` was temporarily set to 600000 during the
+criterion-3 monitor and restored to 1800000. `RemoteDev_API_36`
+(`emulator-5554`) **left running, windowed** (rebooted after a hung
+headless session; boot stall of the app engine required one
+force-stop+relaunch). `emulator-5556` = other session, untouched.
 
-**Criterion 4 failed after reasonable effort** (multiple controlled
-tests across paused/playing, screen on/off, injected keys, framework
-log capture — evidence in the criterion section). Per the unit's
-clause: **NO-GO for Flutter + audio_service; build work stops; the
-stack re-decision is the user's.**
+### GO / NO-GO — **GO** (2026-10-10; NO-GO of the same day
+retracted)
 
-The failure is in *system session selection* (AOSP
-`MediaSessionService` never picks our session for volume keys), not
-in the Dart layer. Two honest hedges before the re-decision:
+**NO-GO was declared 2026-10-10 on criterion 4 failing on the
+emulator** (multiple controlled tests across paused/playing, screen
+on/off, injected keys, framework log capture — evidence retained in
+the criterion section). The same day, the decisive hedge the NO-GO
+had flagged — *test on a real device* — was run on a Pixel 6
+(oriole, Android 16, same API 36 as the emulator): the session
+**is** selected there and the rocker changes the server volume,
+once the app's own `same`-direction bug (Finding 10) is fixed. The
+NO-GO's stated root cause ("AOSP `MediaSessionService` never picks
+our session") turned out to be an **emulator artifact** (Finding
+11), not an architecture failure. Criterion 6's auto-resume half —
+the other unverified safety behavior — then passed on the emulator
+with the app backgrounded. **GO for Flutter + audio_service stands;
+the unit is done.**
 
-1. **Emulator vs. device.** The "Media button session is null"
-   behavior may be emulator-specific. The cheapest decisive
-   experiment: install the same debug APK on the Pixel 10
-   (GrapheneOS release candidate, not yet connected) and repeat the
-   criterion-4 matrix. If the rocker works there, the architecture
-   stands and only the test device was wrong.
-2. **What Media3 would change.** A Kotlin+Media3 session uses the
-   *same* framework session API; nothing guarantees Media3's session
-   gets selected where audio_service's wasn't. What Media3 does
-   change: full control over session lifecycle (`setActive`,
-   `setMediaButtonReceiver`, explicit `MediaController` volume
-   handling, `AudioAttributes`/session config), a maintained
-   (non-stuck) media-button path (the one-shot bug, Finding 5, is in
-   audio_service's receiver flow — Media3's `MediaButtonReceiver`
-   usage is standard and not one-shot), and a cleaner FGS lifecycle.
+Open items carried to `remote-app` (none blocking):
 
-**Fallback sketch (Kotlin+Media3), if chosen:**
+- Finding 5 (one-shot media-button dispatch per app process) —
+  untested on the real device; resolve or accept before shipping
+  notification transport controls.
+- Findings 2 (session volume display staleness), 14 (slider
+  drag-state design), 13 (unexplained 80→100 jump — monitor).
+- Volume-key routing checks must run on a real device, not the AVD
+  (Finding 11).
+
+**Fallback sketch (Kotlin+Media3) — retained for reference only
+(no longer required by the GO/NO-GO clause):**
 
 - `androidx.media3:media3-session` + `media3-session-ext`
   (`MediaSessionService`, `MediaSessionCompat`/`Media3`), FGS type

@@ -196,15 +196,23 @@ class MirrorAudioHandler extends BaseAudioHandler {
         AudioServiceRepeatMode.one => Repeat.single,
       });
 
-  // Volume rocker (screen off, app backgrounded): the media session's remote
-  // volume provider routes rocker presses here (RemoteAndroidPlaybackInfo).
+  // Volume rocker: the media session's remote volume provider routes rocker
+  // presses here (RemoteAndroidPlaybackInfo). Android routes the keys to the
+  // session only while it is selected (verified: playing, or app foreground);
+  // backgrounded + screen off the keys stay with the system streams.
   @override
   Future<void> androidSetRemoteVolume(int volumeIndex) =>
       _player.setVolume(volumeIndex);
 
   @override
-  Future<void> androidAdjustRemoteVolume(AndroidVolumeDirection direction) =>
-      _player.stepVolume(
-        direction == AndroidVolumeDirection.raise ? rockerStep : -rockerStep,
-      );
+  Future<void> androidAdjustRemoteVolume(AndroidVolumeDirection direction) {
+    // "same" is the key-release / end-of-sequence marker, not a volume
+    // change — treating it as "lower" cancels (or outraces) the press and
+    // makes the volume drift down.
+    if (direction == AndroidVolumeDirection.same) return Future.value();
+    final step = direction == AndroidVolumeDirection.raise
+        ? rockerStep
+        : -rockerStep;
+    return _player.stepVolume(step);
+  }
 }

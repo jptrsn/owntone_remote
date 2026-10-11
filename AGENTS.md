@@ -69,6 +69,7 @@ unexpectedly.
 | Other session — HANDS OFF | `Pixel_9_Pro_API_36` | `emulator-5556` (verified 2026-10-09; was `-5554` on 2026-10-08 — **serials shift when other emulators start; always re-verify via `avdmanager list`/emulator logs, never trust a remembered serial**) |
 | Capture | `Retune_API_33` | _record on creation_ |
 | Dev / test / QA | `RemoteDev_API_36` | `emulator-5554` (verified 2026-10-09) |
+| Real device — volume-key routing tests | Pixel 6 (oriole, Android 16, **no SIM** — cannot receive calls) | `25071FDF600953` (connected 2026-10-10) |
 | Release candidate | Pixel 10 (GrapheneOS) | _record when connected_ |
 
 ### 3. ReTune on the capture AVD is a read-only reference

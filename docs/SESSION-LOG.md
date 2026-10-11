@@ -197,6 +197,71 @@ session is null" behavior may be emulator-specific — the same debug
 APK on the Pixel 10 (not yet connected) is the cheapest decisive
 test; (2) Media3 uses the same framework session API, so it is not
 guaranteed to fix volume routing, but it removes the one-shot
-media-button bug and the plugin volume-staleness quirk. Criterion 6's
-auto-resume half should be re-tested on whichever device/stack is
-chosen before the call-safety property is trusted.
+ media-button bug and the plugin volume-staleness quirk. Criterion 6's
+ auto-resume half should be re-tested on whichever device/stack is
+ chosen before the call-safety property is trusted.
+
+## 2026-10-10 (late) — Real-device re-test + NO-GO retracted (opencode)
+
+**Did:** user connected a **Pixel 6** (`25071FDF600953`, oriole,
+Android 16, no SIM) and requested re-testing there. The NO-GO's
+emulator-vs-device hedge is now settled: **the rocker works on the
+real device; NO-GO retracted; GO stands; unit 001 done.** Full
+evidence in `.ai-dlc/audio-service-spike/units/001-spike-app.md`.
+
+- **Rocker (criterion 4, re-scoped):** on the Pixel 6 the session IS
+  selected and volume keys route to the app — the emulator's "Media
+  button session is null" is an **emulator artifact** (Finding 11).
+  One foreground UP press → exactly one `dir=1` call, 75→80, stable.
+  Found + fixed a real app bug: the key-*release* sends
+  `AndroidVolumeDirection.same`, which the old code mapped to
+  "lower" — every press was +5/−5 with a downward-drift race
+  (Finding 10). `same` is now a no-op.
+- **Criterion 4 re-scoped by the user:** the backgrounded+screen-off
+  rocker form is dropped — "if the app is in the background, volume
+  control should work without interference." Verified: 3-min
+  backgrounded+locked watch, zero server-volume drift.
+- **Criterion 3: PASS (literal web-UI form)** on the Pixel 6 — user
+  dragged the volume slider in the OwnTone web UI under a lockstep
+  monitor; every value (83→21→3→27→69→100→100→17) reached the app UI
+  in the same ~3.2 s cycle, one cycle caught mid-drag values on both
+  sides (sub-second WS push). Also: a web-UI change while the device
+  was dozing still propagated.
+- **Criterion 6: PASS (both halves, app backgrounded)** on the
+  rebooted `RemoteDev_API_36`: guest `IDLE→INCOMING` 21:13:04.526 →
+  app `call state: ringing` .652 → server paused t+4 s; `gsm cancel
+  5551234567` → guest `INCOMING→DISCONNECTED` .540 → app `idle` .590 →
+  server playing t+6 s. (Bare `gsm cancel` is a console error — the
+  number is required.)
+- **Emulator hung headless** ~20:47 (call registered, ringer never
+  started, no `ringing` event reached the app; app engine later
+  stalled at boot) → user suggested reboot; windowed re-boot fixed
+  everything (Finding 12). During that window the user observed
+  **Apple Music opening on the Mac host** when the ringing "ended";
+  nothing in the test script targets the host — unexplained, not
+  reproduced, logged once here.
+- **Unexplained 80→100 server-volume jump** on the Pixel 6
+  (~19:10, app backgrounded, user reports no key presses): not
+  reproduced (3-min zero-drift watch), no system-side volume events
+  in the window, app buffer rotated. Leading candidate: a
+  server-side change (web-UI tab). Finding 13.
+- **Queue ran empty** mid-window (playlist finished, `state: stop`,
+  `item_id: 0`); user asked for a re-enqueue → "Recently Played"
+  (id 19, 168 tracks, no auto-start).
+- docs-mcp: `audio_service` 0.18.19 index had only changelogs →
+  re-scraped `pub.dev/documentation/audio_service/0.18.19/` (API
+  reference now searchable; confirmed `same` semantics). Also indexed
+  `android-emulator` console docs (source of the `gsm cancel <num>`
+  syntax).
+- **Environment restored:** `state=pause`, `volume=75`,
+  `consume=false`. Pixel 6: app installed, permissions granted,
+  `screen_off_timeout` restored to 1800000. `RemoteDev_API_36` left
+  running (windowed, `emulator-5554`). Probes removed from
+  `mirror_handler.dart`; gates green (analyze 0 / format clean /
+  25/25 / build OK).
+- **GO/NO-GO: NO-GO retracted — GO for Flutter + audio_service.**
+  The NO-GO's root-cause claim ("AOSP session selection never picks
+  our session") was an emulator artifact. Open items for
+  `remote-app`: Finding 5 (one-shot media-button dispatch — untested
+  on the real device), 14 (slider drag-state design), 13 (volume-jump
+  monitor). Volume-key routing checks must run on a real device.
