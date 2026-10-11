@@ -9,7 +9,7 @@ passes: []
 active_pass: ""
 iterates_on: ""
 created: 2026-10-08
-status: planned
+status: done
 epic: ""
 quality_gates:
   - { name: analyze, command: "flutter analyze" }

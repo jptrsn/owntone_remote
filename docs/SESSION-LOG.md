@@ -265,3 +265,9 @@ evidence in `.ai-dlc/audio-service-spike/units/001-spike-app.md`.
   `remote-app`: Finding 5 (one-shot media-button dispatch — untested
   on the real device), 14 (slider drag-state design), 13 (volume-jump
   monitor). Volume-key routing checks must run on a real device.
+- **Next session:** start `.ai-dlc/remote-app` (intent `planned` →
+  first unit 001 connection-settings, R-01/R-02; 6 units total).
+  Build on the spike codebase per the intent: keep
+  provider/client/handler/call-channel, delete the hardcoding. Spike
+  intent + unit 001 are both `done`; its `## Result` is the reference
+  for every audio/volume/call assumption (findings 1–14).
