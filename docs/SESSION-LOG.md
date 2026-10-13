@@ -322,7 +322,93 @@ evidence in `.ai-dlc/audio-service-spike/units/001-spike-app.md`.
   notification hardening, R-03/R-04/R-05/R-07) — before building it,
   read spike finding 14 (slider drag-state design) **and** unit
   001's no-keepalive finding (WS partition detection). Unit 003
-  (volume-rocker + call-handling) will additionally need spike
-  findings 5, 10, 11 (one-shot media-button dispatch; volume-key
-  release = `same` no-op; volume-key routing needs the real Pixel 6
-  `25071FDF600953`).
+   (volume-rocker + call-handling) will additionally need spike
+   findings 5, 10, 11 (one-shot media-button dispatch; volume-key
+   release = `same` no-op; volume-key routing needs the real Pixel 6
+   `25071FDF600953`).
+
+---
+
+## 2026-10-13 — remote-app unit 002 done (opencode)
+
+Session ran 2026-10-12 19:56 → 2026-10-13 00:42 (crossed midnight).
+Supervised window open, user present.
+
+**Did:** Finished unit 002 (now-playing screen + notification
+hardening, R-03/R-04/R-05/R-07). Completed the drag-state slider
+tests, optimistic-update + rollback, and the notification-mapping /
+controller-actions / screen / live test files (prior session), then
+root-caused and fixed the 5 failing widget tests (Dart 3.11.5
+`Future(callback)`→`Timer.run` needs `pumpAndSettle` after gesture
+release). All gates green. Did the on-device verification: criterion
+1 (paused item + real artwork, pixel-verified), criterion 3
+(screen previous via engine; notification/lockscreen media-session
+surface from prior session), criterion 5 (backgrounded notification,
+exactly one, metadata + 126×126 artwork + 3 controls + FGS alive),
+criterion 6 (~28 min supervised play, two bracketed drift samples
+≈0 ms). Wrote the unit `## Result` (all 7 criteria + incidents).
+
+**Bug found + fixed on-device (criterion 1):** after an item change
+while paused, the elapsed label showed the *previous* item's ticker
+position (03:17 on a 02:25 track, server progress 392 ms). Root cause:
+the screen's local ticker only runs while playing and freezes on pause,
+so `displayMs` went stale. Fixed with a pure
+`NowPlayingBody.displayedProgressMs` (ticker value trusted only while
+playing) + `test/displayed_progress_test.dart` (4 cases). On-device now
+shows the correct 00:00.
+
+**Key findings:**
+- **OwnTone `previous` from a paused state resumes playback.** From
+  paused with progress <3 s, `PUT /api/player/previous` moves to the
+  previous item **and starts playing** (does not stay paused).
+  Asymmetric with `next` from paused (stays paused — the unit-002
+  spike question, now answered) and with `previous`-at->3 s (restarts
+  current + plays). Audio-safety note: pressing Previous on a paused
+  server starts audio. The app mirrors this faithfully.
+- **adb touch to the Flutter window was broken this session.**
+  `input tap`/`input swipe` reached the launcher and SystemUI
+  (notification shade) but never the Flutter app's window (no touch
+  event reached the engine; window had input focus, no overlay, single
+  process; a fresh app process didn't fix it). Worked around by
+  driving the UI through the engine (`debugGlobals` +
+  `evaluate_expression`). Blocked direct on-screen tap verification;
+  the screen tap mechanism was already verified in the prior session
+  (play/pause/next via real taps) and `previous` uses the identical
+  `onPressed → controller.previous()` wiring.
+- **mdfind/Spotlight hang (×2):** `flutter build`/`flutter run` stalled
+  on a `mdfind kMDItemCFBundleIdentifier="com.google.android.studio*"`
+  child; killed the mdfind child to unblock (documented recipe).
+
+**Drift (criterion 6):** ~28 min continuous queue playback with many
+auto-advance rebases; two bracketed screen-vs-API measurements
+(screen read sandwiched between two `item_progress_ms` reads,
+interpolated) → offset ≈0 ms and ≈18 ms (across a track change). The
+ticker is 1× by construction and re-bases on every `itemProgressMs`
+change, so it cannot accumulate drift during continuous play. PASS
+(<2 s). Method caveat: the MCP render-tree read has multi-second
+latency and inter-call wall time isn't precisely timestampable, so an
+instantaneous sub-2 s stopwatch wasn't feasible — verification is by
+construction + the ≈0 ms spot-checks.
+
+**Gates green (final code):** analyze 0 / format clean /
+`flutter test --exclude-tags live` 95/95 / `flutter build apk --debug`
+OK (21:30). TEMP `MEDIA-CMD` instrumentation removed before the build;
+`DebugMediaButtonReceiver.kt` keeps the corrected keycode doc comment
++ a debug keycode log line (intentional, debug-only component).
+
+**Environment:** server restored to `stop`, volume 75, shuffle off,
+repeat off, consume off. Queue left as the user-directed "Recently
+Played" fill (not cleared). No library data touched. Audio only played
+during the supervised window (user present); paused/stopped before any
+unattended work. Dev AVD `emulator-5554` to be killed. `flutter run`
+session ended.
+
+**Carryover (out of unit 002 scope):** WS keepalive — a silent network
+partition is still not detected by the client (relies on the server's
+sparse events / TCP); needs a client ping/no-activity timeout. Unit 001
+recorded it with fresh evidence; not addressed here.
+
+**Next:** `.ai-dlc/remote-app` unit 003 (volume-rocker +
+call-handling) — read spike findings 5, 10, 11 (one-shot media-button
+dispatch; volume-key release = `same` no-op; volume-key routing needs
+the real Pixel 6 `25071FDF600953`).

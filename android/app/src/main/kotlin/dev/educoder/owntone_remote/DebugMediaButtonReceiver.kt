@@ -20,7 +20,13 @@ import android.view.KeyEvent
  *
  * Usage:
  *   adb shell am broadcast -a dev.educoder.owntone_remote.DEBUG_MEDIA_BUTTON \
- *     --ei keycode 85    # 85=play 86=pause 87=next 88=previous
+ *     -n dev.educoder.owntone_remote/.DebugMediaButtonReceiver --ei keycode 85
+ *
+ * Keycode values (android.view.KeyEvent):
+ *   85 = MEDIA_PLAY_PAUSE (toggle), 86 = MEDIA_STOP,
+ *   87 = MEDIA_PREVIOUS, 88 = MEDIA_NEXT
+ * (The earlier doc comment claimed 85=play 86=pause 87=next 88=previous —
+ * wrong; verified against KeyEvent constants 2026-10-12.)
  */
 class DebugMediaButtonReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -29,6 +35,7 @@ class DebugMediaButtonReceiver : BroadcastReceiver() {
         if (!isDebug) return
         val keyCode = intent.getIntExtra(EXTRA_KEYCODE, KeyEvent.KEYCODE_UNKNOWN)
         if (keyCode == KeyEvent.KEYCODE_UNKNOWN) return
+        android.util.Log.i("DebugMediaButton", "forwarding keycode=$keyCode")
         val mediaIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
             component = ComponentName(
                 context,

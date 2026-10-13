@@ -20,7 +20,8 @@ class ScriptedAdapter implements HttpClientAdapter {
   /// Swap this to change the server's behaviour mid-test.
   Response<dynamic> Function(RequestOptions options) responder;
 
-  /// Every request line seen, in order (e.g. `GET /api/player`).
+  /// Every request line seen, in order, query string included when
+  /// present (e.g. `PUT /api/player/volume?volume=80`).
   final List<String> requests = [];
 
   @override
@@ -29,7 +30,8 @@ class ScriptedAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
-    requests.add('${options.method} ${options.path}');
+    final q = options.uri.query;
+    requests.add('${options.method} ${options.path}${q.isEmpty ? '' : '?$q'}');
     final res = responder(options); // may throw a DioException
     final data = res.data;
     final bytes = data is String

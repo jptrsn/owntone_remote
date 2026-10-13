@@ -46,6 +46,32 @@ class PlayerState {
   bool get isPaused => state == 'pause';
   bool get isStopped => state == 'stop';
 
+  /// Returns a copy with the given fields replaced. Unit 002's optimistic
+  /// updates mutate [PlayerController]'s state this way (UI updates
+  /// immediately; the confirming refetch reconciles, and a failed call
+  /// rolls the copy back). Null fields keep their current values — a copy
+  /// can only *set*, never clear, an item field.
+  PlayerState copyWith({
+    String? state,
+    Repeat? repeat,
+    bool? consume,
+    bool? shuffle,
+    int? volume,
+    int? itemId,
+    int? itemLengthMs,
+    int? itemProgressMs,
+  }) => PlayerState(
+    state: state ?? this.state,
+    repeat: repeat ?? this.repeat,
+    consume: consume ?? this.consume,
+    shuffle: shuffle ?? this.shuffle,
+    volume: volume ?? this.volume,
+    itemId: itemId ?? this.itemId,
+    itemLengthMs: itemLengthMs ?? this.itemLengthMs,
+    itemProgressMs: itemProgressMs ?? this.itemProgressMs,
+    artworkUrl: artworkUrl,
+  );
+
   factory PlayerState.fromJson(Map<String, dynamic> json) => PlayerState(
     state: json['state'] as String? ?? 'stop',
     repeat: Repeat.parse(json['repeat'] as String?),

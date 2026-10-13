@@ -29,8 +29,38 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
   int? _baseMs;
   DateTime? _baseTime;
 
+  PlayerController? _snackController;
+  int _seenActionErrorSeq = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_snackController != null) return;
+    final c = context.read<PlayerController>();
+    _snackController = c;
+    _seenActionErrorSeq = c.actionErrorSeq;
+    c.addListener(_onActionError);
+  }
+
+  /// A failed control press rolls the UI back (PlayerController) and
+  /// surfaces a snackbar with the typed error (unit 002, SCREENS.md).
+  void _onActionError() {
+    final c = _snackController;
+    if (c == null) return;
+    if (c.actionErrorSeq != _seenActionErrorSeq) {
+      _seenActionErrorSeq = c.actionErrorSeq;
+      final message = c.actionError;
+      if (message != null && mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(message)));
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _snackController?.removeListener(_onActionError);
     _ticker?.cancel();
     super.dispose();
   }
@@ -140,7 +170,12 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
 
 /// The now-playing content (no Scaffold of its own — the
 /// [NowPlayingScreen] shell owns the app bar and the offline banner).
-class NowPlayingBody extends StatelessWidget {
+///
+/// Stateful only for the drag-state sliders (spike Finding 14,
+/// SCREENS.md "Interaction design"): while a finger is down the slider
+/// shows the finger's position and ignores server updates; one REST call
+/// is committed on release.
+class NowPlayingBody extends StatefulWidget {
   const NowPlayingBody({
     super.key,
     required this.controller,
@@ -154,34 +189,68 @@ class NowPlayingBody extends StatelessWidget {
   final bool enabled;
   final int? displayMs;
 
+  /// The progress the screen displays, from most to least authoritative:
+  /// the finger's dragged position, then the ticker's local extrapolation
+  /// (playing only — the ticker freezes on pause, so after an item change
+  /// in a paused state it still holds the *previous* item's position and
+  /// must not be shown), then the server's live progress.
+  static int displayedProgressMs({
+    int? dragMs,
+    required bool isPlaying,
+    int? tickerMs,
+    int? serverMs,
+  }) => dragMs ?? (isPlaying ? tickerMs : null) ?? serverMs ?? 0;
+
+  @override
+  State<NowPlayingBody> createState() => _NowPlayingBodyState();
+}
+
+class _NowPlayingBodyState extends State<NowPlayingBody> {
+  /// Dragged position while the seek slider is touched (null = not
+  /// dragging; the server-extrapolated position applies).
+  int? _seekDragMs;
+
+  /// Dragged volume 0–100 while the volume slider is touched.
+  double? _volumeDrag;
+
   static String _fmt(Duration d) => DateFormat('mm:ss').format(
     DateTime.fromMillisecondsSinceEpoch(d.inSeconds.clamp(0, 86399) * 1000),
   );
 
   @override
   Widget build(BuildContext context) {
-    final p = controller.player!;
-    final item = controller.nowPlaying;
+    final p = widget.controller.player!;
+    final item = widget.controller.nowPlaying;
     final theme = Theme.of(context);
+    final enabled = widget.enabled;
+    final outputs = widget.outputs;
 
     final totalMs = item?.lengthMs ?? p.itemLengthMs ?? 0;
-    final currentMs = displayMs ?? p.itemProgressMs ?? 0;
+    final currentMs = NowPlayingBody.displayedProgressMs(
+      dragMs: _seekDragMs,
+      isPlaying: p.isPlaying,
+      tickerMs: widget.displayMs,
+      serverMs: p.itemProgressMs,
+    );
     final sliderValue = totalMs > 0
         ? (currentMs / totalMs).clamp(0.0, 1.0)
         : 0.0;
+
+    // While dragging, the local value wins over the server's.
+    final volume = (_volumeDrag ?? p.volume.toDouble()).clamp(0.0, 100.0);
 
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (controller.syncError != null)
+          if (widget.controller.syncError != null)
             Material(
               color: theme.colorScheme.errorContainer,
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Text(
-                  controller.syncError!,
+                  widget.controller.syncError!,
                   style: TextStyle(color: theme.colorScheme.onErrorContainer),
                 ),
               ),
@@ -225,12 +294,20 @@ class NowPlayingBody extends StatelessWidget {
             _fmt(Duration(milliseconds: currentMs)),
             textAlign: TextAlign.start,
           ),
+          // Drag-state seek (spike Finding 14): the slider follows the
+          // finger; the one `seek?position_ms=` call goes out on release,
+          // and server refetches arriving mid-drag do not move it.
           Slider(
-            // Direct seek (spike Finding 14's local drag state is deferred to
-            // unit 002 with the notification hardening).
             value: sliderValue,
             onChanged: enabled && totalMs > 0
-                ? (v) => controller.seekMs((v * totalMs).round())
+                ? (v) => setState(() => _seekDragMs = (v * totalMs).round())
+                : null,
+            onChangeEnd: enabled && totalMs > 0
+                ? (v) {
+                    final ms = (v * totalMs).round();
+                    setState(() => _seekDragMs = null);
+                    unawaited(widget.controller.seekMs(ms));
+                  }
                 : null,
           ),
           Text(_fmt(Duration(milliseconds: totalMs)), textAlign: TextAlign.end),
@@ -240,7 +317,9 @@ class NowPlayingBody extends StatelessWidget {
             children: [
               IconButton.filledTonal(
                 iconSize: 32,
-                onPressed: enabled && !p.isStopped ? controller.previous : null,
+                onPressed: enabled && !p.isStopped
+                    ? widget.controller.previous
+                    : null,
                 icon: const Icon(Icons.skip_previous),
               ),
               const SizedBox(width: 24),
@@ -250,14 +329,18 @@ class NowPlayingBody extends StatelessWidget {
               IconButton.filled(
                 iconSize: 48,
                 onPressed: enabled
-                    ? (p.isPlaying ? controller.pause : controller.play)
+                    ? (p.isPlaying
+                          ? widget.controller.pause
+                          : widget.controller.play)
                     : null,
                 icon: Icon(p.isPlaying ? Icons.pause : Icons.play_arrow),
               ),
               const SizedBox(width: 24),
               IconButton.filledTonal(
                 iconSize: 32,
-                onPressed: enabled && !p.isStopped ? controller.next : null,
+                onPressed: enabled && !p.isStopped
+                    ? widget.controller.next
+                    : null,
                 icon: const Icon(Icons.skip_next),
               ),
             ],
@@ -272,7 +355,7 @@ class NowPlayingBody extends StatelessWidget {
                   color: p.shuffle ? theme.colorScheme.primary : null,
                 ),
                 onPressed: enabled
-                    ? () => controller.setShuffle(!p.shuffle)
+                    ? () => widget.controller.setShuffle(!p.shuffle)
                     : null,
               ),
               IconButton.outlined(
@@ -286,7 +369,7 @@ class NowPlayingBody extends StatelessWidget {
                       ? theme.colorScheme.primary
                       : null,
                 ),
-                onPressed: enabled ? controller.cycleRepeat : null,
+                onPressed: enabled ? widget.controller.cycleRepeat : null,
               ),
               IconButton.outlined(
                 icon: Icon(
@@ -294,16 +377,22 @@ class NowPlayingBody extends StatelessWidget {
                   color: p.consume ? theme.colorScheme.primary : null,
                 ),
                 onPressed: enabled
-                    ? () => controller.setConsume(!p.consume)
+                    ? () => widget.controller.setConsume(!p.consume)
                     : null,
               ),
               IconButton.outlined(
                 icon: const Icon(Icons.stop),
-                onPressed: enabled && !p.isStopped ? controller.stop : null,
+                onPressed: enabled && !p.isStopped
+                    ? widget.controller.stop
+                    : null,
               ),
             ],
           ),
           const SizedBox(height: 24),
+          // Drag-state volume (spike Finding 14): while the finger is down
+          // the slider + label follow the finger and a remote update
+          // (rocker, web UI) cannot yank it; one `volume?volume=` call goes
+          // out on release — a failed send rolls the value back.
           Row(
             children: [
               const Icon(Icons.volume_down),
@@ -311,15 +400,20 @@ class NowPlayingBody extends StatelessWidget {
                 child: Slider(
                   min: 0,
                   max: 100,
-                  value: p.volume.toDouble(),
-                  // The displayed value tracks the server (WS `volume` event
-                  // → refetch); no local state needed while a finger is down.
+                  value: volume,
                   onChanged: enabled
-                      ? (v) => unawaited(controller.setVolume(v.round()))
+                      ? (v) => setState(() => _volumeDrag = v)
+                      : null,
+                  onChangeEnd: enabled
+                      ? (v) {
+                          final vol = v.round();
+                          setState(() => _volumeDrag = null);
+                          unawaited(widget.controller.setVolume(vol));
+                        }
                       : null,
                 ),
               ),
-              SizedBox(width: 40, child: Text('${p.volume}')),
+              SizedBox(width: 40, child: Text('${volume.round()}')),
               const Icon(Icons.volume_up),
             ],
           ),

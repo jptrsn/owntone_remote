@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 
@@ -32,12 +33,20 @@ class PlayerController extends ChangeNotifier {
   PlayerState? _player;
   NowPlayingItem? _nowPlaying;
   String? _syncError;
+  String? _actionError;
+  int _actionErrorSeq = 0;
 
   PlayerState? get player => _player;
   NowPlayingItem? get nowPlaying => _nowPlaying;
 
   /// Last refetch failure (transient; cleared by the next success).
   String? get syncError => _syncError;
+
+  /// Last failed user action (unit 002: optimistic rollback + snackbar).
+  /// [actionErrorSeq] bumps on every failure so the UI can show the same
+  /// message twice in a row.
+  String? get actionError => _actionError;
+  int get actionErrorSeq => _actionErrorSeq;
 
   bool get initialized => _initialized;
   bool get isPlaying => _player?.isPlaying ?? false;
@@ -91,59 +100,96 @@ class PlayerController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  /// Runs a server call, surfacing failures in [syncError]. Returns false
-  /// when the call was skipped (offline) or failed.
-  Future<bool> _call(String label, Future<void> Function(OwntoneApi) fn) async {
+  /// Runs a server call with an optimistic UI update (unit 002,
+  /// SCREENS.md "Interaction design"): [optimistic] is applied to the
+  /// current state and the listeners fire immediately; on success the
+  /// confirming [refetch] reconciles with the server truth; on failure the
+  /// pre-action state is restored and the error is surfaced for a snackbar
+  /// ([actionError]/[actionErrorSeq]).
+  /// Returns false when the call was skipped (offline) or failed.
+  Future<bool> _action(
+    String label,
+    Future<void> Function(OwntoneApi) fn, {
+    PlayerState? Function(PlayerState p)? optimistic,
+  }) async {
     final api = _conn.api;
     if (api == null || !_conn.isConnected) return false;
+    final before = _player;
+    if (before != null && optimistic != null) {
+      _player = optimistic(before);
+      if (!_disposed) notifyListeners();
+    }
     try {
       await fn(api);
+      _actionError = null;
     } catch (e) {
       _logger.e('$label failed', error: e);
-      _syncError = '$label failed: $e';
+      if (before != null) _player = before;
+      _actionError = _describeActionError(label, e);
+      _actionErrorSeq++;
       if (!_disposed) notifyListeners();
       return false;
     }
+    await _refreshAll();
     return true;
+  }
+
+  /// A readable, typed message for a failed action (the snackbar text).
+  String _describeActionError(String label, Object e) {
+    if (e is DioException) {
+      final status = e.response?.statusCode;
+      if (status != null) {
+        return '$label failed — server answered HTTP $status.';
+      }
+      return '$label failed — could not reach the server.';
+    }
+    return '$label failed: $e';
   }
 
   // -- user actions --------------------------------------------------------
 
   Future<void> play() async {
-    if (!await _call('Play', (api) => api.play())) return;
-    _tracker.onUserPlay();
-    await _refreshAll();
+    final ok = await _action(
+      'Play',
+      (api) => api.play(),
+      optimistic: (p) => p.copyWith(state: 'play'),
+    );
+    if (ok) _tracker.onUserPlay();
   }
 
   Future<void> pause() => _callPause(byCall: false);
 
   Future<void> stop() async {
-    if (!await _call('Stop', (api) => api.stop())) return;
-    _tracker.onUserStop();
-    await _refreshAll();
+    final ok = await _action(
+      'Stop',
+      (api) => api.stop(),
+      optimistic: (p) => p.copyWith(state: 'stop', itemProgressMs: 0),
+    );
+    if (ok) _tracker.onUserStop();
   }
 
-  Future<void> next() async {
-    if (!await _call('Next', (api) => api.next())) return;
-    await _refreshAll();
+  /// No optimistic mutation: the app cannot know which item becomes
+  /// current — the confirming refetch carries it.
+  Future<void> next() => _action('Next', (api) => api.next());
+
+  Future<void> previous() => _action('Previous', (api) => api.previous());
+
+  Future<void> seekMs(int ms) {
+    final limit = _player?.itemLengthMs;
+    return _action(
+      'Seek',
+      (api) => api.seekMs(ms),
+      optimistic: (p) => p.copyWith(itemProgressMs: ms.clamp(0, limit ?? ms)),
+    );
   }
 
-  Future<void> previous() async {
-    if (!await _call('Previous', (api) => api.previous())) return;
-    await _refreshAll();
-  }
+  Future<void> setShuffle(bool on) => _action(
+    'Shuffle',
+    (api) => api.setShuffle(on),
+    optimistic: (p) => p.copyWith(shuffle: on),
+  );
 
-  Future<void> seekMs(int ms) async {
-    if (!await _call('Seek', (api) => api.seekMs(ms))) return;
-    await _refreshAll();
-  }
-
-  Future<void> setShuffle(bool on) async {
-    if (!await _call('Shuffle', (api) => api.setShuffle(on))) return;
-    await _refreshAll();
-  }
-
-  /// off → all → single → off (the UI cycle).
+  /// off → all → single → off (the UI cycle, R-05).
   Future<void> cycleRepeat() async {
     final current = _player?.repeat ?? Repeat.off;
     final next = switch (current) {
@@ -154,26 +200,30 @@ class PlayerController extends ChangeNotifier {
     await setRepeat(next);
   }
 
-  Future<void> setRepeat(Repeat mode) async {
-    if (!await _call('Repeat', (api) => api.setRepeat(mode))) return;
-    await _refreshAll();
-  }
+  Future<void> setRepeat(Repeat mode) => _action(
+    'Repeat',
+    (api) => api.setRepeat(mode),
+    optimistic: (p) => p.copyWith(repeat: mode),
+  );
 
-  Future<void> setConsume(bool on) async {
-    if (!await _call('Consume', (api) => api.setConsume(on))) return;
-    await _refreshAll();
-  }
+  Future<void> setConsume(bool on) => _action(
+    'Consume',
+    (api) => api.setConsume(on),
+    optimistic: (p) => p.copyWith(consume: on),
+  );
 
-  Future<void> setVolume(int volume) async {
-    if (!await _call('Volume', (api) => api.setVolume(volume))) return;
-    await _refreshAll();
-  }
+  Future<void> setVolume(int volume) => _action(
+    'Volume',
+    (api) => api.setVolume(volume),
+    optimistic: (p) => p.copyWith(volume: volume.clamp(0, 100)),
+  );
 
   /// Relative volume change — the hardware-rocker path (R-06, unit 003).
-  Future<void> stepVolume(int step) async {
-    if (!await _call('Volume', (api) => api.stepVolume(step))) return;
-    await _refreshAll();
-  }
+  Future<void> stepVolume(int step) => _action(
+    'Volume',
+    (api) => api.stepVolume(step),
+    optimistic: (p) => p.copyWith(volume: (p.volume + step).clamp(0, 100)),
+  );
 
   // -- call handling (D9) ----------------------------------------------------
 
@@ -186,21 +236,33 @@ class PlayerController extends ChangeNotifier {
   /// IDLE: resume only if this app paused the server for the call.
   Future<void> onCallEnded() async {
     if (!_tracker.takeCallResume()) return;
-    if (!await _call('Resume', (api) => api.play())) return;
-    await _refreshAll();
+    await _action(
+      'Resume',
+      (api) => api.play(),
+      optimistic: (p) => p.copyWith(state: 'play'),
+    );
   }
 
   Future<void> _callPause({required bool byCall}) async {
     final wasPlaying = _player?.isPlaying ?? false;
+    if (!wasPlaying) return; // nothing to pause — and the pause is not ours
     if (byCall) {
-      _tracker.onCallStart(wasPlaying: wasPlaying);
+      // Claim the pause only once it has actually happened — a failed pause
+      // must not own the origin (or a later call-end would auto-resume a
+      // server that is still playing).
+      final ok = await _pause();
+      if (ok) _tracker.onCallStart(wasPlaying: wasPlaying);
     } else {
       _tracker.onUserPause();
+      await _pause();
     }
-    if (!wasPlaying) return; // nothing to pause — and the pause is not ours
-    if (!await _call('Pause', (api) => api.pause())) return;
-    await _refreshAll();
   }
+
+  Future<bool> _pause() => _action(
+    'Pause',
+    (api) => api.pause(),
+    optimistic: (p) => p.copyWith(state: 'pause'),
+  );
 
   @override
   void dispose() {

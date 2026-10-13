@@ -5,6 +5,50 @@ import 'package:audio_service/audio_service.dart';
 import '../player/player_controller.dart';
 import '../player/player_state.dart';
 
+// -- pure notification mapping (R-07) ---------------------------------------
+//
+// Kept as free functions so the metadata/controls mapping is unit-testable
+// without an audio_service platform (test/notification_mapping_test.dart).
+
+/// The media-item mirror of the now-playing queue item (R-07: title,
+/// artist, album, artwork, duration). Null when there is no item to show.
+MediaItem? mediaItemFor({
+  required NowPlayingItem? item,
+  required PlayerState? p,
+}) {
+  if (item == null) return null;
+  return MediaItem(
+    id: item.uri ?? 'owntone:${item.id ?? 'now_playing'}',
+    title: item.title ?? 'Unknown title',
+    artist: item.artist ?? 'Unknown artist',
+    album: item.album,
+    artUri: item.artworkUrl,
+    duration: item.lengthMs != null
+        ? Duration(milliseconds: item.lengthMs!)
+        : null,
+  );
+}
+
+/// Transport controls for the notification / lockscreen (SCREENS.md:
+/// play/pause · next · previous — the v1 notification has no stop or mode
+/// controls).
+List<MediaControl> controlsFor(PlayerState p) => p.isPlaying
+    ? [MediaControl.pause, MediaControl.skipToNext, MediaControl.skipToPrevious]
+    : [MediaControl.play, MediaControl.skipToNext, MediaControl.skipToPrevious];
+
+/// The playback-state mirror. [positionMs] overrides the server progress
+/// (the 1 s extrapolation ticker feeds it while the server plays).
+PlaybackState playbackStateFor(PlayerState p, {int? positionMs}) =>
+    PlaybackState(
+      controls: controlsFor(p),
+      processingState: AudioProcessingState.ready,
+      playing: p.isPlaying,
+      updatePosition: Duration(
+        milliseconds: positionMs ?? p.itemProgressMs ?? 0,
+      ),
+      speed: 1.0,
+    );
+
 /// audio_service handler that *mirrors* the remote server instead of playing
 /// local audio:
 ///
@@ -58,18 +102,7 @@ class MirrorAudioHandler extends BaseAudioHandler {
     final item = _player.nowPlaying;
 
     if (item != null) {
-      mediaItem.add(
-        MediaItem(
-          id: item.uri ?? 'owntone:${item.id ?? 'now_playing'}',
-          title: item.title ?? 'Unknown title',
-          artist: item.artist ?? 'Unknown artist',
-          album: item.album,
-          artUri: item.artworkUrl,
-          duration: item.lengthMs != null
-              ? Duration(milliseconds: item.lengthMs!)
-              : null,
-        ),
-      );
+      mediaItem.add(mediaItemFor(item: item, p: p));
     } else if (p != null && p.isStopped) {
       mediaItem.add(null);
     }
@@ -79,15 +112,7 @@ class MirrorAudioHandler extends BaseAudioHandler {
     // The library extrapolates `position` from updatePosition+updateTime
     // while playing, so a fresh updatePosition per event (and per ticker
     // tick) is what keeps the notification progress honest.
-    playbackState.add(
-      PlaybackState(
-        controls: _controlsFor(p),
-        processingState: AudioProcessingState.ready,
-        playing: p.isPlaying,
-        updatePosition: Duration(milliseconds: p.itemProgressMs ?? 0),
-        speed: 1.0,
-      ),
-    );
+    playbackState.add(playbackStateFor(p));
 
     // Remote playback info: this routes volume-rocker presses to
     // androidAdjustRemoteVolume instead of a local audio stream.
@@ -121,11 +146,7 @@ class MirrorAudioHandler extends BaseAudioHandler {
       }
       var ms = baseMs + DateTime.now().difference(baseTime).inMilliseconds;
       if (totalMs != null && ms > totalMs) ms = totalMs;
-      playbackState.add(
-        playbackState.value.copyWith(
-          updatePosition: Duration(milliseconds: ms),
-        ),
-      );
+      playbackState.add(playbackStateFor(current, positionMs: ms));
     });
   }
 
@@ -144,11 +165,7 @@ class MirrorAudioHandler extends BaseAudioHandler {
     if (p != null && !p.isPlaying) {
       playbackState.add(
         PlaybackState(
-          controls: [
-            MediaControl.pause,
-            MediaControl.skipToNext,
-            MediaControl.skipToPrevious,
-          ],
+          controls: controlsFor(p),
           processingState: AudioProcessingState.ready,
           playing: true,
         ),
@@ -159,18 +176,6 @@ class MirrorAudioHandler extends BaseAudioHandler {
     }
     await _sync();
   }
-
-  List<MediaControl> _controlsFor(PlayerState p) => p.isPlaying
-      ? [
-          MediaControl.pause,
-          MediaControl.skipToNext,
-          MediaControl.skipToPrevious,
-        ]
-      : [
-          MediaControl.play,
-          MediaControl.skipToNext,
-          MediaControl.skipToPrevious,
-        ];
 
   // -- media-session commands → server --------------------------------------
 
