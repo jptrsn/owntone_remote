@@ -68,12 +68,22 @@ Shuffle toggle, repeat cycle (off → all → single), consume toggle.
 - WS `options` events update the UI without a manual refresh.
 
 ### R-06 Master volume — P0
-Volume slider in the app (0–100, `?volume=`) **and** hardware volume rocker
-(`?step=`), working with screen off and app backgrounded.
+Volume slider in the app (0–100, `?volume=`) **and** hardware volume
+rocker (`?step=`). **The rocker maps to the server's master volume only
+while the app is in the foreground** (D20, user decision 2026-10-22).
+When the app is backgrounded, the phone's volume keys perform their
+normal function and the app must **not** control the server's volume —
+including while the server is playing.
 **Acceptance:**
 - slider change verified via `GET /api/player` `volume`;
-- rocker up/down changes master volume by ±5 (default step — open item)
-  with screen off + app backgrounded (spike criterion);
+- with the app in the foreground, rocker up/down changes master volume
+  by ±5 (default step — open item) (verified 2026-10-22 on a real
+  Pixel 6, server stopped: 36→41→36);
+- with the app backgrounded (any screen state, any server state —
+   including server `play`), rocker presses leave the server volume
+   unchanged (verified 2026-10-22 on the Pixel 6: backgrounded +
+   screen-off with the server stopped, volume held 36; and supervised
+   with the server `play` — rocker up *and* down, volume held 36);
 - volume WS events keep slider and notification in sync.
 
 ### R-07 Persistent notification — P0

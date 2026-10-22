@@ -412,3 +412,199 @@ recorded it with fresh evidence; not addressed here.
 call-handling) — read spike findings 5, 10, 11 (one-shot media-button
 dispatch; volume-key release = `same` no-op; volume-key routing needs
 the real Pixel 6 `25071FDF600953`).
+
+---
+
+## 2026-10-13 (late) — remote-app unit 003 in progress (opencode, orchestrator)
+
+Session scope: unit 003 (volume rocker + call handling, R-06/R-08).
+User constraints: Pixel 6 `25071FDF600953` in use by another session —
+no adb against it until granted; supervised window "later today".
+Orchestrated: design + controller wiring kept in the main session; the
+state machine + all 36 new tests delegated to sub-agents against exact
+contracts and reviewed line-by-line (one self-inflicted compile error
+fixed in review — see below).
+
+**Did:**
+
+- **New 500 ms flap filter + pause-in-flight tracking (the unit's edge
+  cases).** The spike's pause-on-ringing had two races: a short
+  ringing→idle flap would pause for nothing; a call ending before the
+  pause acked left origin `call` lingering (a later call would
+  auto-resume a stale pause). New pure, synchronous
+  `CallPauseTracker` (`lib/src/player/call_pause.dart`, composes the
+  unchanged `PauseOriginTracker`): flap filter (controller owns the real
+  `Timer`, machine is timer-free → unit-testable without FakeAsync),
+  `pauseInFlight`, `resumeAfterAck` (ended-before-ack → resume when the
+  ack lands, origin cleared). OFFHOOK (`active`) confirms immediately,
+  even without a preceding RINGING; `main.dart` now routes `active`
+  (was ignored). Rocker mapping extracted to pure `rockerStepFor`
+  (`same` no-op per Finding 10, now test-pinned); `rockerStep = 5`
+  hardcoded + TODO(R-14) (P2, out of scope).
+- **36 new tests, all green** (131/131 total): 15
+  `call_pause_tracker_test` (flap, call-while-paused, stop,
+  ended-before-ack ×2, failed pause ×2, claim conflicts, double idle),
+  8 `player_controller_call_test` (controller integration vs.
+  `StatefulServer`, real-time flap timer; incl. a 900 ms-slow-pause
+  adapter proving "no resume before the ack"), 4 `rocker_step_test`,
+  9 `call_state_channel_test` (mock MethodChannel mapping +
+  permissions round-trip).
+- **Gates green on final code:** analyze 0 / format clean (42 files) /
+  131/131 / `flutter build apk --debug` OK.
+- **On-device (dev AVD `emulator-5554`, server `stop` throughout —
+  safe):** adb touch works again this session (unit-002 symptom did not
+  recur). C2 slider half: real slider drag → server 75→62 (state
+  stayed stopped); server-side `?volume=80` → app slider `80%` within
+  the next dump (WS push); restored 75. Call-safety no-op: `gsm call`
+  → app `ringing` (05:10:47.740) → confirmed (3.8 s > 500 ms) → server
+  stopped so no pause → `gsm cancel` → app `idle` (05:10:51.522) →
+  server byte-identical (`stop,75,196174`). Permissions persisted from
+  the spike.
+- **Unit `## Result` written** (evidence above + exact procedures for
+  the blocked criteria). Frontmatter `in_progress`; **no commit** (unit
+  not done).
+
+**Blocked (user-gated):**
+
+- **C1** — volume-key routing: BLOCKED-PENDING-DEVICE. Pixel 6 belongs
+  to another session; the AVD provably never routes volume keys to the
+  session (Finding 11). Procedure in the unit Result, incl. the routing
+  caveat: while the server is stopped/paused stock Android may not
+  route keys to the session at all (Finding 4) — fallback is the
+  user-re-scoped form (supervised play) + non-interference watch.
+- **C3/C4** — call pause/auto-resume + user-pause no-resume:
+  BLOCKED-PENDING-SUPERVISION (user: "later today"). Procedures in the
+  unit Result (windowed AVD, `gsm call`, pause + verify after every
+  step). Note: with the new debounce the auto-pause lands ~500 ms after
+  ringing (spike: ~4 s).
+
+**Incidents:** mdfind/Spotlight hang (3rd) killed the build once —
+killed the `mdfind kMDItemCFBundleIdentifier="com.google.android.studio*"`
+child, build completed. Self-inflicted: `rockerStepFor` first written
+as a switch expression over `AndroidVolumeDirection` values —
+audio_service 0.18.19 defines that type as a class with `static final`
+instances, not an enum → `constant_pattern_with_non_constant_expression`
+→ rewrote with `==` checks (cost one build cycle).
+
+**Environment at handoff:** server `stop, volume=75, item_id=196174`
+(queue untouched). `RemoteDev_API_36` left **running, windowed**
+(emulator-5554), app installed + connected — ready for the supervised
+window. Pixel 6 untouched. No playback occurred.
+
+**Next (to close unit 003 — one window + one device grant):**
+
+1. Supervised window (user present): C4 first (play → user pause →
+   call → still paused), then C3 (play → call → auto-pause → call ends
+   → auto-resume → immediate pause), per the unit Result procedures;
+   pause + verify after every step; restore `stop`, `volume=75`.
+2. Pixel 6 grant: C1 — install this APK, rocker up/down with server
+   stopped → `GET /api/player` before/after, timestamped; if the system
+   doesn't route keys to the stopped session, run the re-scoped form
+   (supervised play) + document the routing limitation.
+3. Paste the C1/C3/C4 transcripts into the unit `## Result`, flip the
+   blocked sections to PASS, re-run the 4 gates, append this log, set
+   frontmatter `status: done`, commit `remote-app/003: <why>`, kill the
+   dev AVD.
+
+## 2026-10-22 — Supervised window: C3/C4 PASS; C1 blocked by Pixel 6 device network (opencode)
+
+Session scope: close out unit 003's two user-gated criteria. The user
+granted the Pixel 6 (lock screen removed per their instruction:
+`settings put secure lockscreen_disabled 1`) and gave a supervised
+playback window "now".
+
+**Did:**
+
+- **C4 PASS, then C3 PASS** on `RemoteDev_API_36` (emulator-5554,
+  windowed, app under `flutter run`, `phase=connected, ws=open`).
+  One window, C4 first per the unit order; `GET /api/player` verified
+  after every step. C4: play 12:53:41 → user pause 12:54:02 → `gsm
+  call` 12:54:20 (app `ringing`) → still paused 12:54:23 → `gsm
+  cancel` 12:55:06 after **46 s of ringing** (unambiguously past the
+  500 ms flap window) → **still paused** 12:55:09. C3: play 12:56:09 →
+  `gsm call` 12:56:25 → **auto-pause** 12:56:29 → `gsm cancel`
+  12:56:47 → **auto-resume** (`state: play`) 12:56:50 → immediate
+  `player.pause()` 12:57:00.9 → verified 12:57:10. Restore: `stop`
+  12:57:23, verified **byte-identical** to the pre-window baseline
+  (`stop, volume=36, item_id=196174`) 12:57:33. Full transcripts in
+  the unit `## Result`.
+- **Gates re-verified on final code** after removing a temporary
+  `debugProbe` diagnostic added to `main.dart` during the C1
+  investigation (and its `dart:io`/`dio` imports): analyze 0 / format
+  42 files 0 changed / 131/131 / (build not re-run — the Oct 13 debug
+  APK is byte-current for this code).
+- **C1 blocked — the Pixel 6 cannot carry app traffic.** The device is
+  on the LAN (Wi-Fi "Glyphyx", 192.168.1.148, ping 0% loss; `adb
+  shell nc 192.168.1.13 3689` connects), but every TCP connection from
+  *inside the app* to any non-loopback destination (server 3689, a
+  controlled HTTP server on the Mac, 8.8.8.8:53) times out (errno 110)
+  with **no kernel socket ever created** (watched
+  `/proc/<pid>/net/tcp{,6}` at ~0.4 s through the whole window), while
+  loopback works. A clean reinstall (new uid 10310) fails identically;
+  GMS holds established internet connections; AppOps/VPN/proxy/SELinux
+  all clean; `device_provisioned=1`. The device went through the
+  **setup wizard today ~09:24** (fresh reset, user's Google account
+  provisioned) — root-cause needs root or the user/other-session device
+  history. Also flaky: SystemUI wedged (notification shade persistently
+  open, stealing focus, empty `uiautomator` dumps) + USB dropouts; a
+  Chrome cross-check could not be completed. Findings in the unit's
+  Criterion 1 section.
+- **AVD incident:** guest→LAN hung completely (ping hangs) while
+  Mac↔server stayed fine — survived an emulator restart, so the wedge
+  was in the **shared `netsimd`** (started the same second as the other
+  session's emulator at ~10:28). `emu kill` clogged the adb server;
+  `adb kill-server`/`start-server` recovered it (Pixel 6 + the other
+  session's `emulator-5556` reattached). Post-restart, guest→LAN worked
+  immediately. If the AVD loses its LAN again: suspect the shared
+  netsimd first.
+
+**Environment at handoff:** server `stop, volume=36, item_id=196174`
+(byte-identical to pre-window). Dev AVD killed. Pixel 6: lock screen
+off, debug APK installed, config saved (`192.168.1.13:3689`),
+POST_NOTIFICATIONS + READ_PHONE_STATE granted — ready for C1 the
+moment its third-party-app network works. Other session's emulator
+running untouched. No playback after 12:57:33; total supervised-play
+exposure ≈ 16 s across both criteria.
+
+**Update 17:15 (same day):** the user unplugged/re-plugged the Pixel 6
+and its app egress worked immediately (the 17:02 mis-typed-port attempt
+got a clean `refused`). Mid-test the user **rescoped the rocker
+contract (D20):** server-volume mapping only while the app is
+foregrounded; backgrounded, phone volume keys do their normal thing and
+the app must never touch the server volume — including while the server
+plays. Docs updated (REQUIREMENTS R-06, PLAN S4 + D20, unit criterion 1
++ Result). On the Pixel 6, server stopped: **foreground rocker
+36→41→36 PASS** (17:14–17:15); **backgrounded rocker left the server
+at 36** (17:08). Open item: the current handler would still send
+`PUT volume` backgrounded while the server is `play` (the session is
+selected then) — needs a foreground guard + unit tests, then the
+supervised backgrounded-`play` non-interference test on the device,
+re-run the 4 gates, set frontmatter `status: done`, commit
+`remote-app/003: <why>`. Then unit 004 (outputs/speakers).
+
+## 2026-10-22 (evening) — remote-app unit 003 DONE (opencode)
+
+The D20 open item is closed; **all six criteria PASS, unit 003 is done
+and committed.**
+
+- **D20 foreground guard** (`mirror_handler.dart` + `main.dart`): the
+  handler's rocker/`setRemoteVolume` overrides no-op while the app is
+  not foregrounded, and the session publishes
+  `AndroidVolumeControlType.absolute` (foreground) / `fixed`
+  (backgrounded) via the pure `volumeControlTypeFor`. `main.dart`
+  forwards `didChangeAppLifecycleState` (resumed ⇔ foregrounded) through
+  a `WidgetsBindingObserver`, seeding the flag at handler creation.
+  `test/rocker_foreground_test.dart` (9) pins both layers.
+- **C1 on the Pixel 6, final build (supervised, user present):**
+  backgrounded + screen-off with the server **`play`** — rocker up
+  *and* down left server volume at 36; foregrounded rocker 36→41;
+  paused immediately; restored `stop, volume=36, item_id=196174`
+  (byte-identical). Transcripts in the unit's Criterion 1 section.
+- **Gates (final code):** analyze 0 / format 43 files 0 changed /
+  140/140 / `flutter build apk --debug` ✓.
+
+**Environment at handoff:** server `stop, volume=36, item_id=196174`
+(byte-identical to the pre-window baseline). Pixel 6: final debug build
+running under `flutter run`, connected, config + permissions persisted.
+Dev AVD `RemoteDev_API_36` killed. Other session's emulator
+(`emulator-5556`) untouched. Next: **unit 004 (outputs/speakers)**.

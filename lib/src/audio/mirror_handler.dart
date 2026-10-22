@@ -36,6 +36,26 @@ List<MediaControl> controlsFor(PlayerState p) => p.isPlaying
     ? [MediaControl.pause, MediaControl.skipToNext, MediaControl.skipToPrevious]
     : [MediaControl.play, MediaControl.skipToNext, MediaControl.skipToPrevious];
 
+/// The rocker step for a volume direction (R-06, unit 003): `null` means no
+/// volume change — `same` is Android's key-release / end-of-sequence marker,
+/// not a change (spike Finding 10: mapping it to "lower" silently cancels
+/// every press and makes the volume drift down).
+int? rockerStepFor(AndroidVolumeDirection direction, {required int step}) {
+  if (direction == AndroidVolumeDirection.raise) return step;
+  if (direction == AndroidVolumeDirection.lower) return -step;
+  return null;
+}
+
+/// The session's volume-control type (D20): server-volume mapping only
+/// while the app is foregrounded. `absolute` routes rocker presses to the
+/// session; `fixed` takes the session out of volume-key selection so a
+/// backgrounded app leaves the phone's volume keys to their normal
+/// behaviour — even while the server is playing.
+AndroidVolumeControlType volumeControlTypeFor(bool appForeground) =>
+    appForeground
+    ? AndroidVolumeControlType.absolute
+    : AndroidVolumeControlType.fixed;
+
 /// The playback-state mirror. [positionMs] overrides the server progress
 /// (the 1 s extrapolation ticker feeds it while the server plays).
 PlaybackState playbackStateFor(PlayerState p, {int? positionMs}) =>
@@ -67,12 +87,27 @@ PlaybackState playbackStateFor(PlayerState p, {int? positionMs}) =>
 class MirrorAudioHandler extends BaseAudioHandler {
   MirrorAudioHandler(this._player) : super();
 
+  /// TODO(R-14): make the rocker step configurable in settings (P2).
   static const rockerStep = 5;
 
   final PlayerController _player;
   Timer? _positionTicker;
   bool _started = false;
   bool _woken = false;
+
+  /// D20: whether the app is foregrounded. Conservative default — a
+  /// service-restarted process (no UI) is backgrounded until the first
+  /// `AppLifecycleState.resumed`.
+  bool _appForeground = false;
+
+  /// Pushed from main() on every app lifecycle transition. Re-publishes the
+  /// playback info immediately so the session's volume-control type follows
+  /// the app without waiting for the next player change.
+  void setAppForeground(bool foreground) {
+    final changed = _appForeground != foreground;
+    _appForeground = foreground;
+    if (changed && _started) unawaited(_publishPlaybackInfo());
+  }
 
   Future<void> start() async {
     if (_started) return;
@@ -114,21 +149,28 @@ class MirrorAudioHandler extends BaseAudioHandler {
     // tick) is what keeps the notification progress honest.
     playbackState.add(playbackStateFor(p));
 
-    // Remote playback info: this routes volume-rocker presses to
-    // androidAdjustRemoteVolume instead of a local audio stream.
-    androidPlaybackInfo.add(
-      RemoteAndroidPlaybackInfo(
-        volumeControlType: AndroidVolumeControlType.absolute,
-        maxVolume: 100,
-        volume: p.volume,
-      ),
-    );
+    _publishPlaybackInfo();
 
     if (p.isPlaying) {
       _startPositionTicker(p);
     } else {
       _stopPositionTicker();
     }
+  }
+
+  /// Remote playback info: this routes volume-rocker presses to
+  /// [androidAdjustRemoteVolume] while foregrounded (D20: `fixed` type
+  /// while backgrounded keeps the keys on the system streams).
+  Future<void> _publishPlaybackInfo() async {
+    final p = _player.player;
+    if (p == null) return;
+    androidPlaybackInfo.add(
+      RemoteAndroidPlaybackInfo(
+        volumeControlType: volumeControlTypeFor(_appForeground),
+        maxVolume: 100,
+        volume: p.volume,
+      ),
+    );
   }
 
   void _startPositionTicker(PlayerState p) {
@@ -211,23 +253,23 @@ class MirrorAudioHandler extends BaseAudioHandler {
         AudioServiceRepeatMode.one => Repeat.single,
       });
 
-  // Volume rocker: the media session's remote volume provider routes rocker
-  // presses here (RemoteAndroidPlaybackInfo). Android routes the keys to the
-  // session only while it is selected (verified: playing, or app foreground);
-  // backgrounded + screen off the keys stay with the system streams.
+  // Volume rocker (D20, R-06): the session's remote volume provider routes
+  // rocker presses here while foregrounded (`absolute` volume-control type).
+  // Backgrounded, the session is published `fixed`, so Android leaves the
+  // keys to the system streams — and these overrides stay no-ops as a
+  // second layer against the transition window, where a key event could
+  // still arrive for a session the system was just deselecting.
   @override
-  Future<void> androidSetRemoteVolume(int volumeIndex) =>
-      _player.setVolume(volumeIndex);
+  Future<void> androidSetRemoteVolume(int volumeIndex) {
+    if (!_appForeground) return Future.value();
+    return _player.setVolume(volumeIndex);
+  }
 
   @override
   Future<void> androidAdjustRemoteVolume(AndroidVolumeDirection direction) {
-    // "same" is the key-release / end-of-sequence marker, not a volume
-    // change — treating it as "lower" cancels (or outraces) the press and
-    // makes the volume drift down.
-    if (direction == AndroidVolumeDirection.same) return Future.value();
-    final step = direction == AndroidVolumeDirection.raise
-        ? rockerStep
-        : -rockerStep;
+    if (!_appForeground) return Future.value();
+    final step = rockerStepFor(direction, step: rockerStep);
+    if (step == null) return Future.value();
     return _player.stepVolume(step);
   }
 }

@@ -52,6 +52,7 @@ reference and the origin of the dependency choices — not a code dependency.
 | D17 | ReTune install | Read-only reference (paired instance). No `pm clear`/uninstall/reinstall/settings changes. `am force-stop` allowed. |
 | D18 | ai-dlc | Work is organized as ai-dlc intents + units with explicit completion criteria and quality gates (backpressure). Artifacts committed per completed unit — that is the handoff mechanism. |
 | D19 | Other session's emulator | `Pixel_9_Pro_API_36` is owned by a separate session on this host. Never touched by this project. (Serial at last check: `emulator-5556` — serials shift, always re-verify; this project's dev AVD `RemoteDev_API_36` currently occupies `emulator-5554`.) |
+| D20 | Volume-rocker scope (2026-10-22, user) | The rocker maps to the server's master volume **only while the app is in the foreground**. Backgrounded (any screen state, any server state — including server `play`): the phone's volume keys perform their normal function; the app must never control volume in the background. Replaces S4's original "screen off + backgrounded" form. |
 
 ## 3. Scope — v1 (in)
 
@@ -60,7 +61,7 @@ reference and the origin of the dependency choices — not a code dependency.
 | S1 | Connection | Manual host + port entry, persisted; connection status surface; websocket lifecycle with reconnect + full refetch |
 | S2 | Now playing | Artwork, title/artist/album, progress + seek, elapsed/total, play/pause, prev/next, shuffle, repeat (off/all/single), consume, master volume slider |
 | S3 | Persistent notification | Media notification: artwork, metadata, transport controls; stays in sync with the server (WS-driven) |
-| S4 | Hardware volume rocker | → master volume (step), works with screen off + app backgrounded |
+| S4 | Hardware volume rocker | → master volume (step), **only while the app is foregrounded** (D20); backgrounded = normal phone volume, no server control |
 | S5 | Call handling | Pause on incoming call; auto-resume on call end (D9) |
 | S6 | Speakers / outputs | List, enable/disable (multi-select), per-output volume, PIN prompt for password-protected outputs |
 | S7 | Browse | Library browsing + playlists + play from lists. Exact depth (genres, composers, playlist folders, grid views) decided from the pruned capture inventory in `spec-authoring` |

@@ -6,7 +6,7 @@ import 'package:logger/logger.dart';
 
 import '../api/owntone_api.dart';
 import '../connection/connection_controller.dart';
-import 'pause_origin.dart';
+import 'call_pause.dart';
 import 'player_state.dart';
 
 /// The single source of truth for the server's player slice (R-02, R-03).
@@ -22,10 +22,11 @@ class PlayerController extends ChangeNotifier {
 
   final ConnectionController _conn;
   final Logger _logger;
-  final PauseOriginTracker _tracker = PauseOriginTracker();
+  final CallPauseTracker _tracker = CallPauseTracker();
 
   StreamSubscription<List<String>>? _eventsSub;
   StreamSubscription<void>? _refetchSub;
+  Timer? _flapTimer;
   ConnectionPhase? _lastPhase;
   bool _initialized = false;
   bool _disposed = false;
@@ -225,37 +226,63 @@ class PlayerController extends ChangeNotifier {
     optimistic: (p) => p.copyWith(volume: (p.volume + step).clamp(0, 100)),
   );
 
-  // -- call handling (D9) ----------------------------------------------------
+  // -- call handling (D9, R-08) ------------------------------------------------
 
-  /// RINGING: pause the server *only if it is playing*; otherwise the call
-  /// must not claim the pause (no auto-resume later).
+  /// A ringing→idle flap shorter than this must not pause the server
+  /// (unit 003 edge cases).
+  static const flapWindow = Duration(milliseconds: 500);
+
+  /// RINGING: start the flap window; the pause is issued only once the call
+  /// is confirmed (window elapsed, or the call connects).
   void onCallRinging() {
-    unawaited(_callPause(byCall: true));
+    if (!_tracker.onRinging()) return;
+    _flapTimer?.cancel();
+    _flapTimer = Timer(flapWindow, _onFlapWindowElapsed);
   }
 
-  /// IDLE: resume only if this app paused the server for the call.
-  Future<void> onCallEnded() async {
-    if (!_tracker.takeCallResume()) return;
-    await _action(
-      'Resume',
-      (api) => api.play(),
-      optimistic: (p) => p.copyWith(state: 'play'),
-    );
+  /// OFFHOOK: a connected call is real — confirm immediately, even without
+  /// a preceding RINGING event.
+  void onCallActive() {
+    _flapTimer?.cancel();
+    _flapTimer = null;
+    if (_tracker.onActive()) unawaited(_callPause(byCall: true));
   }
+
+  void _onFlapWindowElapsed() {
+    _flapTimer = null;
+    if (_tracker.onFlapWindowElapsed()) unawaited(_callPause(byCall: true));
+  }
+
+  /// IDLE: resume only if this app paused the server for the call (R-08);
+  /// when the pause is still in flight the resume is deferred to the ack
+  /// (see [CallPauseTracker.onIdle]).
+  Future<void> onCallEnded() async {
+    _flapTimer?.cancel();
+    _flapTimer = null;
+    if (_tracker.onIdle()) await _resumeAfterCall();
+  }
+
+  Future<void> _resumeAfterCall() => _action(
+    'Resume',
+    (api) => api.play(),
+    optimistic: (p) => p.copyWith(state: 'play'),
+  );
 
   Future<void> _callPause({required bool byCall}) async {
     final wasPlaying = _player?.isPlaying ?? false;
-    if (!wasPlaying) return; // nothing to pause — and the pause is not ours
-    if (byCall) {
-      // Claim the pause only once it has actually happened — a failed pause
-      // must not own the origin (or a later call-end would auto-resume a
-      // server that is still playing).
-      final ok = await _pause();
-      if (ok) _tracker.onCallStart(wasPlaying: wasPlaying);
-    } else {
+    if (!byCall) {
       _tracker.onUserPause();
       await _pause();
+      return;
     }
+    if (!wasPlaying) return; // nothing to pause — and the pause is not ours
+    // The origin is claimed only in [CallPauseTracker.onPauseFinished], once
+    // the pause has actually happened — a failed pause must not own the
+    // origin (or a later call-end would auto-resume a server that is still
+    // playing).
+    _tracker.onPauseIssued();
+    final ok = await _pause();
+    if (_tracker.onPauseFinished(ok)) await _resumeAfterCall();
   }
 
   Future<bool> _pause() => _action(
@@ -267,6 +294,7 @@ class PlayerController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _flapTimer?.cancel();
     _conn.removeListener(_onConnectionChanged);
     _eventsSub?.cancel();
     _refetchSub?.cancel();

@@ -20,6 +20,19 @@ final _logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
 bool _audioStarted = false;
 
+/// D20: the rocker may touch the server volume only while foregrounded; the
+/// handler needs the lifecycle state even though the audio service starts
+/// independently of the UI.
+MirrorAudioHandler? _audioHandler;
+
+/// Forwards app lifecycle transitions to the audio handler (D20).
+class _AppForegroundTracker extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _audioHandler?.setAppForeground(state == AppLifecycleState.resumed);
+  }
+}
+
 Future<void> main() async {
   // Debug builds: expose the semantics tree to uiautomator so UI checks can
   // read labels/bounds without image input. (3.41: SemanticsBinding is a
@@ -47,7 +60,7 @@ Future<void> main() async {
       case 'ringing':
         player.onCallRinging();
       case 'active':
-        break;
+        player.onCallActive();
       case 'idle':
         unawaited(player.onCallEnded());
       default:
@@ -70,6 +83,8 @@ Future<void> main() async {
     _logger.i('auto-connecting to $saved');
     await conn.connectTo(saved);
   }
+
+  WidgetsBinding.instance.addObserver(_AppForegroundTracker());
 
   runApp(
     MultiProvider(
@@ -97,6 +112,13 @@ Future<void> _initAudio(PlayerController player) async {
         androidStopForegroundOnPause: false,
         androidNotificationChannelName: 'OwnTone Remote',
       ),
+    );
+    _audioHandler = handler;
+    // Seed the D20 foreground flag with the current lifecycle (a normal
+    // launch is resumed; a service-only restart is not — and must not map
+    // rocker presses to the server until the app actually foregrounds).
+    handler.setAppForeground(
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
     );
     await handler.start();
   } catch (e) {
