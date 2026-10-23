@@ -14,11 +14,13 @@ import 'package:dio/dio.dart';
 /// treats it exactly like a real adapter failure.
 class ScriptedAdapter implements HttpClientAdapter {
   ScriptedAdapter({
-    Response<dynamic> Function(RequestOptions options)? responder,
+    FutureOr<Response<dynamic>> Function(RequestOptions options)? responder,
   }) : responder = responder ?? _defaultNotFound;
 
-  /// Swap this to change the server's behaviour mid-test.
-  Response<dynamic> Function(RequestOptions options) responder;
+  /// Swap this to change the server's behaviour mid-test. [FutureOr] so a
+  /// responder can gate a response behind a [Completer] (loading-state
+  /// tests, unit 005a).
+  FutureOr<Response<dynamic>> Function(RequestOptions options) responder;
 
   /// Every request line seen, in order, query string included when
   /// present (e.g. `PUT /api/player/volume?volume=80`).
@@ -30,9 +32,14 @@ class ScriptedAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    // `uri.path`, not `options.path`: dio copies a query string that is
+    // already part of the path (unit 005a genre search) into `path`
+    // verbatim, so `options.path` would duplicate the query here.
     final q = options.uri.query;
-    requests.add('${options.method} ${options.path}${q.isEmpty ? '' : '?$q'}');
-    final res = responder(options); // may throw a DioException
+    requests.add(
+      '${options.method} ${options.uri.path}${q.isEmpty ? '' : '?$q'}',
+    );
+    final res = await responder(options); // may throw a DioException
     final data = res.data;
     final bytes = data is String
         ? utf8.encode(data)

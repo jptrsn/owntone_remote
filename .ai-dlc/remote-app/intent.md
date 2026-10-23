@@ -38,7 +38,8 @@ hardcoding/ugliness). Units in dependency order:
 | 002 | now-playing (screen + notification hardening) | R-03, R-04, R-05, R-07 |
 | 003 | volume-rocker + call-handling | R-06, R-08 |
 | 004 | outputs / speakers | R-09 |
-| 005 | browse + queue + play | R-10, R-11 |
+| 005a | browse screens (split of 005) | R-10 |
+| 005b | queue + play actions (split of 005) | R-10, R-11 |
 | 006 | rating | R-12 |
 | — | search (R-13) — unit 007 if spec keeps it P1; else P2 backlog | R-13 |
 

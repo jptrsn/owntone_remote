@@ -10,6 +10,7 @@ import '../outputs/output.dart';
 import '../player/player_controller.dart';
 import '../player/player_state.dart';
 import '../settings/settings_store.dart';
+import 'browse_screens.dart';
 import 'connection_banner.dart';
 import 'outputs_screen.dart';
 import 'settings_screen.dart';
@@ -263,35 +264,60 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
                 ),
               ),
             ),
-          if (outputs.isNotEmpty) ...[
-            // Entry point to the Outputs screen (unit 004): the line is the
-            // remote's "current speaker" indicator (ReTune IA, D6) and opens
-            // the full list. "none" when the server has outputs but no
-            // output is selected — the screen is still reachable.
-            TextButton.icon(
-              onPressed: enabled
-                  ? () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const OutputsScreen(),
-                      ),
-                    )
-                  : null,
-              icon: const Icon(Icons.cast, size: 16),
-              label: Text(
-                'Playing via: ${selectedNames.isEmpty ? 'none' : selectedNames}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+          // Entry rows (unit 004 / 005a): "Playing via" is the remote's
+          // "current speaker" indicator (ReTune IA, D6) and opens the Outputs
+          // screen; "Library" opens the browse section. Both live here —
+          // not in the app bar — because a second app-bar icon overflows the
+          // 360-logical-pixel viewport by 9px (unit 004 finding). The row is
+          // always present so the Library entry exists even with no outputs.
+          Row(
+            children: [
+              if (outputs.isNotEmpty)
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: enabled
+                        ? () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const OutputsScreen(),
+                            ),
+                          )
+                        : null,
+                    icon: const Icon(Icons.cast, size: 16),
+                    label: Text(
+                      'Playing via: ${selectedNames.isEmpty ? 'none' : selectedNames}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: TextButton.styleFrom(
+                      textStyle: theme.textTheme.labelSmall,
+                      iconSize: 16,
+                      visualDensity: VisualDensity.compact,
+                      minimumSize: const Size(0, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
+              TextButton.icon(
+                onPressed: enabled
+                    ? () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const LibraryHomeScreen(),
+                        ),
+                      )
+                    : null,
+                icon: const Icon(Icons.library_music, size: 16),
+                label: const Text('Library'),
+                style: TextButton.styleFrom(
+                  textStyle: theme.textTheme.labelSmall,
+                  iconSize: 16,
+                  visualDensity: VisualDensity.compact,
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
-              style: TextButton.styleFrom(
-                textStyle: theme.textTheme.labelSmall,
-                iconSize: 16,
-                visualDensity: VisualDensity.compact,
-                minimumSize: const Size(0, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
+            ],
+          ),
+          const SizedBox(height: 12),
           // The artwork absorbs the slack: it takes the viewport width on a
           // tall screen and shrinks on a short one — always 1:1, never
           // scrolling (unit 001 criterion 8).

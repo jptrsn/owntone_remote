@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../library/library_models.dart';
 import '../outputs/output.dart';
 import '../player/player_state.dart';
 
@@ -45,6 +46,103 @@ class OwntoneApi {
     final data = res.data as Map<String, dynamic>;
     final list = data['outputs'] as List<dynamic>? ?? const [];
     return [for (final e in list) Output.fromJson(e as Map<String, dynamic>)];
+  }
+
+  // -- Library browse (R-10, unit 005a) ------------------------------------
+
+  Future<Paging<Playlist>> playlists({int offset = 0, int limit = 50}) async {
+    final res = await _dio.get(
+      '/api/library/playlists',
+      queryParameters: {'offset': offset, 'limit': limit},
+    );
+    return Paging.fromJson(res.data as Map<String, dynamic>, Playlist.fromJson);
+  }
+
+  Future<Paging<Track>> playlistTracks(
+    String id, {
+    int offset = 0,
+    int limit = 50,
+  }) async {
+    final res = await _dio.get(
+      '/api/library/playlists/$id/tracks',
+      queryParameters: {'offset': offset, 'limit': limit},
+    );
+    return Paging.fromJson(res.data as Map<String, dynamic>, Track.fromJson);
+  }
+
+  Future<Paging<Artist>> artists({int offset = 0, int limit = 50}) async {
+    final res = await _dio.get(
+      '/api/library/artists',
+      queryParameters: {'offset': offset, 'limit': limit},
+    );
+    return Paging.fromJson(res.data as Map<String, dynamic>, Artist.fromJson);
+  }
+
+  Future<Paging<Album>> artistAlbums(
+    String id, {
+    int offset = 0,
+    int limit = 50,
+  }) async {
+    final res = await _dio.get(
+      '/api/library/artists/$id/albums',
+      queryParameters: {'offset': offset, 'limit': limit},
+    );
+    return Paging.fromJson(res.data as Map<String, dynamic>, Album.fromJson);
+  }
+
+  Future<Paging<Album>> albums({int offset = 0, int limit = 50}) async {
+    final res = await _dio.get(
+      '/api/library/albums',
+      queryParameters: {'offset': offset, 'limit': limit},
+    );
+    return Paging.fromJson(res.data as Map<String, dynamic>, Album.fromJson);
+  }
+
+  Future<Paging<Track>> albumTracks(
+    String id, {
+    int offset = 0,
+    int limit = 50,
+  }) async {
+    final res = await _dio.get(
+      '/api/library/albums/$id/tracks',
+      queryParameters: {'offset': offset, 'limit': limit},
+    );
+    return Paging.fromJson(res.data as Map<String, dynamic>, Track.fromJson);
+  }
+
+  /// `GET /api/library/genres` — this server ignores `offset`/`limit`
+  /// (verified live 2026-10-23: `limit=3` returned all 79 genres), so no
+  /// paging parameters are sent; the response is still modeled as
+  /// [Paging].
+  Future<Paging<Genre>> genres() async {
+    final res = await _dio.get('/api/library/genres');
+    return Paging.fromJson(res.data as Map<String, dynamic>, Genre.fromJson);
+  }
+
+  /// Genre → albums via the search endpoint (docs/API.md):
+  /// `GET /api/search?type=albums&expression=genre is "…"`.
+  ///
+  /// The expression is pre-encoded with [Uri.encodeComponent] and placed in
+  /// the path rather than `queryParameters`: dio 5.11 percent-encodes
+  /// string query values with `Uri.encodeQueryComponent`, which would
+  /// (a) double-encode an already-encoded value and (b) emit `+` for
+  /// spaces instead of the spec'd `%20` (unit 005a C4). An existing query
+  /// string in the path is left untouched.
+  Future<Paging<Album>> genreAlbums(
+    String genre, {
+    int offset = 0,
+    int limit = 50,
+  }) async {
+    final expression = Uri.encodeComponent(genreExpression(genre));
+    final res = await _dio.get(
+      '/api/search?type=albums&expression=$expression'
+      '&offset=$offset&limit=$limit',
+    );
+    final data = res.data as Map<String, dynamic>;
+    return Paging.fromJson(
+      data['albums'] as Map<String, dynamic>,
+      Album.fromJson,
+    );
   }
 
   Future<void> play() => _put('/api/player/play');

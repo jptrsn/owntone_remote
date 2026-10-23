@@ -775,4 +775,61 @@ when C3 passes). **No push** (not requested).
 running (headless), app under `flutter run` (debug), connected. Other
 session's emulator + Pixel 6 untouched.
 
-**Next:** unit 005 (browse + queue + play).
+ **Next:** unit 005 (browse + queue + play).
+
+## 2026-10-23 (afternoon) — remote-app unit 005a DONE: browse screens (opencode)
+
+**Unit 005 (browse + queue + play) was split** into `005a` (browse
+screens, R-10) and `005b` (queue + play, R-10/R-11): the original unit
+spanned two feature areas with >3 major components. **005a is now DONE
+— all five criteria PASS.** Fully unattended-safe; no playback was
+started and the server stayed `stop` the whole time (verified before
+and after the device walk).
+
+**What shipped:** the whole browse section — library home (Playlists /
+Artists / Albums / Genres), the eight paged list screens, pagination
+(offset/limit 50, load-more within 300px of the end, de-dupe on stable
+keys, `total` respected), four states per list (skeleton / empty /
+error-retry / offline-stale), WS `database`/`update` invalidation, and
+the API-client browse surface.
+
+**The notable find — dio 5.11 genre-encoding (C4).** The first approach
+passed the `genre is "…"` expression via `queryParameters` pre-encoded,
+and dio's `encodeMap` ran `Uri.encodeQueryComponent` over it: double
+encoding (`%20`→`%2520`) and `+` for spaces. Fix: percent-encode the
+expression and embed it **in the request path** (`/api/search?type=
+albums&expression=…`), which dio leaves untouched. On-device wire
+capture of `R&B / Soul & Funk` shows
+`expression=genre%20is%20%22R%26B%20%2F%20Soul%20%26%20Funk%22` → 200 with
+the Black Pumas album; `curl` cross-checks confirm `&`/`/` decode
+server-side. An unencoded `&` in a `queryParameters` value would have
+split the query — the regression the encoding table guards.
+
+**Design change (recorded in the unit):** the Library entry is a
+text-button in the now-playing *body* beside "Playing via: …", not an
+app-bar icon — a second app-bar icon overflows the 360-logical-px test
+viewport by 9px (RenderFlex overflow in the existing viewport-fit
+tests).
+
+**Device evidence (dev AVD `emulator-5556`, live library):** all nine
+screens render live data (11 playlists; Daniela Andrade's 4 albums
+summing to 46 tracks as the artist row claims; Brass playlist tracks;
+Black Pumas album tracks; `R&B / Soul & Funk` → 1 album); live empty
+state (`Recently Added` → "This playlist is empty."); pagination proven
+by element-tree inspection — **artists 217/217 unique** and **genres
+79/79 unique**, `hasLoaded=true`, `error=null`; live offline demo
+(airplane mode) → banner + stale rows, reconnect → `sync: live` +
+refetch.
+
+**Gates green on final code:** `analyze` 0 · `format` 0 changed ·
+`flutter test --exclude-tags live` **+248** (175→248, +73) · `build apk
+--debug` ✓.
+
+**Commit:** `remote-app/005a` — unit done. **No push** (not requested).
+
+**Environment at handoff:** server `stop, volume=36, item_id=196174`.
+Dev AVD `emulator-5556` running (headless), app under `flutter run`
+(debug), `sync: live`. Other session's emulator + Pixel 6 untouched.
+
+**Next:** unit 005b (queue view + play-from-list/queue, R-11) — the
+`supervised_steps: [1]` (first live play) needs a supervised window.

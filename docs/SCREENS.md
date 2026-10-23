@@ -240,3 +240,72 @@ per D6); the app bar stays as specified in unit 001/002.
 | Empty server | "No outputs on this server." |
 | Offline | banner up; checkboxes + sliders disabled; stale rows stay visible |
 | Sync error | error strip over the stale list; controls stay enabled (REST may still work — R-02) |
+
+## Library browse (R-10)
+
+Specified in unit 005a. Reached from the now-playing body's "Library" text
+button, beside the "Playing via: …" line (unit 004/005a: a *second*
+app-bar icon overflows the 360-logical-px viewport by 9px, so the entry
+lives in the body; the row is always present so the entry exists even
+with no outputs). All rows are disabled while offline, like the rest of
+the app.
+
+### Screens
+
+One screen per list, all sharing `BrowseScreenScaffold` + `PagedBrowseList`
+(app bar title + back, offline banner, paged body):
+
+| Screen | Row fields (secondary) |
+|---|---|
+| Library home | Playlists / Artists / Albums / Genres (section rows, chevron) |
+| Playlists | `smart playlist` / `playlist` / `folder` · `N items` |
+| Artists | `N albums · M tracks` |
+| Albums | `artist · year` (each omitted when absent/0) |
+| Genres | `N tracks · M albums` |
+| Artist → albums | album fields (as Albums) |
+| Genre → albums | album fields (as Albums) |
+| Album → tracks | `track N` · `M:SS` length |
+| Playlist → tracks | `track` · artist · `M:SS` (no number — playlist order is not album order) |
+
+Rows carry a compound semantics label
+(`<name>, <kind>, <fields>`) for deterministic UI checks.
+
+### Data
+
+| List | Endpoint |
+|---|---|
+| Playlists | `GET /api/library/playlists` |
+| Playlist tracks | `GET /api/library/playlists/{id}/tracks` |
+| Artists | `GET /api/library/artists` |
+| Artist albums | `GET /api/library/artists/{id}/albums` |
+| Albums | `GET /api/library/albums` |
+| Album tracks | `GET /api/library/albums/{id}/tracks` |
+| Genres | `GET /api/library/genres` (server ignores `offset`/`limit` — none sent) |
+| Genre albums | `GET /api/search?type=albums&expression=genre%20is%20%22<name>%22` |
+
+- **Pagination:** `offset`/`limit=50`; a scroll position within
+  `300px` of the end fetches the next page; items de-duplicate on stable
+  keys (id, or name for id-less genres); `total` is respected (no fetch
+  past it). Proven on-device: genres 79/79 and artists 217/217 unique.
+- **Genre expression encoding (unit 005a finding):** the expression
+  `genre is "<name>"` (inner `"` escaped to `\"`) is percent-encoded with
+  `Uri.encodeComponent` and embedded **in the request path**, not in
+  `queryParameters` — dio 5.11 percent-encodes string query values with
+  `Uri.encodeQueryComponent`, which would (a) double-encode an
+  already-encoded value and (b) emit `+` for spaces instead of the
+  spec'd `%20`. On-device wire proof: `R&B / Soul & Funk` →
+  `expression=genre%20is%20%22R%26B%20%2F%20Soul%20%26%20Funk%22`, which the
+  server decoded and matched (1 album). A bare `/api/search`
+  `queryParameters` value with an unencoded `&` would have split the
+  query — the regression the encoding table guards.
+- **Invalidation:** WS `database`/`update` events refetch the open list;
+  a transition back to `connected` refetches too (R-02).
+
+### States (every list)
+
+| State | Rendering |
+|---|---|
+| First fetch | skeleton rows |
+| Empty | icon + one-liner ("No albums in Rock.", "This playlist is empty.", …) |
+| Error | retry button (retries the first page) |
+| Offline | banner up; stale rows stay; rows disabled; reconnect refetches |
