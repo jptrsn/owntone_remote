@@ -14,16 +14,16 @@ Clean-room re-implementation of ReTune's UX in Material 3, speaking only the
 OwnTone JSON API + websocket. No DACP/DAAP, no ReTune code/assets, no
 iTunes-specific features.
 
-Status: **remote-app unit 003 (volume-rocker + call-handling) DONE
-(2026-10-22): all six criteria PASS, incl. C1 (rocker, R-06) on the
-Pixel 6.** C1 was rescoped mid-test by the user (D20: the rocker maps
-to server volume **only while the app is foregrounded**; backgrounded,
-the phone's volume keys behave normally and the app never touches
-server volume — even while the server plays). The foreground guard +
-9 unit tests were added, and all three C1 forms PASS on-device:
-foreground (server stopped) 36→41→36, backgrounded (server stopped)
-untouched, and the supervised backgrounded-`play` non-interference.
-Unit 004 (outputs/speakers) is next.
+ Status: **remote-app unit 004 (outputs/speakers) DONE (2026-10-23):
+ all six criteria PASS**, incl. the supervised C3 audio move
+ (Volumio Kitchen ↔ Server/ALSA, playing-guard dialog as the in-product
+ confirmation, byte-identical restore). C3 surfaced a stale-cache guard
+ skip → hardened with `PlayerController.refreshState()` + a regression
+ test. (Unit 003, volume-rocker + call-handling, was DONE 2026-10-22 —
+ see the log.) **Unit 005 (browse + queue + play) is next.**
+ Note: the Chromecast remote outputs on this server fail to select
+ server-side — treat **Volumio Kitchen (AirPlay)** and **Server (ALSA)**
+ as the two reliable outputs for any audio-routing test.
 
 ## Hard rules (read before anything else)
 
@@ -62,9 +62,9 @@ unexpectedly.
 
 ### 2. Device isolation
 
-- `emulator-5554` (`Pixel_9_Pro_API_36`, Android 16) belongs to **a separate
-  session on this host**. Never run adb against it, never stop or install on it,
-  never use its AVD.
+- `Pixel_9_Pro_API_36` (Android 16; serial `emulator-5554` as of 2026-10-22)
+  belongs to **a separate session on this host**. Never run adb against it,
+  never stop or install on it, never use its AVD.
 - This project's AVDs (created by the units that specify them):
   - `Retune_API_33` — Android 13, **capture only** (ReTune reference)
   - `RemoteDev_API_36` — Android 16, **dev / test / QA**
@@ -74,9 +74,9 @@ unexpectedly.
 
 | Role | AVD / device | Serial |
 |---|---|---|
-| Other session — HANDS OFF | `Pixel_9_Pro_API_36` | `emulator-5556` (verified 2026-10-09; was `-5554` on 2026-10-08 — **serials shift when other emulators start; always re-verify via `avdmanager list`/emulator logs, never trust a remembered serial**) |
+| Other session — HANDS OFF | `Pixel_9_Pro_API_36` | `emulator-5554` (verified 2026-10-22 via `ro.boot.qemu.avd_name`; was `-5556` on 2026-10-09, `-5554` on 2026-10-08 — **serials shift when other emulators start; always re-verify via `adb shell getprop ro.boot.qemu.avd_name`, never trust a remembered serial**) |
 | Capture | `Retune_API_33` | _record on creation_ |
-| Dev / test / QA | `RemoteDev_API_36` | `emulator-5554` (verified 2026-10-09) |
+| Dev / test / QA | `RemoteDev_API_36` | `emulator-5556` (verified 2026-10-22; was `-5554` on 2026-10-09) |
 | Real device — volume-key routing tests | Pixel 6 (oriole, Android 16, **no SIM** — cannot receive calls) | `25071FDF600953` (connected 2026-10-10) |
 | Release candidate | Pixel 10 (GrapheneOS) | _record when connected_ |
 

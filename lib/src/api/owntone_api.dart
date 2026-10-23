@@ -72,6 +72,34 @@ class OwntoneApi {
   Future<void> stepVolume(int step) =>
       _put('/api/player/volume', {'step': step});
 
+  /// Per-output volume (R-09). OwnTone 29.3 takes `output_id` on the same
+  /// player-volume endpoint as the master volume.
+  Future<void> setOutputVolume(String outputId, int volume) =>
+      _put('/api/player/volume', {'volume': volume, 'output_id': outputId});
+
+  /// Enables exactly this set of outputs and disables the rest — one call
+  /// for multi-select, never N per-output toggles (R-09, docs/API.md).
+  Future<void> setOutputs(List<String> outputIds) =>
+      _dio.put('/api/outputs/set', data: {'outputs': outputIds});
+
+  /// Per-output write used by the PIN flow (R-09): enabling a
+  /// `has_password` / `needs_auth_key` output sends `selected: true` plus
+  /// the `pin` on the single-output endpoint — `/outputs/set` has no pin
+  /// parameter.
+  Future<void> setOutput(
+    String outputId, {
+    bool? selected,
+    int? volume,
+    String? pin,
+  }) async {
+    final body = <String, dynamic>{
+      'selected': ?selected,
+      'volume': ?volume,
+      'pin': ?pin,
+    };
+    await _dio.put('/api/outputs/$outputId', data: body);
+  }
+
   Future<void> _put(String path, [Map<String, dynamic>? query]) =>
       _dio.put(path, queryParameters: query);
 }

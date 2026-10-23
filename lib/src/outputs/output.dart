@@ -24,6 +24,16 @@ class Output {
   final bool needsAuthKey;
   final int? volume;
 
+  Output copyWith({bool? selected, int? volume}) => Output(
+    id: id,
+    name: name,
+    type: type,
+    selected: selected ?? this.selected,
+    hasPassword: hasPassword,
+    needsAuthKey: needsAuthKey,
+    volume: volume ?? this.volume,
+  );
+
   factory Output.fromJson(Map<String, dynamic> json) => Output(
     id: (json['id'] ?? '').toString(),
     name: json['name'] as String? ?? '',

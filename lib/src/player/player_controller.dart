@@ -101,6 +101,17 @@ class PlayerController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  /// One-shot fresh read of the player slice for guardrail decisions
+  /// (unit 004 hardening): the guard must not trust the cached slice,
+  /// which can lag the server (observed 2026-10-23: a long-lived instance
+  /// served a stale non-playing state while the server played). Refetches
+  /// and returns the fresh state; keeps the last known state if the
+  /// refetch fails.
+  Future<PlayerState?> refreshState() async {
+    await _refreshAll();
+    return _player;
+  }
+
   /// Runs a server call with an optimistic UI update (unit 002,
   /// SCREENS.md "Interaction design"): [optimistic] is applied to the
   /// current state and the listeners fire immediately; on success the

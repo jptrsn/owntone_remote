@@ -11,6 +11,7 @@ import '../player/player_controller.dart';
 import '../player/player_state.dart';
 import '../settings/settings_store.dart';
 import 'connection_banner.dart';
+import 'outputs_screen.dart';
 import 'settings_screen.dart';
 
 /// The connected state of the app: the live now-playing mirror of the
@@ -157,7 +158,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                   )
                 : NowPlayingBody(
                     controller: controller,
-                    outputs: outputs.selected,
+                    outputs: outputs.outputs,
                     enabled: enabled,
                     displayMs: _displayMs,
                   ),
@@ -185,6 +186,9 @@ class NowPlayingBody extends StatefulWidget {
   });
 
   final PlayerController controller;
+
+  /// All server outputs; the "Playing via" line shows the selected ones and
+  /// is the entry point to the Outputs screen (unit 004).
   final List<Output> outputs;
   final bool enabled;
   final int? displayMs;
@@ -224,6 +228,10 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
     final theme = Theme.of(context);
     final enabled = widget.enabled;
     final outputs = widget.outputs;
+    final selectedNames = outputs
+        .where((o) => o.selected)
+        .map((o) => o.name)
+        .join(', ');
 
     final totalMs = item?.lengthMs ?? p.itemLengthMs ?? 0;
     final currentMs = NowPlayingBody.displayedProgressMs(
@@ -256,9 +264,31 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
               ),
             ),
           if (outputs.isNotEmpty) ...[
-            Text(
-              'Playing via: ${outputs.map((o) => o.name).join(', ')}',
-              style: theme.textTheme.labelSmall,
+            // Entry point to the Outputs screen (unit 004): the line is the
+            // remote's "current speaker" indicator (ReTune IA, D6) and opens
+            // the full list. "none" when the server has outputs but no
+            // output is selected — the screen is still reachable.
+            TextButton.icon(
+              onPressed: enabled
+                  ? () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const OutputsScreen(),
+                      ),
+                    )
+                  : null,
+              icon: const Icon(Icons.cast, size: 16),
+              label: Text(
+                'Playing via: ${selectedNames.isEmpty ? 'none' : selectedNames}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              style: TextButton.styleFrom(
+                textStyle: theme.textTheme.labelSmall,
+                iconSize: 16,
+                visualDensity: VisualDensity.compact,
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
             ),
             const SizedBox(height: 12),
           ],

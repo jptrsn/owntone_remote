@@ -21,7 +21,7 @@ reachable one tap away.
 | Settings (server host/port) | specified in unit 001 (see its Result) | R-01, R-14 |
 | **Now playing** | below | R-03, R-04, R-05, R-07 |
 | Notification (persistent) | below | R-07 |
-| Outputs / speakers | TBD (`spec-authoring`) | R-09 |
+| **Outputs / speakers** | below (unit 004) | R-09 |
 | Library browse (playlists / artists / albums / genres) | TBD | R-10 |
 | Queue | TBD | R-11 |
 | Rating (stars on rows + now playing) | TBD | R-12 |
@@ -174,3 +174,69 @@ the shade / on the lock screen.
   - audio_service 0.18.19 one-shot media-button dispatch per app process
     (Finding 5) — affects repeated notification-button presses;
     resolved or accepted in unit 003.
+
+---
+
+## Outputs / speakers (R-09)
+
+Specified in unit 004. Reached from the now-playing "Playing via: …" line
+(tappable, cast icon — the remote's current-speaker indicator, ReTune IA
+per D6); the app bar stays as specified in unit 001/002.
+
+### Layout (top → bottom, scrolls)
+
+1. **App bar** — "Outputs", back.
+2. **Offline banner** (app-wide) / **sync-error strip** (same as now
+   playing).
+3. **Output rows**, one per `GET /api/outputs` entry, server order. Each
+   row: checkbox (selected state) · name · type string · lock marker if
+   `has_password`/`needs_auth_key` · numeric volume label · per-output
+   volume slider (0–100).
+
+- **Type rendering:** the string as-is (`Chromecast`, `AirPlay 1`,
+  `ALSA`, …). No icons, no parsing — unknown types are display-only text
+  (docs/API.md).
+- Rows carry a compound semantics label
+  (`<name>, <type>, selected|not selected, volume N`) so UI checks can
+  read them deterministically.
+
+### Data
+
+- `/api/outputs` → the row list. WS `outputs` (and `volume`) events and
+  reconnects refetch the whole list (D2). No per-output polling.
+
+### Actions → endpoints
+
+| Control | Endpoint | Notes |
+|---|---|---|
+| Checkbox (enable/disable) | `PUT /api/outputs/set` | **one** call with the **full** selected-id list — never N per-output toggles |
+| Checkbox (protected output, enabling) | PIN dialog → `PUT /api/outputs/{id}` `selected: true, pin: …` | `/set` has no pin param; wrong PIN = server 4xx surfaced, output stays disabled |
+| Volume slider (release) | `PUT /api/player/volume?volume=N&output_id=…` | commit on release |
+
+### Interaction design (decided in unit 004)
+
+- **Playing-guard dialog (user decision 2026-10-22):** while the server
+  state is `play`, *any* selection change redirects live audio — a
+  confirmation dialog ("Server is playing — moving outputs redirects
+  live audio. Continue?") appears before the change. Paused/stopped: no
+  dialog. Volume changes are never guarded (no audio redirect).
+- **Optimistic updates with rollback** (same contract as now playing):
+  the checkbox flips / volume label moves immediately; the confirming
+  refetch reconciles; a failed call (5xx / network / 4xx) rolls back and
+  shows a **snackbar** with the typed error.
+- **Drag-state volume sliders** (spike Finding 14): while a finger is
+  down, the slider + label follow the finger and ignore server updates;
+  one REST call per release.
+- **Empty set** is a legal selection (disables all outputs); the server's
+  answer to `PUT /api/outputs/set` with `{"outputs": []}` is recorded in
+  the unit's Result.
+
+### States
+
+| State | Rendering |
+|---|---|
+| First fetch | spinner (connected) / "Waiting for the server…" (not connected) |
+| Loaded | rows, checkboxes + sliders enabled |
+| Empty server | "No outputs on this server." |
+| Offline | banner up; checkboxes + sliders disabled; stale rows stay visible |
+| Sync error | error strip over the stale list; controls stay enabled (REST may still work — R-02) |

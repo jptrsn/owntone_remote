@@ -608,3 +608,171 @@ and committed.**
 running under `flutter run`, connected, config + permissions persisted.
 Dev AVD `RemoteDev_API_36` killed. Other session's emulator
 (`emulator-5556`) untouched. Next: **unit 004 (outputs/speakers)**.
+
+## 2026-10-22 (night) — remote-app unit 004 in progress: safe criteria done, C3 pending supervision (opencode)
+
+Session scope: unit 004 (outputs/speakers, R-09). User stepped away for
+the night after a clarification round (decisions: no commit while the
+unit is in_progress; write the Outputs section into SCREENS.md; add an
+in-app confirmation before output changes while the server plays;
+pre-approved temp dir instead of /tmp). Server baseline verified first:
+`stop, volume=36, item_id=196174`; live output set = 10 outputs with
+**Volumio Kitchen (AirPlay 1) selected only** — the user had unplugged
+the office AirPlay output that day, so the unit's remembered set was
+stale (live `GET /api/outputs` treated as authoritative; restored
+byte-identical after every change).
+
+**Environment discovery (serials shifted again):** `emulator-5554` is
+now the **other session's** `Pixel_9_Pro_API_36` (verified via
+`ro.boot.qemu.avd_name` + an active `flutter run` there — hands off).
+`RemoteDev_API_36` booted headless onto `emulator-5556` (verified by
+avd_name). AGENTS.md device table updated (both serials + a note that
+`getprop ro.boot.qemu.avd_name` is the re-verification method).
+
+**Did:**
+
+- **Code:** `OwntoneApi` gained `setOutputs` (one `PUT /api/outputs/set`,
+  JSON body = full id list), `setOutput` (`PUT /api/outputs/{id}` —
+  selected/pin/volume; the PIN path), `setOutputVolume`
+  (`PUT /api/player/volume?volume=N&output_id=`). `OutputsController`:
+  pure `selectedIdsAfterToggle` (server order), `toggle` /
+  `enableWithPin` / `setOutputVolume` with the unit-002 contract
+  (optimistic → confirming refetch → rollback + typed
+  `actionError`/`actionErrorSeq`), `syncError`, no-op while
+  disconnected. `OutputsScreen` (new): checkbox row (name · type
+  string as-is · lock marker · volume label · commit-on-release
+  per-output slider, drag-state per Finding 14), compound semantics
+  labels, empty/loading/offline/sync-error states, snackbar on failure,
+  **playing-guard dialog** before any selection change while the server
+  is `play` (user decision). Entry point = the now-playing "Playing
+  via: …" line made tappable (cast icon; "none" when nothing selected)
+  — a third app-bar icon overflowed the 360-logical viewport by 9 px,
+  so the app bar stays as unit 001/002 specified it. SCREENS.md gained
+  the Outputs section.
+- **Tests 140 → 174, all green** (+34): set math (6), controller
+  one-PUT/rollback/PIN-4xx/volume/WS-refetch (13), API wire format (6),
+  screen rendering/PIN/guard/offline/empty (8). One real bug caught by
+  the PIN widget test: the Unlock button's enabled state was
+  build-time-only (typing never re-enabled it) — fixed with
+  `onChanged → setState` (+ `onSubmitted`).
+- **Gates (final code):** analyze 0 / format 48 files 0 changed /
+  174/174 / `flutter build apk --debug` ✓.
+- **On-device (dev AVD `emulator-5556`, app under `flutter run`, server
+  `stop` throughout):**
+  - **C1 PASS** — Outputs screen rows (uiautomator semantics, list
+    scrolled across two dumps) vs same-moment `GET /api/outputs`:
+    10/10, all fields, server order (`True` in the programmatic
+    diff; transcript in the unit Result).
+  - **C2 PASS** — mock OwnTone on the Mac (`192.168.1.85:3690`,
+    pure `dart:io`, logs method+path+body; app pointed at it via the
+    persisted-config file — run-as edit + relaunch, since adb
+    `input text` mangled the host field; config restored to
+    `192.168.1.13:3689` after, reconnect verified). Capture: one
+    `PUT /api/outputs/set body={"outputs":["m1","m2"]}` per toggle,
+    no per-output selection PUTs; armed-500 → checkbox rolled back +
+    snackbar `Outputs failed — server answered HTTP 500.`; un-armed
+    retry → selected. Bonus stray tap proved the per-output volume
+    endpoint shape on-device.
+  - **C4 PASS** — Bathroom display volume 50 → 64 → 50 via the
+    row slider (server `stop`); each commit verified by
+    `GET /api/outputs`; final outputs JSON **byte-identical** to the
+    pre-test baseline.
+  - **Empty-set probe (unit step note)** — `PUT /api/outputs/set
+    {"outputs": []}` → 204, **all outputs deselected** (app reflected
+    it live via WS); restored with the single-id set → byte-identical.
+  - **C5** — PASS via the fake-output widget/controller tests (PIN
+    dialog, selected+pin body, 4xx stays disabled). Live gap: no
+    protected outputs on this server.
+- **C3 BLOCKED-PENDING-SUPERVISION** — user absent; never played.
+  Procedure written into the unit Result (guard dialog = the
+  in-product confirmation; play→toggle→verify→toggle-back→pause→stop;
+  final `/api/outputs` must be byte-identical; paste transcript,
+  re-run gates, flip frontmatter `done`, commit `remote-app/004: <why>`).
+
+**Incident addendum (late night):** a transient adb blip killed the
+first `flutter run` ("Lost connection to device") while the app process
+survived; a second `flutter run` re-attached cleanly (app auto-
+connected, `sync: live`, `Playing via: Volumio Kitchen` — verified).
+Also: one full-suite re-run showed a single flaky failure
+(+152 -1, name not captured); two subsequent full runs were 174/174
+green. The gate command is green; the flake is noted for the C3 window
+(re-run the gate; if it recurs, name it and fix it before the commit).
+
+**Environment at handoff:** server `stop, volume=36, item_id=196174`,
+`/api/outputs` byte-identical to the session baseline. Dev AVD
+`emulator-5556` **left running (headless)** with the app under
+`flutter run` (second launch after the adb blip) connected to the real
+server — ready for the C3 window. Mock server killed. Other session's
+emulator (`emulator-5554`) and the Pixel 6 untouched. **No commit**
+(unit in_progress — user decision).
+
+**Next (C3 window, user present):** run the unit-Result procedure
+(play → guarded toggle → audio-follow check → restore → pause/stop →
+byte-identical verify), transcript into the unit Result, re-run the 4
+gates, set frontmatter `status: done`, append this log, commit
+`remote-app/004: <why>`. Then unit 005 (browse + queue + play).
+
+## 2026-10-23 (morning) — remote-app unit 004 DONE: C3 supervised PASS, guard hardening (opencode)
+
+**Unit 004 (outputs/speakers, R-09) is done — all six criteria PASS.**
+C3 (the supervised audio move) ran with the user present this morning.
+
+**User decisions this window:**
+- **Restrict remote-output testing to Volumio Kitchen only.** All
+  Chromecast-type remote outputs **fail server-side when selected**
+  (user observation; confirmed live — a toggle to Kitchen display never
+  flipped `selected`). So the A→B second output was the local
+  **`Server` (ALSA)** output, per user instruction. (Note for later
+  units: Volumio Kitchen + Server are the two reliable outputs.)
+- The in-app **playing-guard dialog** is the in-product confirmation
+  (user decision 2026-10-22, carried into C3).
+
+**C3 PASS** — transcript in the unit Result. Summary:
+- 09:27:10 app play → `state: play` (audio on Volumio Kitchen).
+- 09:28:20 enable `Server` → guard dialog (`state=play`) → Continue →
+  `selected: [Volumio Kitchen, Server]`; user heard audio on both.
+- 09:53:18 disable Volumio Kitchen → dialog → Continue →
+  `selected: [Server]`; **user: "Server output only — move worked"**
+  (the A→B core evidence).
+- 10:07–10:15 re-enable Volumio, disable Server (both dialog-guarded)
+  → `selected: [Volumio Kitchen]`; user: "Volumio Kitchen only —
+  original state".
+- 10:19:45 app pause → `pause`; 10:22:35 app stop →
+  `stop, volume=36, item=196174`.
+- Final `GET /api/outputs` **byte-identical** to the pre-test baseline.
+
+**Guard anomaly found + fixed during C3.** The first two guard taps on
+the long-lived instance skipped the dialog — the guard read a **stale
+non-playing cached player state** while the server was playing. A fresh
+instance behaved correctly, isolating it to the cached-slice read. Fix:
+the guard now calls a new `PlayerController.refreshState()` (one-shot
+refetch, cache fallback only when the refetch is impossible) before
+deciding. Regression test `outputs_screen_test.dart` "stale cache (…):
+refetch forces the dialog" drives the fixture to `play` with no WS
+event (cache stays `pause`) and asserts the dialog appears — **verified
+to fail without the fix** (reverted → red; restored → green).
+
+**Incidents (all resolved, server left `stop`):**
+- **Incidental playback ~40 s**: a restore-step tap hit the play arrow
+  and resumed Volumio Kitchen for ~40 s before I paused via the API and
+  verified `pause`. User present; recorded per the accidental-playback
+  rule.
+- **OwnTone volume-sync side-effect**: deselecting Volumio Kitchen made
+  the server rewrite its stored per-output volume `36 → 8` (the ALSA
+  value). Server behaviour, not an app bug (app sent only
+  `/outputs/set` in the C3 window). Restored to 36 via a direct
+  `PUT /api/player/volume?…&output_id=` for the byte-identical final.
+
+**Gates re-run green on final code** (after C3 + guard fix):
+`analyze` 0 · `format` 0 changed · `flutter test --exclude-tags live`
+**+175** (140→175, +35) · `build apk --debug` ✓.
+
+**Commit:** `remote-app/004` — unit done (user decision: commit only
+when C3 passes). **No push** (not requested).
+
+**Environment at handoff:** server `stop, volume=36, item_id=196174`,
+`/api/outputs` byte-identical to baseline. Dev AVD `emulator-5556` still
+running (headless), app under `flutter run` (debug), connected. Other
+session's emulator + Pixel 6 untouched.
+
+**Next:** unit 005 (browse + queue + play).
