@@ -23,12 +23,19 @@ class BrowseScreenScaffold extends StatefulWidget {
     required this.body,
     this.onReconnect,
     this.onLibraryChanged,
+    this.actions,
+    this.offlineMessage = 'Server unreachable — retrying. Browsing disabled.',
   });
 
   final String title;
   final Widget body;
   final VoidCallback? onReconnect;
   final VoidCallback? onLibraryChanged;
+
+  /// App-bar actions (unit 005b: the queue screen's clear button).
+  final List<Widget>? actions;
+
+  final String offlineMessage;
 
   @override
   State<BrowseScreenScaffold> createState() => _BrowseScreenScaffoldState();
@@ -70,13 +77,10 @@ class _BrowseScreenScaffoldState extends State<BrowseScreenScaffold> {
     }
     final enabled = conn.phase == ConnectionPhase.connected;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(title: Text(widget.title), actions: widget.actions),
       body: Column(
         children: [
-          if (!enabled)
-            const ConnectionBanner(
-              message: 'Server unreachable — retrying. Browsing disabled.',
-            ),
+          if (!enabled) ConnectionBanner(message: widget.offlineMessage),
           Expanded(child: widget.body),
         ],
       ),

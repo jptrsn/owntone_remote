@@ -10,6 +10,7 @@ import 'src/call/call_state.dart';
 import 'src/connection/connection_controller.dart';
 import 'src/outputs/outputs_controller.dart';
 import 'src/player/player_controller.dart';
+import 'src/queue/queue_controller.dart';
 import 'src/settings/settings_store.dart';
 import 'src/ui/root_screen.dart';
 
@@ -48,9 +49,16 @@ Future<void> main() async {
   final conn = ConnectionController(logger: _logger);
   final player = PlayerController(connection: conn);
   final outputs = OutputsController(connection: conn);
+  final queue = QueueController(connection: conn);
   await player.init();
   await outputs.init();
-  debugGlobals = {'conn': conn, 'player': player, 'outputs': outputs};
+  await queue.init();
+  debugGlobals = {
+    'conn': conn,
+    'player': player,
+    'outputs': outputs,
+    'queue': queue,
+  };
 
   // Call handling (D9): pause on ringing, auto-resume on idle when the call
   // caused the pause.
@@ -93,6 +101,7 @@ Future<void> main() async {
         ChangeNotifierProvider<ConnectionController>.value(value: conn),
         ChangeNotifierProvider<PlayerController>.value(value: player),
         ChangeNotifierProvider<OutputsController>.value(value: outputs),
+        ChangeNotifierProvider<QueueController>.value(value: queue),
       ],
       child: const OwntoneRemoteApp(),
     ),

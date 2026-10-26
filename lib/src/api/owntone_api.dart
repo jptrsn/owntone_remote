@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../library/library_models.dart';
 import '../outputs/output.dart';
 import '../player/player_state.dart';
+import '../queue/queue_item.dart';
 
 /// Thin OwnTone JSON API client (docs/API.md). One instance per configured
 /// server; the base URL is set by the ConnectionController (R-01).
@@ -143,6 +144,44 @@ class OwntoneApi {
       data['albums'] as Map<String, dynamic>,
       Album.fromJson,
     );
+  }
+
+  // -- Queue (R-11, unit 005b) ----------------------------------------------
+
+  /// The whole queue in server order (`GET /api/queue`).
+  Future<List<QueueItem>> getQueue() async {
+    final res = await _dio.get('/api/queue');
+    final data = res.data as Map<String, dynamic>;
+    final items = data['items'] as List<dynamic>? ?? const [];
+    return [
+      for (final e in items)
+        QueueItem.fromJson(e as Map<String, dynamic>, _baseUrl),
+    ];
+  }
+
+  /// `PUT /api/queue/clear` — 204. Safe while paused/stopped (no audio
+  /// flows); while playing it empties the live session's remaining items.
+  Future<void> clearQueue() => _put('/api/queue/clear');
+
+  /// Queue play (docs/API.md): **one** `POST /api/queue/items/add` replaces
+  /// the clear→add→play ceremony. [uris] are the play targets
+  /// (`library:track:…`, `library:album:…`, …) comma-joined server-side.
+  /// [startPlayback] is the supervised path — it makes the server play.
+  Future<List<QueueItem>> playUris(
+    List<String> uris, {
+    bool clear = false,
+    bool startPlayback = false,
+  }) async {
+    final query = <String, dynamic>{'uris': uris.join(',')};
+    if (clear) query['clear'] = 'true';
+    if (startPlayback) query['playback'] = 'start';
+    final res = await _dio.post('/api/queue/items/add', queryParameters: query);
+    final data = res.data as Map<String, dynamic>;
+    final items = data['items'] as List<dynamic>? ?? const [];
+    return [
+      for (final e in items)
+        QueueItem.fromJson(e as Map<String, dynamic>, _baseUrl),
+    ];
   }
 
   Future<void> play() => _put('/api/player/play');

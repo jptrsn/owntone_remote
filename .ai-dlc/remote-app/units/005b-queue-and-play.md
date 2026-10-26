@@ -1,6 +1,6 @@
 ---
 name: 005b-queue-and-play
-status: pending
+status: done
 intent: remote-app
 supervised_steps: [1]
 ---
@@ -24,8 +24,10 @@ artist) and from the queue — one
 - API client surface (faked unit tests): `getQueue` (full `items[]`),
   `clearQueue`, `playUris(uris, {clear, playback})`.
 - Queue screen: rows in server order; the now-playing row highlighted via
-  `PlayerState.item_id` (verify live whether `item_id` matches the queue
-  item's `id` or its `track_id` — API.md is ambiguous); clear button
+  `PlayerState.item_id`. **VERIFIED LIVE 2026-10-23:** `item_id` matches
+  the queue item's **`id`** (196174 = position 0, "Skunk", whose
+  `track_id` is 1195), not `track_id` — the queue item `id` is a
+  per-queue-entry counter, `track_id` is the library id. clear button
   (`PUT /api/queue/clear` — safe while paused/stopped); WS `queue`
   refresh (R-02).
 - Play actions (all **supervised**): track → its `uri`
@@ -53,4 +55,54 @@ artist) and from the queue — one
 
 ## Result
 
-*(fill)*
+**DONE 2026-10-26** — all three criteria PASS. Device: physical **Pixel 6
+`25071FDF600953`** (per user instruction; emulators off-limits this
+session). Server `192.168.1.13` is **shared with another session** — it
+advanced items/paused on its own twice during the unit; every playback
+below was triggered by *this* app and paused again by it.
+
+**Criterion 1 (supervised — user present, explicit per-action consent
+2026-10-26, "Yes — full window"):** track-row tap (Thundersmack
+"Brass" → "Skunk") → `POST …add?uris=library:track:1195&clear=true&playback=start`
+→ `/api/player` `state: play`, pos 6210; `/api/queue` = 1 item
+(196556 Skunk). **User confirmed audio** ("Yes, audible", Volumio Kitchen
+selected @vol 65). Paused via the **app's centre control button** →
+`state: pause` (pos 169872) verified via API. Now-playing highlight:
+primary-container `ffeaddff` on the current row vs `f8f1fa` baseline
+(render-tree container colours). Also exercised: `AlbumRow.onPlay` →
+queue = album order (House Party, Blues in the Attic, Skunk — server
+expanded `library:album`), playing; `ArtistRow.onPlay` → 11 Thundersmack
+tracks (`library:artist` expansion), playing. Each play paused after
+verification.
+
+**Criterion 2 (unattended, server paused/stopped throughout):** queue
+screen 185 rows in server order (1 Skunk 6:01 · 2 Blues in the Attic
+1:46 · 3 House Party…); highlight follows `item_id` (196175). WS `queue`
+refresh net-zero: curl add "Brass Monkey" → app 186 + row rendered
+(`186|Brass Monkey|Beastie Boys · Solid Gold Hits|2:38`) → curl delete →
+185. Clear via the **app button** (+ confirm dialog) → server count 0 +
+"The queue is empty."; restored from `GET /api/queue` snapshot →
+**185/185 uri+title match**. Artist-uri expansion also verified
+unattended (add without `playback` → +11 tracks; deleted after).
+Airplane-mode: `conn=offline`, `ws=reconnecting`, banner "Server
+unreachable — retrying. Queue disabled." rendered → off → connected/open.
+
+**Criterion 3:** `analyze` 0 · `format` 0 changed · `flutter test
+--exclude-tags live` **273/273** (incl. 20 queue tests + 5 browse
+play-action tests asserting the exact add URL) · `build apk --debug` ✓.
+`getQueue`/`clearQueue`/`playUris` fully covered faked (`queue_api_test`).
+
+**Follow-ups recorded (not 005b blockers):** (1) `playback=start` issued
+while the server is *paused* can leave it paused (resume path uses the
+remembered position) — reliable from `stop`; retest in a private-server
+window. (2) `GET /artwork/item/<id>` → 204 (no artwork) throws
+`HttpException: Invalid statusCode: 204` inside flutter_cache_manager
+(caught, benign — artwork slot stays empty); worth filtering. (3) Pixel 6
+background-networking firewall blocks the app uid when the screen is off
+(no FGS until first playback) — keep the screen awake for on-device
+sessions.
+
+**Environment at handoff:** server `stop`, queue 185 byte-identical to
+pre-unit snapshot. Clean (post-DIAG-removal) debug APK installed and
+foregrounded on Pixel 6 — boot log shows `connecting → connected`,
+`ws: none → open` in ~1s.

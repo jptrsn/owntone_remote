@@ -309,3 +309,44 @@ Rows carry a compound semantics label
 | Empty | icon + one-liner ("No albums in Rock.", "This playlist is empty.", …) |
 | Error | retry button (retries the first page) |
 | Offline | banner up; stale rows stay; rows disabled; reconnect refetches |
+
+## Queue (R-11)
+
+Specified in unit 005b. Reached from the now-playing body's "Queue · N"
+text button (beside "Library" — same viewport constraint as R-10 rules out
+a third app-bar icon). `N` is the current queue size.
+
+### Layout (top → bottom)
+
+| Element | Detail |
+|---|---|
+| App bar | "Queue" + trailing clear icon (tooltip `Clear queue`) |
+| Rows | `position` · title · `artist · album` · `M:SS` — server order, no sorting |
+| Now-playing row | `primaryContainer` background when `QueueItem.id == PlayerState.itemId` (the queue-entry id, **not** `track_id` — verified live) |
+
+The clear icon opens a confirm dialog ("Clear the queue?") — clearing is
+destructive on the live library's real queue.
+
+### Data
+
+`GET /api/queue` → `{version, count, items[]}`. WS `queue` events refetch
+(R-02); a reconnect refetches too. Rows are lazy-built from the full list
+(185 items render fine).
+
+### Actions → endpoints
+
+| Action | Call | Safety |
+|---|---|---|
+| Row tap (play this) | `POST /api/queue/items/add?uris=library:track:<id>&clear=true&playback=start` | **supervised** — audible |
+| Clear | `PUT /api/queue/clear` (optimistic empty; pre-clear list restored + typed error on failure) | safe while paused/stopped |
+
+Play actions from the browse rows use the same single add call (unit 005b);
+`library:artist:<id>` and `library:album:<id>` uris expand server-side
+(verified: artist → 11 tracks, album → 3).
+
+### States
+
+Skeleton on first fetch; "The queue is empty." when empty; sync-error strip
+keeps stale rows (`Sync failed — showing last known state.`); offline →
+banner "Server unreachable — retrying. Queue disabled." with rows cleared
+and actions disabled until reconnect.

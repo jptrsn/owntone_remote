@@ -97,17 +97,38 @@ String formatTrackLength(int ms) {
   return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
 }
 
+/// The small play affordance on collection rows (unit 005b): row tap
+/// navigates in, the button plays (`clear=true&playback=start`).
+class _PlayButton extends StatelessWidget {
+  const _PlayButton({required this.enabled, required this.onPlay});
+
+  final bool enabled;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Play',
+      icon: const Icon(Icons.play_arrow, size: 22),
+      visualDensity: VisualDensity.compact,
+      onPressed: enabled ? onPlay : null,
+    );
+  }
+}
+
 class PlaylistRow extends StatelessWidget {
   const PlaylistRow({
     super.key,
     required this.playlist,
     required this.enabled,
     required this.onOpen,
+    this.onPlay,
   });
 
   final Playlist playlist;
   final bool enabled;
   final VoidCallback onOpen;
+  final VoidCallback? onPlay;
 
   static String _kind(Playlist p) =>
       p.folder ? 'folder' : (p.smartPlaylist ? 'smart playlist' : 'playlist');
@@ -123,6 +144,9 @@ class PlaylistRow extends StatelessWidget {
       semanticsLabel:
           '${playlist.name}, $kind${count != null ? ', $count items' : ''}',
       leading: Icon(Icons.queue_music, size: 24),
+      trailing: onPlay == null
+          ? null
+          : _PlayButton(enabled: enabled, onPlay: onPlay!),
       enabled: enabled,
       onTap: onOpen,
     );
@@ -135,11 +159,13 @@ class ArtistRow extends StatelessWidget {
     required this.artist,
     required this.enabled,
     required this.onOpen,
+    this.onPlay,
   });
 
   final Artist artist;
   final bool enabled;
   final VoidCallback onOpen;
+  final VoidCallback? onPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -150,6 +176,9 @@ class ArtistRow extends StatelessWidget {
           '${artist.name}, artist, ${artist.albumCount} albums, '
           '${artist.trackCount} tracks',
       leading: Icon(Icons.person, size: 24),
+      trailing: onPlay == null
+          ? null
+          : _PlayButton(enabled: enabled, onPlay: onPlay!),
       enabled: enabled,
       onTap: onOpen,
     );
@@ -162,11 +191,13 @@ class AlbumRow extends StatelessWidget {
     required this.album,
     required this.enabled,
     required this.onOpen,
+    this.onPlay,
   });
 
   final Album album;
   final bool enabled;
   final VoidCallback onOpen;
+  final VoidCallback? onPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -180,6 +211,9 @@ class AlbumRow extends StatelessWidget {
       semanticsLabel:
           '${album.name}, album, ${album.artist}, ${album.trackCount} tracks',
       leading: Icon(Icons.album, size: 24),
+      trailing: onPlay == null
+          ? null
+          : _PlayButton(enabled: enabled, onPlay: onPlay!),
       enabled: enabled,
       onTap: onOpen,
     );
@@ -211,20 +245,25 @@ class GenreRow extends StatelessWidget {
   }
 }
 
-/// A track row (R-10). Unit 005a: rendering only — playing a track is
-/// 005b, so the row carries no action. [showArtist] is the playlist
-/// context; [trackNumber] is the album context (leading number).
+/// A track row (R-10). Unit 005b: the row's tap is the play action
+/// (`QueueController.playUris([track.uri])` — one add call,
+/// `clear=true&playback=start`). [showArtist] is the playlist context;
+/// [trackNumber] is the album context (leading number).
 class TrackRow extends StatelessWidget {
   const TrackRow({
     super.key,
     required this.track,
     required this.enabled,
+    this.onPlay,
     this.showArtist = false,
     this.trackNumber,
   });
 
   final Track track;
   final bool enabled;
+
+  /// The tap action: play this track. Null while the connection is down.
+  final VoidCallback? onPlay;
   final bool showArtist;
   final int? trackNumber;
 
@@ -242,6 +281,7 @@ class TrackRow extends StatelessWidget {
       trailing: Text(len, style: theme.textTheme.labelMedium),
       semanticsLabel: label,
       enabled: enabled,
+      onTap: enabled ? onPlay : null,
     );
   }
 }

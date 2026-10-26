@@ -83,8 +83,12 @@ class WsClient {
         _backoff.reset();
         _handleMessage(data);
       },
-      onDone: () => _teardownAndReconnect(),
-      onError: (Object _) => _teardownAndReconnect(),
+      onDone: () {
+        _teardownAndReconnect();
+      },
+      onError: (Object _) {
+        _teardownAndReconnect();
+      },
     );
     // OwnTone sends no traffic until an event happens, so "open" must come
     // from the handshake, not from the first data frame. (Re)subscribe once

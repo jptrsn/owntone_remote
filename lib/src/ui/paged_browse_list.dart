@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../library/paged_list.dart';
+import 'list_states.dart';
 
 /// One paged library list with the four states (R-10, unit 005a):
 /// loading (skeleton rows), empty (icon + text), error (retry), loaded
@@ -86,7 +87,7 @@ class _PagedBrowseListState<T> extends State<PagedBrowseList<T>> {
     // A failed first page: the full error state.
     if (list.error != null && list.items.isEmpty) {
       return Center(
-        child: _ListErrorState(
+        child: ListErrorState(
           what: widget.what,
           message: list.error!,
           enabled: widget.enabled,
@@ -100,15 +101,11 @@ class _PagedBrowseListState<T> extends State<PagedBrowseList<T>> {
       if (!list.started && !widget.enabled) {
         return const Center(child: Text('Waiting for the server…'));
       }
-      return ListView.builder(
-        padding: const EdgeInsets.all(8),
-        itemCount: PagedBrowseList.skeletonRows,
-        itemBuilder: (_, _) => const _SkeletonRow(),
-      );
+      return ListSkeletonRows(rows: PagedBrowseList.skeletonRows);
     }
     if (list.items.isEmpty) {
       return Center(
-        child: _ListEmptyState(
+        child: ListEmptyState(
           message: widget.emptyMessage,
           icon: widget.emptyIcon ?? Icons.library_music,
         ),
@@ -132,91 +129,6 @@ class _PagedBrowseListState<T> extends State<PagedBrowseList<T>> {
               )
             : const _LoadingMoreRow();
       },
-    );
-  }
-}
-
-class _SkeletonRow extends StatelessWidget {
-  const _SkeletonRow() : super(key: const ValueKey('skeleton-row'));
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 56,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-      ),
-    );
-  }
-}
-
-class _ListEmptyState extends StatelessWidget {
-  const _ListEmptyState({required this.message, required this.icon});
-
-  final String message;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, size: 56, color: theme.colorScheme.onSurfaceVariant),
-        const SizedBox(height: 16),
-        Text(
-          message,
-          style: theme.textTheme.bodyLarge,
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
-}
-
-class _ListErrorState extends StatelessWidget {
-  const _ListErrorState({
-    required this.what,
-    required this.message,
-    required this.enabled,
-    required this.onRetry,
-  });
-
-  final String what;
-  final String message;
-  final bool enabled;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.error_outline, size: 56, color: theme.colorScheme.error),
-          const SizedBox(height: 16),
-          Text(
-            'Could not load $what.',
-            style: theme.textTheme.titleMedium,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            message,
-            style: theme.textTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: enabled ? onRetry : null,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
-          ),
-        ],
-      ),
     );
   }
 }

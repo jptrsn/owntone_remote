@@ -9,6 +9,7 @@ import 'package:owntone_remote/src/api/ws_client.dart';
 import 'package:owntone_remote/src/connection/connection_controller.dart';
 import 'package:owntone_remote/src/core/server_config.dart';
 import 'package:owntone_remote/src/library/library_models.dart';
+import 'package:owntone_remote/src/queue/queue_controller.dart';
 import 'package:owntone_remote/src/ui/browse_screens.dart';
 import 'package:owntone_remote/src/ui/paged_browse_list.dart';
 import 'package:provider/provider.dart';
@@ -218,6 +219,20 @@ class LibraryFixture {
             ? rockAlbums
             : const <Map<String, dynamic>>[];
         return jsonResponse(o, {'albums': _page(albums, off, lim)});
+      case '/api/queue':
+        // The browse play tests only exercise the add call; the queue
+        // itself stays empty.
+        return jsonResponse(o, {
+          'version': 1,
+          'count': 0,
+          'items': <Map<String, dynamic>>[],
+        });
+      case '/api/queue/items/add':
+        return jsonResponse(o, {
+          'version': 2,
+          'count': 0,
+          'items': <Map<String, dynamic>>[],
+        });
       default:
         return Response(requestOptions: o, statusCode: 404);
     }
@@ -253,6 +268,7 @@ void main() {
   late ScriptedAdapter adapter;
   late List<FakeWsChannel> channels;
   late ConnectionController conn;
+  late QueueController queue;
 
   Future<void> wireUp() async {
     fx = LibraryFixture();
@@ -274,6 +290,8 @@ void main() {
         },
       ),
     );
+    queue = QueueController(connection: conn);
+    await queue.init();
     await conn.connectTo(_cfg);
     await Future<void>.delayed(const Duration(milliseconds: 60));
   }
@@ -283,6 +301,7 @@ void main() {
         MultiProvider(
           providers: [
             ChangeNotifierProvider<ConnectionController>.value(value: conn),
+            ChangeNotifierProvider<QueueController>.value(value: queue),
           ],
           child: MaterialApp(home: screen),
         ),
@@ -441,6 +460,7 @@ void main() {
           trackCount: 2,
           lengthMs: 100000,
           year: 2009,
+          uri: 'library:album:alA',
         ),
       ),
       what: 'tracks',
@@ -490,6 +510,7 @@ void main() {
   ];
 
   tearDown(() {
+    queue.dispose();
     conn.dispose();
   });
 
@@ -529,6 +550,7 @@ void main() {
             trackCount: 2,
             lengthMs: 100000,
             year: 2009,
+            uri: 'library:album:alA',
           ),
         ),
       );
@@ -770,6 +792,95 @@ void main() {
         ),
         reason: 'the encoded expression went out on the wire',
       );
+    });
+  });
+
+  group('R-11 play actions (unit 005b)', () {
+    // dio form-encodes the uris value (`:` → %3A, `,` → %2C).
+    String addReq(String uri) =>
+        'POST /api/queue/items/add?uris=${Uri.encodeComponent(uri)}'
+        '&clear=true&playback=start';
+
+    testWidgets('track row tap → play that track', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(
+        tester,
+        const AlbumTracksScreen(
+          album: Album(
+            id: 'alA',
+            name: 'Absolution',
+            artist: 'Artist 1',
+            artistId: 'a1',
+            trackCount: 2,
+            lengthMs: 100000,
+            year: 2009,
+            uri: 'library:album:alA',
+          ),
+        ),
+      );
+      await settle(tester);
+
+      await tester.tap(find.text('Intro'));
+      await settle(tester);
+      expect(adapter.requests, contains(addReq('library:track:2428')));
+    });
+
+    testWidgets('playlist track row tap → play that track', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(
+        tester,
+        const PlaylistTracksScreen(
+          playlist: Playlist(
+            id: '10',
+            name: 'All Music',
+            type: 'smart',
+            smartPlaylist: true,
+            folder: false,
+            itemCount: 1793,
+            uri: 'library:playlist:10',
+          ),
+        ),
+      );
+      await settle(tester);
+
+      await tester.tap(find.text('Good People'));
+      await settle(tester);
+      expect(adapter.requests, contains(addReq('library:track:1196')));
+    });
+
+    testWidgets('album play button → play the album uri', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const AlbumsScreen());
+      await settle(tester);
+
+      // The play button of the first album row ("Album 1").
+      final playButtons = find.byTooltip('Play');
+      expect(playButtons, findsWidgets);
+      await tester.tap(playButtons.first);
+      await settle(tester);
+      // The fixture's album maps carry no uri, so the model's
+      // `library:album:<id>` fallback applies.
+      expect(adapter.requests, contains(addReq('library:album:al1')));
+    });
+
+    testWidgets('artist play button → library:artist:<id>', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const ArtistsScreen());
+      await settle(tester);
+
+      await tester.tap(find.byTooltip('Play').first);
+      await settle(tester);
+      expect(adapter.requests, contains(addReq('library:artist:a1')));
+    });
+
+    testWidgets('playlist play button → play the playlist uri', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const PlaylistsScreen());
+      await settle(tester);
+
+      await tester.tap(find.byTooltip('Play').first);
+      await settle(tester);
+      expect(adapter.requests, contains(addReq('library:playlist:10')));
     });
   });
 }

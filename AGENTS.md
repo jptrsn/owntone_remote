@@ -14,13 +14,16 @@ Clean-room re-implementation of ReTune's UX in Material 3, speaking only the
 OwnTone JSON API + websocket. No DACP/DAAP, no ReTune code/assets, no
 iTunes-specific features.
 
- Status: **remote-app unit 004 (outputs/speakers) DONE (2026-10-23):
- all six criteria PASS**, incl. the supervised C3 audio move
- (Volumio Kitchen ↔ Server/ALSA, playing-guard dialog as the in-product
- confirmation, byte-identical restore). C3 surfaced a stale-cache guard
- skip → hardened with `PlayerController.refreshState()` + a regression
- test. (Unit 003, volume-rocker + call-handling, was DONE 2026-10-22 —
- see the log.) **Unit 005 (browse + queue + play) is next.**
+ Status: **remote-app unit 005b (queue + play actions) DONE (2026-10-26):
+ all three criteria PASS**, incl. the supervised live-play window
+ (track tap → audible user-confirmed → app pause → byte-identical
+ 185-queue restore; album + artist row play verified). 005a (browse
+ screens) was DONE 2026-10-23, 004 on the same date (see the log).
+ **Unit 006 (rating) is next** — its rating mutation needs its own
+ supervised window (hard rule 4). The server at 192.168.1.13 is
+ **shared with another active session** — expect concurrent
+ player/queue changes; snapshot before and restore after any mutation,
+ and re-verify `state` immediately before anything that can start audio.
  Note: the Chromecast remote outputs on this server fail to select
  server-side — treat **Volumio Kitchen (AirPlay)** and **Server (ALSA)**
  as the two reliable outputs for any audio-routing test.
@@ -74,9 +77,9 @@ unexpectedly.
 
 | Role | AVD / device | Serial |
 |---|---|---|
-| Other session — HANDS OFF | `Pixel_9_Pro_API_36` | `emulator-5554` (verified 2026-10-22 via `ro.boot.qemu.avd_name`; was `-5556` on 2026-10-09, `-5554` on 2026-10-08 — **serials shift when other emulators start; always re-verify via `adb shell getprop ro.boot.qemu.avd_name`, never trust a remembered serial**) |
+| Other session — HANDS OFF | `Pixel_9_Pro_API_36` | `emulator-5554` (verified 2026-10-26 via `ro.boot.qemu.avd_name`; was `-5556` on 2026-10-09 — **serials shift when other emulators start; always re-verify via `adb shell getprop ro.boot.qemu.avd_name`, never trust a remembered serial**) |
 | Capture | `Retune_API_33` | _record on creation_ |
-| Dev / test / QA | `RemoteDev_API_36` | `emulator-5556` (verified 2026-10-22; was `-5554` on 2026-10-09) |
+| Dev / test / QA | `RemoteDev_API_36` | _not running as of 2026-10-26 — `emulator-5556` is now `OwnTone_U2_API_36` (other session, HANDS OFF). Unit 005b verified on the physical Pixel 6 instead (user instruction: emulators off-limits this session); on-device sessions on the Pixel 6 must keep the screen awake — the background-networking firewall blocks the app uid when the screen is off (see SESSION-LOG 2026-10-26, item 2)_ |
 | Real device — volume-key routing tests | Pixel 6 (oriole, Android 16, **no SIM** — cannot receive calls) | `25071FDF600953` (connected 2026-10-10) |
 | Release candidate | Pixel 10 (GrapheneOS) | _record when connected_ |
 

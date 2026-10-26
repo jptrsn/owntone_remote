@@ -100,6 +100,7 @@ class Album {
     required this.trackCount,
     required this.lengthMs,
     this.year,
+    required this.uri,
   });
 
   final String id;
@@ -110,15 +111,22 @@ class Album {
   final int lengthMs;
   final int? year;
 
-  factory Album.fromJson(Map<String, dynamic> json) => Album(
-    id: (json['id'] ?? '').toString(),
-    name: json['name'] as String? ?? '',
-    artist: json['artist'] as String? ?? '',
-    artistId: (json['artist_id'] ?? '').toString(),
-    trackCount: (json['track_count'] as num?)?.toInt() ?? 0,
-    lengthMs: (json['length_ms'] as num?)?.toInt() ?? 0,
-    year: (json['year'] as num?)?.toInt(),
-  );
+  /// The play target (unit 005b); the wire sends `library:album:<id>`.
+  final String uri;
+
+  factory Album.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] ?? '').toString();
+    return Album(
+      id: id,
+      name: json['name'] as String? ?? '',
+      artist: json['artist'] as String? ?? '',
+      artistId: (json['artist_id'] ?? '').toString(),
+      trackCount: (json['track_count'] as num?)?.toInt() ?? 0,
+      lengthMs: (json['length_ms'] as num?)?.toInt() ?? 0,
+      year: (json['year'] as num?)?.toInt(),
+      uri: json['uri'] as String? ?? 'library:album:$id',
+    );
+  }
 }
 
 /// A track from the album / playlist track listings. [rating] (0–100) is

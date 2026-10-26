@@ -9,10 +9,12 @@ import '../outputs/outputs_controller.dart';
 import '../outputs/output.dart';
 import '../player/player_controller.dart';
 import '../player/player_state.dart';
+import '../queue/queue_controller.dart';
 import '../settings/settings_store.dart';
 import 'browse_screens.dart';
 import 'connection_banner.dart';
 import 'outputs_screen.dart';
+import 'queue_screen.dart';
 import 'settings_screen.dart';
 
 /// The connected state of the app: the live now-playing mirror of the
@@ -96,6 +98,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
   Widget build(BuildContext context) {
     final conn = context.watch<ConnectionController>();
     final outputs = context.watch<OutputsController>();
+    final queue = context.watch<QueueController>();
     final controller = context.watch<PlayerController>();
     final p = controller.player;
     final enabled = conn.phase == ConnectionPhase.connected;
@@ -160,6 +163,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                 : NowPlayingBody(
                     controller: controller,
                     outputs: outputs.outputs,
+                    queueCount: queue.queue.length,
                     enabled: enabled,
                     displayMs: _displayMs,
                   ),
@@ -169,6 +173,16 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
     );
   }
 }
+
+/// The compact style shared by the body's entry buttons (unit 004/005a/
+/// 005b).
+ButtonStyle _entryButtonStyle(ThemeData theme) => TextButton.styleFrom(
+  textStyle: theme.textTheme.labelSmall,
+  iconSize: 16,
+  visualDensity: VisualDensity.compact,
+  minimumSize: const Size(0, 32),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+);
 
 /// The now-playing content (no Scaffold of its own — the
 /// [NowPlayingScreen] shell owns the app bar and the offline banner).
@@ -182,6 +196,7 @@ class NowPlayingBody extends StatefulWidget {
     super.key,
     required this.controller,
     required this.outputs,
+    required this.queueCount,
     required this.enabled,
     required this.displayMs,
   });
@@ -191,6 +206,9 @@ class NowPlayingBody extends StatefulWidget {
   /// All server outputs; the "Playing via" line shows the selected ones and
   /// is the entry point to the Outputs screen (unit 004).
   final List<Output> outputs;
+
+  /// Live queue length for the "Queue · N" entry (unit 005b).
+  final int queueCount;
   final bool enabled;
   final int? displayMs;
 
@@ -264,12 +282,13 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
                 ),
               ),
             ),
-          // Entry rows (unit 004 / 005a): "Playing via" is the remote's
-          // "current speaker" indicator (ReTune IA, D6) and opens the Outputs
-          // screen; "Library" opens the browse section. Both live here —
-          // not in the app bar — because a second app-bar icon overflows the
+          // Entry rows (unit 004 / 005a / 005b): "Playing via" is the
+          // remote's "current speaker" indicator (ReTune IA, D6) and opens
+          // the Outputs screen; "Queue · N" opens the queue (R-11);
+          // "Library" opens the browse section. All live here — not in the
+          // app bar — because a second app-bar icon overflows the
           // 360-logical-pixel viewport by 9px (unit 004 finding). The row is
-          // always present so the Library entry exists even with no outputs.
+          // always present so the entries exist even with no outputs.
           Row(
             children: [
               if (outputs.isNotEmpty)
@@ -288,15 +307,21 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    style: TextButton.styleFrom(
-                      textStyle: theme.textTheme.labelSmall,
-                      iconSize: 16,
-                      visualDensity: VisualDensity.compact,
-                      minimumSize: const Size(0, 32),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
+                    style: _entryButtonStyle(theme),
                   ),
                 ),
+              TextButton.icon(
+                onPressed: enabled
+                    ? () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const QueueScreen(),
+                        ),
+                      )
+                    : null,
+                icon: const Icon(Icons.queue_music, size: 16),
+                label: Text('Queue · ${widget.queueCount}'),
+                style: _entryButtonStyle(theme),
+              ),
               TextButton.icon(
                 onPressed: enabled
                     ? () => Navigator.of(context).push(
@@ -307,13 +332,7 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
                     : null,
                 icon: const Icon(Icons.library_music, size: 16),
                 label: const Text('Library'),
-                style: TextButton.styleFrom(
-                  textStyle: theme.textTheme.labelSmall,
-                  iconSize: 16,
-                  visualDensity: VisualDensity.compact,
-                  minimumSize: const Size(0, 32),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
+                style: _entryButtonStyle(theme),
               ),
             ],
           ),

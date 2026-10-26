@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:provider/provider.dart';
 
 import '../connection/connection_controller.dart';
+import '../queue/queue_controller.dart';
 import '../library/library_models.dart';
 import '../library/paged_list.dart';
 import 'browse_rows.dart';
@@ -83,6 +86,8 @@ class PlaylistsScreen extends StatelessWidget {
             builder: (_) => PlaylistTracksScreen(playlist: playlist),
           ),
         ),
+        onPlay: () =>
+            unawaited(context.read<QueueController>().playUris([playlist.uri])),
       ),
     );
   }
@@ -108,8 +113,13 @@ class PlaylistTracksScreen extends StatelessWidget {
         },
         keyOf: (track) => track.id.toString(),
       ),
-      itemBuilder: (context, i, track, enabled) =>
-          TrackRow(track: track, enabled: enabled, showArtist: true),
+      itemBuilder: (context, i, track, enabled) => TrackRow(
+        track: track,
+        enabled: enabled,
+        showArtist: true,
+        onPlay: () =>
+            unawaited(context.read<QueueController>().playUris([track.uri])),
+      ),
     );
   }
 }
@@ -139,6 +149,11 @@ class ArtistsScreen extends StatelessWidget {
           MaterialPageRoute<void>(
             builder: (_) => ArtistAlbumsScreen(artist: artist),
           ),
+        ),
+        onPlay: () => unawaited(
+          context.read<QueueController>().playUris([
+            'library:artist:${artist.id}',
+          ]),
         ),
       ),
     );
@@ -173,6 +188,8 @@ class ArtistAlbumsScreen extends StatelessWidget {
             builder: (_) => AlbumTracksScreen(album: album),
           ),
         ),
+        onPlay: () =>
+            unawaited(context.read<QueueController>().playUris([album.uri])),
       ),
     );
   }
@@ -204,6 +221,8 @@ class AlbumsScreen extends StatelessWidget {
             builder: (_) => AlbumTracksScreen(album: album),
           ),
         ),
+        onPlay: () =>
+            unawaited(context.read<QueueController>().playUris([album.uri])),
       ),
     );
   }
@@ -233,6 +252,8 @@ class AlbumTracksScreen extends StatelessWidget {
         track: track,
         enabled: enabled,
         trackNumber: track.trackNumber,
+        onPlay: () =>
+            unawaited(context.read<QueueController>().playUris([track.uri])),
       ),
     );
   }
@@ -297,6 +318,8 @@ class GenreAlbumsScreen extends StatelessWidget {
             builder: (_) => AlbumTracksScreen(album: album),
           ),
         ),
+        onPlay: () =>
+            unawaited(context.read<QueueController>().playUris([album.uri])),
       ),
     );
   }

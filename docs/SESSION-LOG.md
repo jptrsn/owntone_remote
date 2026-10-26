@@ -833,3 +833,61 @@ Dev AVD `emulator-5556` running (headless), app under `flutter run`
 
 **Next:** unit 005b (queue view + play-from-list/queue, R-11) — the
 `supervised_steps: [1]` (first live play) needs a supervised window.
+
+## 2026-10-26 — remote-app unit 005b DONE: queue + play actions, supervised window (opencode)
+
+**Unit 005b DONE** (all three criteria, evidence in the unit file). All
+code shipped in 005b commit; 273/273 tests, gates green incl. `build apk`.
+
+**Supervised window (user present, explicit consent):** track-row tap on
+Thundersmack "Brass" → audible (user-confirmed) via Volumio Kitchen,
+queue=1 item, now-playing row highlighted (`primaryContainer` vs
+baseline, render-tree colours), pause via the app's own control button
+→ verified `pause`. Album row play → album order (3 tracks); artist row
+play → 11-track discography (`library:artist` expansion confirmed
+server-side). Full 185-item queue restored byte-identical from snapshot
+after every destructive step; server ended `stop`.
+
+**Environment incidents / findings (important for future sessions):**
+
+1. **The OwnTone server is shared with another active session** — items
+   advanced and the player paused itself twice mid-unit without agent
+   action. Play-action observations were contaminated once (queue-row tap
+   appeared not to start playback; direct `playUris` call proved the app
+   path correct — `add?…&playback=start` from *paused* can leave the
+   server paused; from *stop* it always plays). Retest that nuance on a
+   private server.
+2. **Pixel 6 blocks the app uid's network when the screen is off** (per-
+   uid background firewall, uid 10310 → `deny`; no FGS until first
+   playback). Symptom: every app socket times out (errno 110) while
+   shell `nc` works. Fix for test sessions: keep the screen awake
+   (`settings put system screen_off_timeout 1800000` + wake). The earlier
+   `restrict-background-whitelist` was a red herring.
+3. **Over-popping routes exits the app.** A blind ×5 `KEYCODE_BACK` loop
+   exited the app; the next "in-app" taps hit the launcher and opened
+   Calendar while the VM-service tree still showed the (backgrounded)
+   app's UI — route checks must confirm `mCurrentFocus`, not just the
+   widget tree. App was relaunched; no state lost.
+4. `GET /artwork/item/<id>` → **204** (no artwork) makes
+   flutter_cache_manager throw `Invalid statusCode: 204` (caught, benign).
+   Follow-up: filter 204 → no-image.
+5. **Device table update:** `emulator-5554` = `Pixel_9_Pro_API_36` (other
+   session, verified via `ro.boot.qemu.avd_name` 2026-10-26);
+   `emulator-5556` = `OwnTone_U2_API_36` (other session — the
+   `RemoteDev_API_36` dev AVD is no longer running; unit 005b verified
+   entirely on the physical Pixel 6 `25071FDF600953` per user instruction
+   "physical device only" for this session).
+
+**Gates green on final code:** `analyze` 0 · `format` 0 changed ·
+`flutter test --exclude-tags live` **273/273** · `build apk --debug` ✓.
+Clean APK installed on Pixel 6; boot log `connected` + `ws: open` in ~1s.
+
+**Commit:** `remote-app/005b` — unit done. **No push** (not requested).
+
+**Environment at handoff:** server `stop`, volume 65, queue 185
+byte-identical to snapshot; only Volumio Kitchen selected. Pixel 6 awake
+(30-min timeout), app foregrounded. Emulators untouched.
+
+**Next:** unit 006 (rating, R-12) — the rating flow needs its own
+supervised window (library data mutation: record original rating first,
+restore afterwards, confirm via API — AGENTS.md hard rule 4).
