@@ -11,6 +11,7 @@ import 'src/connection/connection_controller.dart';
 import 'src/outputs/outputs_controller.dart';
 import 'src/player/player_controller.dart';
 import 'src/queue/queue_controller.dart';
+import 'src/rating/rating_controller.dart';
 import 'src/settings/settings_store.dart';
 import 'src/ui/root_screen.dart';
 
@@ -50,14 +51,17 @@ Future<void> main() async {
   final player = PlayerController(connection: conn);
   final outputs = OutputsController(connection: conn);
   final queue = QueueController(connection: conn);
+  final rating = RatingController(connection: conn, player: player);
   await player.init();
   await outputs.init();
   await queue.init();
+  await rating.init();
   debugGlobals = {
     'conn': conn,
     'player': player,
     'outputs': outputs,
     'queue': queue,
+    'rating': rating,
   };
 
   // Call handling (D9): pause on ringing, auto-resume on idle when the call
@@ -102,6 +106,7 @@ Future<void> main() async {
         ChangeNotifierProvider<PlayerController>.value(value: player),
         ChangeNotifierProvider<OutputsController>.value(value: outputs),
         ChangeNotifierProvider<QueueController>.value(value: queue),
+        ChangeNotifierProvider<RatingController>.value(value: rating),
       ],
       child: const OwntoneRemoteApp(),
     ),

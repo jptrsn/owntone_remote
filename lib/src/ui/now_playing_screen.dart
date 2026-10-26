@@ -10,11 +10,13 @@ import '../outputs/output.dart';
 import '../player/player_controller.dart';
 import '../player/player_state.dart';
 import '../queue/queue_controller.dart';
+import '../rating/rating_controller.dart';
 import '../settings/settings_store.dart';
 import 'browse_screens.dart';
 import 'connection_banner.dart';
 import 'outputs_screen.dart';
 import 'queue_screen.dart';
+import 'rating_stars.dart';
 import 'settings_screen.dart';
 
 /// The connected state of the app: the live now-playing mirror of the
@@ -99,6 +101,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
     final conn = context.watch<ConnectionController>();
     final outputs = context.watch<OutputsController>();
     final queue = context.watch<QueueController>();
+    final rating = context.watch<RatingController>();
     final controller = context.watch<PlayerController>();
     final p = controller.player;
     final enabled = conn.phase == ConnectionPhase.connected;
@@ -164,6 +167,21 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                     controller: controller,
                     outputs: outputs.outputs,
                     queueCount: queue.queue.length,
+                    nowPlayingRating:
+                        rating.nowPlayingTrackId ==
+                            controller.nowPlaying?.trackId
+                        ? rating.nowPlayingRating
+                        : null,
+                    onRate: (newRating) async {
+                      final trackId = controller.nowPlaying?.trackId;
+                      if (trackId == null) {
+                        return 'Rating failed — no current track.';
+                      }
+                      final ok = await rating.setRating(trackId, newRating);
+                      return ok
+                          ? null
+                          : (rating.actionError ?? 'Rating failed.');
+                    },
                     enabled: enabled,
                     displayMs: _displayMs,
                   ),
@@ -199,6 +217,8 @@ class NowPlayingBody extends StatefulWidget {
     required this.queueCount,
     required this.enabled,
     required this.displayMs,
+    this.nowPlayingRating,
+    this.onRate,
   });
 
   final PlayerController controller;
@@ -211,6 +231,14 @@ class NowPlayingBody extends StatefulWidget {
   final int queueCount;
   final bool enabled;
   final int? displayMs;
+
+  /// Server rating (0–100) of the current item, or null while the rating
+  /// slice hasn't caught up with the player's item (the stars then read
+  /// 0 — still tappable, R-12).
+  final int? nowPlayingRating;
+
+  /// Commits a rating for the current track (`RatingStars` contract).
+  final Future<String?> Function(int newRating)? onRate;
 
   /// The progress the screen displays, from most to least authoritative:
   /// the finger's dragged position, then the ticker's local extrapolation
@@ -353,15 +381,43 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
             ),
           ),
           const SizedBox(height: 4),
+          // R-12 (unit 006): the now-playing rating — tappable stars for the
+          // *track* of the current queue item (the queue item itself carries
+          // no rating; RatingController resolves track_id → track). Inline
+          // with the artist line, not a row of its own: the unit-001
+          // viewport-fit contract (artwork shrinks, nothing scrolls) has
+          // ~16px of fixed-height slack on a short surface, and a separate
+          // stars row overflowed the Column by 28px. Hidden with no item
+          // (stopped).
           Center(
-            child: Text(
-              [
-                if (item?.artist != null) item!.artist,
-                if (item?.album != null) item!.album,
-              ].join(' · '),
-              style: theme.textTheme.bodyLarge,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      [
+                        if (item?.artist != null) item!.artist,
+                        if (item?.album != null) item!.album,
+                      ].join(' · '),
+                      style: theme.textTheme.bodyLarge,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (item?.trackId != null && widget.onRate != null) ...[
+                    const SizedBox(width: 8),
+                    RatingStars(
+                      key: const ValueKey('now-playing-rating'),
+                      rating: widget.nowPlayingRating,
+                      enabled: enabled,
+                      onRate: widget.onRate!,
+                      iconSize: 22,
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 24),

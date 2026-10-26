@@ -24,7 +24,7 @@ reachable one tap away.
 | **Outputs / speakers** | below (unit 004) | R-09 |
 | Library browse (playlists / artists / albums / genres) | TBD | R-10 |
 | Queue | TBD | R-11 |
-| Rating (stars on rows + now playing) | TBD | R-12 |
+| Rating (stars on rows + now playing) | below (unit 006) | R-12 |
 | Search | TBD | R-13 |
 
 ---
@@ -54,7 +54,11 @@ artwork absorbs the slack and shrinks (1:1 preserved) — user requirement
 4. **Artwork** — square, `maxwidth=600` downscaled from the server
    (`/artwork/…`); centered in the remaining vertical space.
 5. **Title** — headline, up to 2 lines, ellipsis.
-6. **Artist · Album** — one line, ellipsis.
+6. **Artist · Album + rating** — one line, ellipsis; tappable 5-star
+   control (R-12, unit 006) inline at the line's end for the current
+   *track* (hidden when stopped). Inline rather than its own row: the
+   fixed-height slack of criterion 8 (unit 001) does not survive a
+   separate stars row (it overflowed a short viewport by 28px).
 7. **Progress row** — elapsed time (left) · seek slider · total time
    (right).
 8. **Transport row** — previous · play/pause (large) · next.
@@ -350,3 +354,47 @@ Skeleton on first fetch; "The queue is empty." when empty; sync-error strip
 keeps stale rows (`Sync failed — showing last known state.`); offline →
 banner "Server unreachable — retrying. Queue disabled." with rows cleared
 and actions disabled until reconnect.
+
+## Rating (R-12)
+
+Specified + shipped in unit 006. The one approved library mutation
+(AGENTS.md §4) — every on-device rating write happens inside a supervised
+window with the original value recorded and restored.
+
+### Where stars appear
+
+| Surface | Control |
+|---|---|
+| Album / playlist track rows | compact stars (trailing, before the length) — row tap stays play, stars own their taps |
+| Now playing | stars inline at the end of the Artist · Album line (hidden when stopped) |
+| Queue rows | none — queue items carry no rating; the control follows the *track* |
+
+### Mapping (lossy by design — `lib/src/library/rating.dart`)
+
+Server stores 0–100; the UI is a 5-star control.
+
+- **Write:** tap star *n* → `rating = n × 20` (canonical
+  0/20/40/60/80/100); re-tapping the set star clears to 0 — the only UI
+  path to 0, so all six values are reachable.
+- **Read (display):** floor — `n = rating ~/ 20` (19 → 0, 20 → 1, 21 → 1,
+  39 → 1, 40 → 2, 99 → 4, 100 → 5; null/unrated → 0; clamped to 0–100).
+  Floor keeps the write steps and the display thresholds identical: a
+  value the app wrote reads back the same.
+
+### Data & actions
+
+| | |
+|---|---|
+| Track rows' rating | the `rating` field on the browse endpoints' track objects |
+| Now-playing rating | `GET /api/queue?id=now_playing` → `track_id` → `GET /api/library/tracks/{id}` (queue items carry no rating) |
+| Set | `PUT /api/library/tracks/{id}?rating=N` → 204 — **SUPERVISED** (library mutation) |
+| Refresh | WS `database` event: `BrowseScreenScaffold` reloads the visible list; `RatingController` refetches the now-playing track |
+
+### Interaction design (decided in unit 006)
+
+- **Optimistic:** the star widget shows the new value immediately; a
+  failed PUT rolls back and shows the typed error in a snackbar
+  (`Rating failed — server answered HTTP N.`). The confirmed value
+  arrives via the `database`-event reload (rows) or the controller's
+  confirming GET (now playing).
+- Offline: stars render inert (no PUT goes out), like every other control.

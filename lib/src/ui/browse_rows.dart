@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../library/library_models.dart';
+import '../library/rating.dart';
+import 'rating_stars.dart';
 
 /// The shared browse row (R-10, unit 005a): a rounded card with an
 /// optional leading icon / numeric text, a primary line, a secondary line,
@@ -249,12 +251,18 @@ class GenreRow extends StatelessWidget {
 /// (`QueueController.playUris([track.uri])` — one add call,
 /// `clear=true&playback=start`). [showArtist] is the playlist context;
 /// [trackNumber] is the album context (leading number).
+///
+/// Unit 006 (R-12): with [onRate] the row also carries the tappable star
+/// control (trailing, before the length). The stars own their taps — the
+/// row tap stays play. Null [onRate] (a context without rating support)
+/// shows no stars at all.
 class TrackRow extends StatelessWidget {
   const TrackRow({
     super.key,
     required this.track,
     required this.enabled,
     this.onPlay,
+    this.onRate,
     this.showArtist = false,
     this.trackNumber,
   });
@@ -262,8 +270,12 @@ class TrackRow extends StatelessWidget {
   final Track track;
   final bool enabled;
 
-  /// The tap action: play this track. Null while the connection is down.
+  /// The row-tap action: play this track. Null while the connection is down.
   final VoidCallback? onPlay;
+
+  /// Commits a rating (0–100); null on success, the snackbar text on
+  /// failure (`RatingStars` contract).
+  final Future<String?> Function(int newRating)? onRate;
   final bool showArtist;
   final int? trackNumber;
 
@@ -271,15 +283,29 @@ class TrackRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final len = formatTrackLength(track.lengthMs);
-    final label = showArtist
+    final stars = starsForRating(track.rating);
+    final base = showArtist
         ? '${track.title}, track, ${track.artist}, $len'
         : '${track.title}, track ${trackNumber ?? ''}, $len';
     return BrowseRow(
       primary: track.title,
       secondary: showArtist ? track.artist : null,
       leadingText: trackNumber?.toString(),
-      trailing: Text(len, style: theme.textTheme.labelMedium),
-      semanticsLabel: label,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (onRate != null) ...[
+            RatingStars(
+              rating: track.rating,
+              enabled: enabled,
+              onRate: onRate!,
+            ),
+            const SizedBox(width: 4),
+          ],
+          Text(len, style: theme.textTheme.labelMedium),
+        ],
+      ),
+      semanticsLabel: '$base, $stars stars',
       enabled: enabled,
       onTap: enabled ? onPlay : null,
     );

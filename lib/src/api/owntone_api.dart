@@ -146,6 +146,24 @@ class OwntoneApi {
     );
   }
 
+  // -- Rating (R-12, unit 006) ----------------------------------------------
+
+  /// Single library track — the rating lives on the track, not on the queue
+  /// item (unit 006: now-playing rating resolves
+  /// `GET /api/queue?id=now_playing` → `track_id` → this endpoint).
+  Future<Track> getTrack(int id) async {
+    final res = await _dio.get('/api/library/tracks/$id');
+    return Track.fromJson(res.data as Map<String, dynamic>);
+  }
+
+  /// `PUT /api/library/tracks/{id}?rating=` → 204 (docs/API.md). The one
+  /// approved library mutation (AGENTS.md §4) — **supervised**: only inside
+  /// a recorded user-confirmed window, with the original value restored
+  /// afterwards. [rating] is the server's 0–100 scale; the UI sends the
+  /// canonical 0/20/40/60/80/100 via `ratingForStars`.
+  Future<void> setRating(int id, int rating) =>
+      _put('/api/library/tracks/$id', {'rating': rating.clamp(0, 100)});
+
   // -- Queue (R-11, unit 005b) ----------------------------------------------
 
   /// The whole queue in server order (`GET /api/queue`).

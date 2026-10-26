@@ -5,11 +5,25 @@ import 'package:provider/provider.dart';
 
 import '../connection/connection_controller.dart';
 import '../queue/queue_controller.dart';
+import '../rating/rating_controller.dart';
 import '../library/library_models.dart';
 import '../library/paged_list.dart';
 import 'browse_rows.dart';
 import 'browse_screen_scaffold.dart';
 import 'paged_browse_screen.dart';
+
+/// The row-tap rating commit (R-12, unit 006): `RatingStars` contract —
+/// null on success, the typed error text for the snackbar on failure. The
+/// [RatingController] read is deferred to tap time so screens without the
+/// provider (or rows never tapped) never touch it.
+Future<String?> Function(int newRating) rateTrack(
+  BuildContext context,
+  int trackId,
+) => (newRating) async {
+  final rating = context.read<RatingController>();
+  final ok = await rating.setRating(trackId, newRating);
+  return ok ? null : (rating.actionError ?? 'Rating failed.');
+};
 
 /// R-10 (unit 005a): the library home — the browse menu (Playlists,
 /// Artists, Albums, Genres), reached from the now-playing app bar.
@@ -117,6 +131,7 @@ class PlaylistTracksScreen extends StatelessWidget {
         track: track,
         enabled: enabled,
         showArtist: true,
+        onRate: rateTrack(context, track.id),
         onPlay: () =>
             unawaited(context.read<QueueController>().playUris([track.uri])),
       ),
@@ -252,6 +267,7 @@ class AlbumTracksScreen extends StatelessWidget {
         track: track,
         enabled: enabled,
         trackNumber: track.trackNumber,
+        onRate: rateTrack(context, track.id),
         onPlay: () =>
             unawaited(context.read<QueueController>().playUris([track.uri])),
       ),

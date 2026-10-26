@@ -893,3 +893,49 @@ untouched.
 **Next:** unit 006 (rating, R-12) — the rating flow needs its own
 supervised window (library data mutation: record original rating first,
 restore afterwards, confirm via API — AGENTS.md hard rule 4).
+
+## 2026-10-26 (evening) — remote-app unit 006 DONE: rating display + edit (opencode)
+
+**Unit 006 (R-12) DONE — all five criteria PASS**, incl. the supervised
+library-mutation window. Stars (0–100↔0–5, `floor ~/ 20` display, `n*20`
+writes, re-tap→0) on track rows + now playing; `PUT
+/api/library/tracks/{id}?rating=`; WS `database` refresh. Code:
+`lib/src/library/rating.dart`, `rating/rating_controller.dart`,
+`ui/rating_stars.dart`, `getTrack`/`setRating` on `OwntoneApi`, wiring in
+browse rows/screens + now playing + `main.dart`. 48 new tests (mapping
+table pins 19/21/39/41; optimistic-rollback; WS-refetch) → **321/321**.
+SCREENS.md §Rating added.
+
+**Supervised mutations (AGENTS.md §4 protocol, all restores API-verified):**
+track 1195 'Skunk' 60→100 (app)→60 ✓; track 1764 'Crown' 20→60 (app,
+album-row star tap)→20 ✓ with row live-updating both ways via WS; track
+1765 'Love Again' 20→80 (external curl)→row refreshed untouched→20 ✓.
+Web-UI check documented as API-equivalence (SPA reads the same track GET;
+user waived browser observation this session).
+
+**Incidents (all audio-safe):** shared session self-resumed playback ~4 s
+mid-window (volume 0, inaudible — re-paused; every tap now re-checks
+`GET /api/player` immediately before). Screen Dozed once → firewall
+blackout; `svc power stayon true` set (left on for this project's device).
+Back-over-pop exited the app once (Calendar) — `mCurrentFocus` checked
+after every nav batch since. Tap scale is ×2.625 (420 dpi), not ×3.0.
+**uiautomator's a11y bridge died** mid-session and never recovered
+(hot-restart/settings/relaunch no help) — worked around by walking the
+`Semantics` widget tree from the VM (`evaluate_expression` + print →
+console logs); this yielded label+bounds text evidence better than
+uiautomator ever did. Track-row bodies were never tapped (row tap =
+playback); star controls consume their own taps.
+
+**Gates green on final code:** `analyze` 0 · `format` 0 changed ·
+`test --exclude-tags live` **321/321** · `build apk --debug` ✓.
+
+**Environment at handoff:** server `stop`, queue 185 byte-identical to
+snapshot v1739 (first 'Skunk'), Volumio Kitchen selected; ratings 1764=20,
+1195=60, 1765=20 all original. Pixel 6 awake, app foregrounded.
+flutter-run debug session still attached (VM
+`127.0.0.1:52014/qY9-21uw1D8=`). Emulators untouched.
+
+**Next:** `remote-app` units 001–006 are **complete** → Phase 5
+`device-verification` (full REQUIREMENTS pass on `RemoteDev_API_36`,
+reconnect robustness coordinated with user, release APK on Pixel 10
+GrapheneOS with the user). Follow-up still open: artwork 204-filter.

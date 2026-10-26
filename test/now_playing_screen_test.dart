@@ -11,6 +11,7 @@ import 'package:owntone_remote/src/outputs/outputs_controller.dart';
 import 'package:owntone_remote/src/player/player_controller.dart';
 import 'package:owntone_remote/src/player/player_state.dart';
 import 'package:owntone_remote/src/queue/queue_controller.dart';
+import 'package:owntone_remote/src/rating/rating_controller.dart';
 import 'package:owntone_remote/src/settings/settings_store.dart';
 import 'package:owntone_remote/src/ui/now_playing_screen.dart';
 import 'package:provider/provider.dart';
@@ -203,6 +204,7 @@ void main() {
   late PlayerController player;
   late OutputsController outputs;
   late QueueController queue;
+  late RatingController rating;
   late SettingsStore store;
   bool serverDown = false;
 
@@ -248,6 +250,8 @@ void main() {
     await outputs.init();
     queue = QueueController(connection: conn);
     await queue.init();
+    rating = RatingController(connection: conn, player: player);
+    await rating.init();
     store = SettingsStore(await SharedPreferences.getInstance());
     await conn.connectTo(_cfg);
     await realPump();
@@ -267,6 +271,7 @@ void main() {
   tearDown(() {
     player.dispose();
     outputs.dispose();
+    rating.dispose();
     queue.dispose();
     conn.dispose();
   });
@@ -279,6 +284,7 @@ void main() {
         ChangeNotifierProvider<PlayerController>.value(value: player),
         ChangeNotifierProvider<OutputsController>.value(value: outputs),
         ChangeNotifierProvider<QueueController>.value(value: queue),
+        ChangeNotifierProvider<RatingController>.value(value: rating),
       ],
       child: const MaterialApp(home: NowPlayingScreen()),
     ),
