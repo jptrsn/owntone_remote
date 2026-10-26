@@ -108,12 +108,13 @@ void main() {
   });
 
   /// Rows are asserted through their compound semantics label
-  /// (`<title>, queue item N[, now playing][, artist · album]`) — via the
-  /// Semantics widget itself: `bySemanticsLabel` needs the semantics tree,
-  /// which plain widget tests do not enable.
-  Finder row(String title, int position, {bool nowPlaying = false}) {
+  /// (`<title>[, now playing][, artist · album]` — no numbers in rows,
+  /// user call 2026-10-26) — via the Semantics widget itself:
+  /// `bySemanticsLabel` needs the semantics tree, which plain widget tests
+  /// do not enable.
+  Finder row(String title, {bool nowPlaying = false}) {
     final label =
-        '$title, queue item $position'
+        '$title'
         '${nowPlaying ? ', now playing' : ''}, Muse · Absolution';
     return find.byWidgetPredicate(
       (w) => w is Semantics && w.properties.label == label,
@@ -140,9 +141,9 @@ void main() {
       expect(find.text('House Party'), findsOneWidget);
 
       // The highlight: item_id 196174 = the first entry's id.
-      expect(row('Skunk', 1, nowPlaying: true), findsOneWidget);
-      expect(row('Blues in the Attic', 2), findsOneWidget);
-      expect(row('Blues in the Attic', 2, nowPlaying: true), findsNothing);
+      expect(row('Skunk', nowPlaying: true), findsOneWidget);
+      expect(row('Blues in the Attic'), findsOneWidget);
+      expect(row('Blues in the Attic', nowPlaying: true), findsNothing);
       // The highlighted row carries the play icon, the others numbers.
       expect(find.byIcon(Icons.play_arrow), findsOneWidget);
     });
@@ -160,8 +161,8 @@ void main() {
       fx.itemId = 196175;
       await tester.runAsync(() => player.refreshState());
       await settle(tester);
-      expect(row('Blues in the Attic', 2, nowPlaying: true), findsOneWidget);
-      expect(row('Skunk', 1, nowPlaying: true), findsNothing);
+      expect(row('Blues in the Attic', nowPlaying: true), findsOneWidget);
+      expect(row('Skunk', nowPlaying: true), findsNothing);
     });
 
     testWidgets('stopped server (no item_id): no highlight', (tester) async {

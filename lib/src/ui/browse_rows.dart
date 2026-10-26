@@ -5,16 +5,15 @@ import '../library/rating.dart';
 import 'rating_stars.dart';
 
 /// The shared browse row (R-10, unit 005a): a rounded card with an
-/// optional leading icon / numeric text, a primary line, a secondary line,
-/// a trailing widget, and a compound semantics label so UI checks can read
-/// it deterministically (the unit 004 convention).
+/// optional leading icon, a primary line, a secondary line, a trailing
+/// widget, and a compound semantics label so UI checks can read it
+/// deterministically (the unit 004 convention).
 class BrowseRow extends StatelessWidget {
   const BrowseRow({
     super.key,
     required this.primary,
     required this.semanticsLabel,
     this.leading,
-    this.leadingText,
     this.secondary,
     this.trailing,
     this.enabled = true,
@@ -24,9 +23,6 @@ class BrowseRow extends StatelessWidget {
   final String primary;
   final String semanticsLabel;
   final Widget? leading;
-
-  /// Numeric text instead of [leading] (track numbers).
-  final String? leadingText;
   final String? secondary;
   final Widget? trailing;
   final bool enabled;
@@ -50,15 +46,6 @@ class BrowseRow extends StatelessWidget {
         child: Row(
           children: [
             if (leading != null) ...[leading!, const SizedBox(width: 12)],
-            if (leadingText != null)
-              SizedBox(
-                width: 28,
-                child: Text(
-                  leadingText!,
-                  textAlign: TextAlign.end,
-                  style: theme.textTheme.labelMedium,
-                ),
-              ),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -249,8 +236,9 @@ class GenreRow extends StatelessWidget {
 
 /// A track row (R-10). Unit 005b: the row's tap is the play action
 /// (`QueueController.playUris([track.uri])` — one add call,
-/// `clear=true&playback=start`). [showArtist] is the playlist context;
-/// [trackNumber] is the album context (leading number).
+/// `clear=true&playback=start`). [showArtist] is the playlist context.
+/// No track number is rendered — user call 2026-10-26: numbers before the
+/// title are noise in this app's rows (album order is server-order anyway).
 ///
 /// Unit 006 (R-12): with [onRate] the row also carries the tappable star
 /// control (trailing, before the length). The stars own their taps — the
@@ -264,7 +252,6 @@ class TrackRow extends StatelessWidget {
     this.onPlay,
     this.onRate,
     this.showArtist = false,
-    this.trackNumber,
   });
 
   final Track track;
@@ -277,7 +264,6 @@ class TrackRow extends StatelessWidget {
   /// failure (`RatingStars` contract).
   final Future<String?> Function(int newRating)? onRate;
   final bool showArtist;
-  final int? trackNumber;
 
   @override
   Widget build(BuildContext context) {
@@ -285,12 +271,11 @@ class TrackRow extends StatelessWidget {
     final len = formatTrackLength(track.lengthMs);
     final stars = starsForRating(track.rating);
     final base = showArtist
-        ? '${track.title}, track, ${track.artist}, $len'
-        : '${track.title}, track ${trackNumber ?? ''}, $len';
+        ? '${track.title}, ${track.artist}, $len'
+        : '${track.title}, $len';
     return BrowseRow(
       primary: track.title,
       secondary: showArtist ? track.artist : null,
-      leadingText: trackNumber?.toString(),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

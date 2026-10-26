@@ -266,7 +266,6 @@ class AlbumTracksScreen extends StatelessWidget {
       itemBuilder: (context, i, track, enabled) => TrackRow(
         track: track,
         enabled: enabled,
-        trackNumber: track.trackNumber,
         onRate: rateTrack(context, track.id),
         onPlay: () =>
             unawaited(context.read<QueueController>().playUris([track.uri])),

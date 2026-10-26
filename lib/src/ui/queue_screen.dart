@@ -222,7 +222,7 @@ class _QueueListState extends State<_QueueList> {
     return Semantics(
       container: true,
       label:
-          '${item.title}, queue item ${item.position + 1}'
+          '${item.title}'
           '${isNowPlaying ? ', now playing' : ''}'
           '${secondary.isEmpty ? '' : ', $secondary'}',
       child: Material(
@@ -237,21 +237,14 @@ class _QueueListState extends State<_QueueList> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
-                SizedBox(
-                  width: 28,
-                  child: isNowPlaying
-                      ? Icon(
-                          Icons.play_arrow,
-                          size: 20,
-                          color: theme.colorScheme.onPrimaryContainer,
-                        )
-                      : Text(
-                          '${item.position + 1}',
-                          textAlign: TextAlign.end,
-                          style: theme.textTheme.labelMedium,
-                        ),
-                ),
-                const SizedBox(width: 12),
+                if (isNowPlaying) ...[
+                  Icon(
+                    Icons.play_arrow,
+                    size: 20,
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                  const SizedBox(width: 12),
+                ],
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

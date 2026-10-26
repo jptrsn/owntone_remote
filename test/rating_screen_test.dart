@@ -135,13 +135,10 @@ void main() {
 
       // Server ratings: Intro 40 → 2, Apocalypse Please (absent) → 0,
       // Butterflies 100 → 5 (fixture below).
-      expect(rowWithLabel('Intro, track 1, 0:22, 2 stars'), findsOneWidget);
+      expect(rowWithLabel('Intro, 0:22, 2 stars'), findsOneWidget);
+      expect(rowWithLabel('Apocalypse Please, 2:58, 0 stars'), findsOneWidget);
       expect(
-        rowWithLabel('Apocalypse Please, track 2, 2:58, 0 stars'),
-        findsOneWidget,
-      );
-      expect(
-        rowWithLabel('Butterflies and Hurricanes, track 3, 4:12, 5 stars'),
+        rowWithLabel('Butterflies and Hurricanes, 4:12, 5 stars'),
         findsOneWidget,
       );
       // Glyphs themselves: 2 + 0 + 5 = 7 filled of 15.
@@ -156,7 +153,7 @@ void main() {
       await pumpScreen(tester, AlbumTracksScreen(album: album));
       await settle(tester);
 
-      final row = rowWithLabel('Intro, track 1, 0:22, 2 stars');
+      final row = rowWithLabel('Intro, 0:22, 2 stars');
       await tapStar(tester, row, 5);
 
       expect(
@@ -176,7 +173,7 @@ void main() {
       await pumpScreen(tester, AlbumTracksScreen(album: album));
       await settle(tester);
 
-      final row = rowWithLabel('Intro, track 1, 0:22, 2 stars');
+      final row = rowWithLabel('Intro, 0:22, 2 stars');
       await tapStar(tester, row, 2); // star 2 == the current level → clear
       expect(
         adapter.requests,
@@ -191,7 +188,7 @@ void main() {
       await settle(tester);
       fx.failPut = true;
 
-      final row = rowWithLabel('Intro, track 1, 0:22, 2 stars');
+      final row = rowWithLabel('Intro, 0:22, 2 stars');
       await tapStar(tester, row, 4);
 
       // Rolled back to the server value, error surfaced.
@@ -208,10 +205,7 @@ void main() {
       await tester.runAsync(wireUp);
       await pumpScreen(tester, AlbumTracksScreen(album: album));
       await settle(tester);
-      expect(
-        rowWithLabel('Apocalypse Please, track 2, 2:58, 0 stars'),
-        findsOneWidget,
-      );
+      expect(rowWithLabel('Apocalypse Please, 2:58, 0 stars'), findsOneWidget);
 
       // Another client (the web UI) rates it 60 — no app interaction.
       await tester.runAsync(() async {
@@ -219,10 +213,7 @@ void main() {
         channels.last.serverSend('{"notify":["database"]}');
       });
       await settle(tester);
-      expect(
-        rowWithLabel('Apocalypse Please, track 2, 2:58, 3 stars'),
-        findsOneWidget,
-      );
+      expect(rowWithLabel('Apocalypse Please, 2:58, 3 stars'), findsOneWidget);
     });
   });
 

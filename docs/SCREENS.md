@@ -268,8 +268,8 @@ One screen per list, all sharing `BrowseScreenScaffold` + `PagedBrowseList`
 | Genres | `N tracks · M albums` |
 | Artist → albums | album fields (as Albums) |
 | Genre → albums | album fields (as Albums) |
-| Album → tracks | `track N` · `M:SS` length |
-| Playlist → tracks | `track` · artist · `M:SS` (no number — playlist order is not album order) |
+| Album → tracks | `M:SS` length (no track number — removed 2026-10-26; list order is the server's) |
+| Playlist → tracks | artist · `M:SS` |
 
 Rows carry a compound semantics label
 (`<name>, <kind>, <fields>`) for deterministic UI checks.
@@ -325,8 +325,8 @@ a third app-bar icon). `N` is the current queue size.
 | Element | Detail |
 |---|---|
 | App bar | "Queue" + trailing clear icon (tooltip `Clear queue`) |
-| Rows | `position` · title · `artist · album` · `M:SS` — server order, no sorting |
-| Now-playing row | `primaryContainer` background when `QueueItem.id == PlayerState.itemId` (the queue-entry id, **not** `track_id` — verified live) |
+| Rows | title · `artist · album` · `M:SS` — server order, no sorting; no leading numbers (removed 2026-10-26) |
+| Now-playing row | `primaryContainer` background + leading play icon when `QueueItem.id == PlayerState.itemId` (the queue-entry id, **not** `track_id` — verified live) |
 
 The clear icon opens a confirm dialog ("Clear the queue?") — clearing is
 destructive on the live library's real queue.

@@ -939,3 +939,25 @@ flutter-run debug session still attached (VM
 `device-verification` (full REQUIREMENTS pass on `RemoteDev_API_36`,
 reconnect robustness coordinated with user, release APK on Pixel 10
 GrapheneOS with the user). Follow-up still open: artwork 204-filter.
+
+## 2026-10-26 (evening, follow-up) — rows: track/queue numbers removed from the UI (opencode)
+
+User call: numbers rendered before the title (album rows' leading
+track number, queue rows' leading position) are noise — removed
+everywhere. `BrowseRow.leadingText`, `TrackRow.trackNumber`, the queue
+row's 28 px number column, and the number fragments of the compound
+semantics labels (`track N` / `queue item N`) are gone; the now-playing
+queue row keeps its leading play-arrow icon only. `Track.trackNumber`
+stays in the model (server data, parsed — just not shown). SCREENS.md
+row tables updated. Tests updated (queue row finder loses the position
+arg; rating screen labels) — 321/321, analyze/format/build green.
+Verified live on the Pixel 6: album rows now "Crown, 3:45, 1 stars";
+queue rows "Skunk, now playing, Thundersmack · Brass" (17 rendered
+rows, none starting with a digit).
+
+Tooling note: after an app relaunch, lens `console_logs` stopped
+buffering prints and `hot_reload` via lens fails (needs flutter_tools'
+compiler state — use `flutter run`'s own `r`); the working UI oracle is
+`evaluate_expression` returning chunked strings (128-char cap). Server
+untouched this follow-up: `stop`, queue snapshot-intact, all ratings at
+originals.
