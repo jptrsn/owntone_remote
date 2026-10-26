@@ -884,9 +884,11 @@ Clean APK installed on Pixel 6; boot log `connected` + `ws: open` in ~1s.
 
 **Commit:** `remote-app/005b` — unit done. **No push** (not requested).
 
-**Environment at handoff:** server `stop`, volume 65, queue 185
-byte-identical to snapshot; only Volumio Kitchen selected. Pixel 6 awake
-(30-min timeout), app foregrounded. Emulators untouched.
+**Environment at handoff:** server `stop` (master volume read 0 at final
+check — the value moves under the shared session), queue 185
+byte-identical to snapshot; Volumio Kitchen was the selected output.
+Pixel 6 awake (30-min timeout), app foregrounded (clean APK). Emulators
+untouched.
 
 **Next:** unit 006 (rating, R-12) — the rating flow needs its own
 supervised window (library data mutation: record original rating first,
