@@ -18,9 +18,15 @@ iTunes-specific features.
  incl. the supervised library-mutation window; follow-up commit `ef17cfc`
  removed row track/position numbers per user call — rows now render
  `title[, artist], M:SS` / `title[, now playing][, artist · album]`,
- semantics labels match). **Next: Phase 5 `device-verification` unit 001**
- (full requirements pass — see
- `.ai-dlc/device-verification/handoff.md`). Device decision (user
+ semantics labels match). **`device-verification` unit 001 DONE 2026-10-26**
+ (full R-ID pass on disposable AVD `OwnToneVerify_API_36`, created +
+ deleted by the unit; every criterion has an evidence row in
+ `.ai-dlc/device-verification/units/001-dev-avd-full-pass.md` § Result;
+ commit `90aea2f`. **FAILs R-13/R-14 → fix units `remote-app/007`
+ (search) + `remote-app/008` (rocker-step + About), which re-run those
+ rows**; the release gate is not blocked by them). **Next: remote-app
+ 007 + 008, then device-verification 002** (ReTune parity diff) /
+ **003** (release candidate on Pixel 10). Device decision (user
  2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
  and deletes it when finished** — never start or reuse an existing AVD;
  other sessions own the running emulators. The supervised play window
@@ -88,7 +94,10 @@ unexpectedly.
 | Other session — HANDS OFF | `Pixel_9_Pro_API_36` | `emulator-5554` (verified 2026-10-26 via `ro.boot.qemu.avd_name`; was `-5556` on 2026-10-09 — **serials shift when other emulators start; always re-verify via `adb shell getprop ro.boot.qemu.avd_name`, never trust a remembered serial**) |
 | Capture | `Retune_API_33` | _record on creation_ |
 | Dev / test / QA | `RemoteDev_API_36` | _not running as of 2026-10-26 — `emulator-5556` is now `OwnTone_U2_API_36` (other session, HANDS OFF). Unit 005b verified on the physical Pixel 6 instead (user instruction: emulators off-limits this session); on-device sessions on the Pixel 6 must keep the screen awake — the background-networking firewall blocks the app uid when the screen is off (see SESSION-LOG 2026-10-26, item 2)_ |
-| Verification (per-unit) | `OwnToneVerify_API_36` — **created and deleted by `device-verification` unit 001 itself**; never an existing AVD (user 2026-10-26) | _resolve by serial at boot: `getprop ro.boot.qemu.avd_name`_ |
+| Verification (per-unit) | `OwnToneVerify_API_36` — **created and deleted by
+  each verification unit itself** (unit 001's copy was deleted after the pass);
+  never an existing AVD (user 2026-10-26) | _resolve by serial at boot:
+  `getprop ro.boot.qemu.avd_name`_ |
 | Real device — volume-key routing tests | Pixel 6 (oriole, Android 16, **no SIM** — cannot receive calls) | `25071FDF600953` (connected 2026-10-10) |
 | Release candidate | Pixel 10 (GrapheneOS) | _record when connected_ |
 
