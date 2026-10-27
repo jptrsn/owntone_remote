@@ -1145,3 +1145,41 @@ wake-screen before convergence dumps, pause-from-stop 500, no
 the user). Artwork-204 follow-up + the R-02 WS-ping hardening candidate
 still open. (Earlier "002 = ReTune parity diff" mentions in this log are
 stale — the unit file is reconnect robustness.)
+
+## 2026-10-27 — device-verification unit 003 BLOCKED (not today) + release gate fully pre-staged (opencode)
+
+Pixel 10 (GrapheneOS) release pass could not run: agent pre-flight was
+complete and the user was asked to connect the device; answer **"Not
+today"** (~16:03 EDT). Unit status → **blocked**; steps 1–3 recorded
+`BLOCKED-PENDING-SUPERVISION`, steps 4–5 (device-bound, unsupervised)
+`BLOCKED — no device`. No device touched, server read-only.
+
+**Banked for the window (all green on clean HEAD `e765dcb`):** analyze 0 ·
+format 0 · **362/362** · `app-release.apk` **52.9 MB** + debug 189.9 MB
+(supersedes dv-001's 52.6 MB row — same lineage, HEAD moved). GrapheneOS
+checklist done to the extent static: manifest FGS `mediaPlayback` + exact
+permission set, startup runtime prompts (POST_NOTIFICATIONS +
+READ_PHONE_STATE, `main.dart:46`), **zero** google/firebase/play artifacts
+in Gradle + resolved lockfile (GMS-free dependency graph proven
+statically); the four on-device items (Network-perm behaviour, FGS
+acceptance, no-GMS crash observation, battery behaviour) explicitly
+pending. **`docs/RELEASE-NOTES.md` written** (new): what-works by R-ID,
+GrapheneOS setup incl. the per-app Network grant (no legacy auto-grant),
+known limitations (debug-signed release APK, Chromecast server-side
+selection bug, silent-drop blind spot, 204-artwork log noise,
+START_NOT_STICKY relaunch-recovery, untested 401/PIN paths), and a
+"GrapheneOS gate pending" banner so the notes can't be misread as a
+finished device pass.
+
+**Server left byte-identical to found** (GETs only, start == 16:05:38
+curl in the unit Result): pause, vol 0, item 197132, progress 183144,
+queue 185 first 'Skunk', Kitchen selected vol 0 / Server unselected vol 8.
+No AVD created (none needed) — final `adb devices` only foreign
+`emulator-5560`. Pixel 10 serial still unrecorded (AGENTS.md row stands).
+
+**Next:** when the user is present — run the unit's "Prepared for the
+device window" checklist (connect → record serial → install release APK →
+Network perm → **verify release-build semantics export before trusting
+dumps** → steps 2–5; baseline restore block is in the unit Result).
+Follow-ups open (not units): artwork-204 log noise; dv-002 R-02 WS-ping
+hardening.
