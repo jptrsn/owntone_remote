@@ -961,3 +961,46 @@ compiler state — use `flutter run`'s own `r`); the working UI oracle is
 `evaluate_expression` returning chunked strings (128-char cap). Server
 untouched this follow-up: `stop`, queue snapshot-intact, all ratings at
 originals.
+
+## 2026-10-26 (late evening) — device-verification unit 001 DONE: full R-ID pass on dedicated AVD (opencode)
+
+Full v1 requirements pass on a unit-created AVD (`OwnToneVerify_API_36`,
+android-36 playstore arm64, pixel_6 — `disk.dataPartition.size=8192M`
+needed for host free-disk), serial resolved by `ro.boot.qemu.avd_name`
+(→ `emulator-5558`), never an existing emulator; **deleted at the end**
+(`avdmanager delete avd` + empty `adb devices`). Gates green (analyze 0 /
+format 0 / 321 tests); debug 189.9 MB + release 52.6 MB APKs built
+(release held for unit 003 — not shipped).
+
+Outcome: **every R-ID row has evidence** (table in the unit file).
+Highlights: R-01 errors verbatim (DNS/refused; 401 N/A — unauthenticated
+server); R-02 external-change sync 1.55–1.74 s, backoff + full-refetch
+("WS never blocks REST" = harness-limited, accepted); R-03 seek Δ24 ms,
+artwork webroot+`maxwidth=600`, 204→placeholder; R-04 app/notification/
+MediaSession (media-key path) all audible-confirmed, backgrounded
+controls proven during a call; R-06 foreground ±5 (Pixel 6) + backgrounded
+rocker inert while playing (AVD re-run after Pixel 6 dropped off adb);
+R-07 process-death (`run-as kill -9` while paused) → full recovery on
+relaunch, single notification — documented `START_NOT_STICKY` (no
+spontaneous revival; relaunch is the recovery path); R-08 call → pause →
+resume audible + user-pause suppression, both confirmed by the user;
+R-09 guard dialog + audible A→B move Kitchen→Server, restored; R-10/R-11
+full (clear + WS refresh + 185-item restore twice, content-identical);
+R-12 mutation 20→60→20 UI↔API verified. **FAILs:** R-13 (no search UI —
+never built) → **remote-app/007 opened**; R-14 rocker-step const + no
+About → **remote-app/008 opened** (user decision: FAIL + fix units,
+release gate 003 not blocked). R-09 PIN N/A (no protected outputs).
+
+Incidents: ×3 external player manipulations by the **other session
+sharing 192.168.1.13** (resumes/skips/stops) — re-paused + verified each
+time, seconds of audible audio with the user present; no app-caused
+playback. Server exit state: `pause` frozen, volume 0, outputs [Kitchen]
+(0/8 baseline), queue 185 content-match, ratings originals — all pasted
+in the unit Result (harness notes there too: uiautomator revive loop,
+collapse shade before dumps, outputs-checkbox tap zone, queue-restore
+POST quirks, `gsm cancel`).
+
+Staged before this entry: `handoff.md` → `handoff-2026-10-26.md`
+(rename). Next: remote-app/007 + 008 fix units (re-run failed rows),
+then device-verification 002 (ReTune parity diff) / 003 (release
+candidate on Pixel 10).
