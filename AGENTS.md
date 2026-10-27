@@ -24,11 +24,16 @@ iTunes-specific features.
  `.ai-dlc/device-verification/units/001-dev-avd-full-pass.md` § Result;
  commit `90aea2f`. **R-13 FAIL → fix unit `remote-app/007` DONE 2026-10-26**
  (search built: grouped results, per-group paging, empty/no-results states,
- tap-through; R-13 rows re-run PASS in the dv-001 table; own AVD created +
- deleted). **R-14 FAIL → fix unit `remote-app/008` (rocker-step + About)
- open**, which re-runs those rows; the release gate is not blocked by it).
- **Next: remote-app 008, then device-verification 002** (ReTune parity diff) /
- **003** (release candidate on Pixel 10). Device decision (user
+  tap-through; R-13 rows re-run PASS in the dv-001 table; own AVD created +
+  deleted). **R-14 FAIL → fix unit `remote-app/008` DONE 2026-10-27**
+  (rocker-step setting + About built; R-14 rows re-run PASS, commit
+  `6642bb4` — every R-ID row now has evidence). **`device-verification`
+  unit 002 DONE 2026-10-27** (reconnect robustness R-01/R-02: 4/4 scenarios
+  incl. supervised server restart; backoff 1→2→4→8→16→30 s quoted from
+  logcat; own AVD created + deleted; open hardening candidate — no WS
+  ping/heartbeat so a silent network drop never shows the offline banner).
+  **Next: device-verification 003** (release candidate on Pixel 10, with the
+  user). Device decision (user
  2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
  and deletes it when finished** — never start or reuse an existing AVD;
  other sessions own the running emulators. The supervised play window

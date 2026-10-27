@@ -1088,3 +1088,60 @@ request-count assert — LAN re-fetch settles sub-frame: harness limit).
 **Next:** device-verification **002** (ReTune parity diff) / **003**
 (release candidate on Pixel 10, with the user). Artwork-204 follow-up
 still open.
+
+## 2026-10-27 — device-verification unit 002 DONE: reconnect robustness (R-01/R-02), 4/4 scenarios (opencode)
+
+Live disruption pass on a fresh disposable `OwnToneVerify_API_36` (created +
+**deleted** by the unit; serial resolved via `ro.boot.qemu.avd_name` →
+`emulator-5554`; foreign `ZipCaptions_QA_API_36`/`emulator-5560` untouched —
+final `adb devices` shows only foreign). Debug app on HEAD `6642bb4` via
+`flutter run` → `flutter attach` (reattach after the setup force-stop killed
+the run; SIGUSR1 hot reload used to inject + remove the temporary backoff
+`print()` — tree and installed build stayed pure HEAD, unit-007 precedent).
+
+**Scenarios:** (1) wifi off → `connected → offline` in **1.4 s**, banner +
+stale mirror + controls-disabled, enable → reconnect +16 s + full refetch;
+(2) **supervised, user present** — server restart (7 s outage): detection
++0.5 s, REST recovers +0.8 s, WS +7 s, app showed the fresh state exactly;
+(3) 11 min 02 s offline → backoff **quoted from logcat**:
+1000→2000→4000→8000→16000→30000 (cap) ms, attempt timestamps match the
+printed delays, 27 attempts / 37 total log lines (bounded), PSS 269 MB,
+reconnect +19.7 s; (4) 5× rapid flapping → single offline transition (no
+phase thrash), one clean converge +12 s, **1** notification (`id=1124`,
+title = current track), pid 8340 stable throughout, crash buffer +
+`E/flutter` 0 at every assertion. After every scenario: `GET /api/player`
+== app labels, outputs == [Kitchen], single notification — all green.
+
+**Key harness finding:** the emulator routes on **MOBILE/`eth0`** — `svc
+wifi disable` alone does not disconnect the app (WS re-established over
+eth0; banner never appeared). Real isolation = `svc wifi disable` +
+`svc data disable`. Related **R-02 hardening observation** (out-of-scenario,
+not a FAIL): a *silent* interface-down leaves the WS socket `ESTAB` in the
+kernel with zero Dart events — no `pingInterval` and no ConnectivityManager
+listener means a silent middlebox drop would keep the app falsely `sync:
+live`; a small follow-up (WS app-level ping or periodic REST probe while
+connected) is worth a unit later.
+
+**Incident (audio-safe, user-present):** the supervised restart lost the
+server's player session (`stop`, vol 15, queue 0 — OwnTone did not persist
+it). Restored with explicit user approval of the *specific* silent sequence:
+185-item queue re-add (`clear=true`, no playback param), master+Kitchen
+volume → 0, then play→next×2→seek 183144→pause with the only-selected output
+at volume 0 = inaudible (~1 s silent stream, zero audible audio). Final
+server = as found except `item_id` regenerated 196947→197132 (queue ids are
+per-instance) and Δ48 ms seek precision — documented in the unit Result.
+No library/rating/output-selection mutations; no external-session
+interference this unit.
+
+Gates: analyze 0 · format 0 · **362/362** · debug APK ✓ · `git diff` empty
+(temp print reverted + verified before gates). dv-001 R-01/R-02 rows:
+nothing shifted, both stand (backoff now evidenced live for the first time).
+Harness notes in the unit file (avdmanager duplicate-partition-line gotcha,
+attach/USR1 delta rule, dump md5-gate false-reject on identical screens,
+wake-screen before convergence dumps, pause-from-stop 500, no
+`items/play` endpoint).
+
+**Next:** device-verification **003** (release candidate on Pixel 10, with
+the user). Artwork-204 follow-up + the R-02 WS-ping hardening candidate
+still open. (Earlier "002 = ReTune parity diff" mentions in this log are
+stale — the unit file is reconnect robustness.)
