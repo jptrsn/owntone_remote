@@ -1004,3 +1004,44 @@ Staged before this entry: `handoff.md` → `handoff-2026-10-26.md`
 (rename). Next: remote-app/007 + 008 fix units (re-run failed rows),
 then device-verification 002 (ReTune parity diff) / 003 (release
 candidate on Pixel 10).
+
+## 2026-10-26 (night) — remote-app unit 007 DONE: search (R-13), R-13 rows re-run PASS (opencode)
+
+Search built and verified: `OwntoneApi.searchTracks/Artists/Albums/Playlists`
+(one `paging` per requested type — shape verified live; query pre-encoded in
+the path, the unit-005a dio trap) + `SearchScreen` (debounced field, groups
+Tracks→Artists→Albums→Playlists with `Type · total` headers, per-group
+Load-more via `PagedList`, rows = the shared `browse_rows.dart` widgets,
+tap-through to the existing detail screens, track tap = play) entered from
+a new **Search** row at the top of the library home (app bar untouched —
+unit 004 overflow rule). Empty-query idle vs no-results vs
+all-groups-failed vs per-group-failed vs waiting-while-offline: distinct
+states, all tested. 20 new tests (6 wire + 14 widget) cite R-13, use
+`test/fakes/` only → **341/341**; analyze 0 / format 0 / debug APK 151.5 MB.
+
+Device pass on a fresh disposable AVD `OwnToneVerify_API_36` (created by the
+unit, serial resolved via `ro.boot.qemu.avd_name` → `emulator-5554` —
+**serials had shifted**; **deleted at the end**, `adb devices` shows only
+another session's `5560`): grouped headers == server totals (`the`: 466/32/111,
+`brass`: Albums·8/Playlists·1), Load-more pagination proven against the
+server across the page boundary (built rows = server page-index window
+13→27 strictly increasing — no dupes/gaps), no-results `No results for
+"zzzqqq".` ≠ idle hint ≠ error state, tap-through album/artist/playlist all
+landed on the existing screens with server-matching rows. `track N` audit
+over all 54 evidence dumps: 0 hits; no leading numbers. dv-001 table:
+R-13 FAIL row replaced by the two acceptance rows, both PASS.
+
+**Audio safety:** read-only unit — track rows / play buttons / stars never
+tapped on-device; server `pause`/vol 0/progress 183192 identical at start
+and end (frozen +2 s verified). No library/queue/outputs mutations.
+
+New harness notes (in the unit file): `input swipe` across an open Gboard
+gesture-types into the focused field — always `keyevent 4` +
+`mInputShown=false` verify before swiping (ESC/111 unreliable); accept a
+uiautomator dump only when its md5 changed AND it contains an expected
+marker. The "stuck skeleton" scare was diagnosed (temp debugPrints, fully
+removed) as a dump race, not an app bug.
+
+Next: remote-app **008** (rocker-step setting + About screen — re-runs the
+R-14 FAIL rows), then device-verification 002 (ReTune parity diff) /
+003 (release candidate on Pixel 10). Artwork-204 follow-up still open.

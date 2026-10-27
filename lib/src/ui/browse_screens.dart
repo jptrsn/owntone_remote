@@ -11,6 +11,7 @@ import '../library/paged_list.dart';
 import 'browse_rows.dart';
 import 'browse_screen_scaffold.dart';
 import 'paged_browse_screen.dart';
+import 'search_screen.dart';
 
 /// The row-tap rating commit (R-12, unit 006): `RatingStars` contract —
 /// null on success, the typed error text for the snackbar on failure. The
@@ -25,12 +26,15 @@ Future<String?> Function(int newRating) rateTrack(
   return ok ? null : (rating.actionError ?? 'Rating failed.');
 };
 
-/// R-10 (unit 005a): the library home — the browse menu (Playlists,
-/// Artists, Albums, Genres), reached from the now-playing app bar.
+/// R-10 (unit 005a): the library home — the browse menu (Search, Playlists,
+/// Artists, Albums, Genres), reached from the now-playing app bar. Search
+/// lives here (R-13, unit 007), not in the now-playing app bar: a second
+/// app-bar action overflows the 360-logical-px viewport (unit 004 finding).
 class LibraryHomeScreen extends StatelessWidget {
   const LibraryHomeScreen({super.key});
 
   static const _sections = [
+    (Icons.search, 'Search'),
     (Icons.queue_music, 'Playlists'),
     (Icons.person, 'Artists'),
     (Icons.album, 'Albums'),
@@ -59,6 +63,7 @@ class LibraryHomeScreen extends StatelessWidget {
                 ? () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => switch (label) {
+                        'Search' => const SearchScreen(),
                         'Playlists' => const PlaylistsScreen(),
                         'Artists' => const ArtistsScreen(),
                         'Albums' => const AlbumsScreen(),

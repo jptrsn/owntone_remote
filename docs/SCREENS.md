@@ -25,7 +25,7 @@ reachable one tap away.
 | Library browse (playlists / artists / albums / genres) | TBD | R-10 |
 | Queue | TBD | R-11 |
 | Rating (stars on rows + now playing) | below (unit 006) | R-12 |
-| Search | TBD | R-13 |
+| Search | below (unit 007) | R-13 |
 
 ---
 
@@ -261,7 +261,7 @@ One screen per list, all sharing `BrowseScreenScaffold` + `PagedBrowseList`
 
 | Screen | Row fields (secondary) |
 |---|---|
-| Library home | Playlists / Artists / Albums / Genres (section rows, chevron) |
+| Library home | Search / Playlists / Artists / Albums / Genres (section rows, chevron) |
 | Playlists | `smart playlist` / `playlist` / `folder` · `N items` |
 | Artists | `N albums · M tracks` |
 | Albums | `artist · year` (each omitted when absent/0) |
@@ -398,3 +398,59 @@ Server stores 0–100; the UI is a 5-star control.
   arrives via the `database`-event reload (rows) or the controller's
   confirming GET (now playing).
 - Offline: stars render inert (no PUT goes out), like every other control.
+
+---
+
+## Search (R-13)
+
+Specified in unit 007. Reached from the library home's **Search** section
+row (top of the menu) — not from the now-playing app bar: a second
+app-bar action overflows the 360-logical-px viewport (unit 004 finding).
+
+One text field + the results as **groups, ordered Tracks → Artists →
+Albums → Playlists**. The empty query never queries the server (idle
+hint); groups that answer with nothing are hidden (the results stay
+compact — a query with no playlists shows three groups, not an empty
+fourth). Each group header carries the server total (`Tracks · 466`) for
+deterministic evidence + dedupe sanity.
+
+### Rows — reuse, never re-implement
+
+Every group renders through the **same row widgets as the browse
+screens** (`browse_rows.dart`), so visuals and semantics labels cannot
+drift between the two surfaces:
+
+| Group | Row | Row-tap action |
+|---|---|---|
+| Tracks | `TrackRow` (artist shown; stars per R-12) | play the track (`library:track:<id>`) |
+| Artists | `ArtistRow` | **open the artist's albums** (existing screen) |
+| Albums | `AlbumRow` | **open the album's tracks** (existing screen) |
+| Playlists | `PlaylistRow` | **open the playlist's tracks** (existing screen) |
+
+Collection rows keep their trailing play button (same `clear=true&
+playback=start` add as the browse lists — supervised to press).
+Semantics labels match the browse rows exactly:
+`<title>, <artist>, M:SS, N stars` — **no leading track number, no
+`track N` in any label** (unit 006 follow-up rule).
+
+### Query & data
+
+| | |
+|---|---|
+| Endpoint | `GET /api/search?type=<t>&query=<q>&offset=<o>&limit=<l>` — one request **per group type** (the server answers one `paging` object per requested type; `offset`/`limit` apply per group — verified live 2026-10-26) |
+| Page size | 25 per group; a per-group **Load more** button appends the next slice and disappears when `items.length ≥ total` |
+| Query encoding | `Uri.encodeComponent`, embedded in the request path — same dio trap as the genre expression (unit 005a C4): `queryParameters` would write `+` for spaces, which the server does not decode |
+| Debounce | 300 ms of quiescence per burst of keystrokes |
+| Dedup | per-group stable keys (track/album/artist/playlist id) via `PagedList` — a library shift mid-page never duplicates a row |
+| Invalidation | WS `database`/`update` reload the current results; reconnect refetches (started lists) or starts (lists searched while offline) |
+
+### States (the R-13 acceptance rows)
+
+| State | Rendering | Proof of distinction |
+|---|---|---|
+| Empty query (never searched) | search icon + "Type to search the library." | **zero** `/api/search` requests on the wire |
+| Query in flight | skeleton rows | — |
+| Every group empty | icon + `No results for "<query>".` | distinct key `search-no-results`; never the idle hint, never an empty list |
+| Every group's first page failed | "Could not load search results." + message + Retry | a failure never reads as "no results" |
+| One group's page failed | its rows stay + `Load failed — <msg>` + per-group Retry | other groups unaffected |
+| Offline | banner up; rows inert; searched-while-offline shows "Waiting for the server…" | reconnect starts/refetches |

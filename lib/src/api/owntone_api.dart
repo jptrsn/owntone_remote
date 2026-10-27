@@ -146,6 +146,84 @@ class OwntoneApi {
     );
   }
 
+  // -- Search (R-13, unit 007) ------------------------------------------------
+
+  /// One result group of `GET /api/search` (docs/API.md): the server answers
+  /// one `paging` object per requested `type`, with `offset`/`limit` applied
+  /// per group — so each group pages independently by re-requesting just its
+  /// type. A missing group key (type not requested) parses as empty.
+  ///
+  /// The query is pre-encoded with [Uri.encodeComponent] and placed in the
+  /// path rather than `queryParameters` — the same dio trap as [genreAlbums]
+  /// (unit 005a C4): `encodeQueryComponent` writes spaces as `+`, which this
+  /// server does not decode back to a space in a search query.
+  Future<Paging<T>> _searchGroup<T>(
+    String type,
+    String query,
+    T Function(Map<String, dynamic>) fromJson, {
+    required int offset,
+    required int limit,
+  }) async {
+    final res = await _dio.get(
+      '/api/search?type=$type&query=${Uri.encodeComponent(query)}'
+      '&offset=$offset&limit=$limit',
+    );
+    final data = res.data as Map<String, dynamic>;
+    final group = data[type];
+    if (group is! Map<String, dynamic>) {
+      return const Paging(items: [], total: 0, offset: 0, limit: -1);
+    }
+    return Paging.fromJson(group, fromJson);
+  }
+
+  Future<Paging<Track>> searchTracks(
+    String query, {
+    int offset = 0,
+    int limit = 25,
+  }) => _searchGroup(
+    'tracks',
+    query,
+    Track.fromJson,
+    offset: offset,
+    limit: limit,
+  );
+
+  Future<Paging<Artist>> searchArtists(
+    String query, {
+    int offset = 0,
+    int limit = 25,
+  }) => _searchGroup(
+    'artists',
+    query,
+    Artist.fromJson,
+    offset: offset,
+    limit: limit,
+  );
+
+  Future<Paging<Album>> searchAlbums(
+    String query, {
+    int offset = 0,
+    int limit = 25,
+  }) => _searchGroup(
+    'albums',
+    query,
+    Album.fromJson,
+    offset: offset,
+    limit: limit,
+  );
+
+  Future<Paging<Playlist>> searchPlaylists(
+    String query, {
+    int offset = 0,
+    int limit = 25,
+  }) => _searchGroup(
+    'playlists',
+    query,
+    Playlist.fromJson,
+    offset: offset,
+    limit: limit,
+  );
+
   // -- Rating (R-12, unit 006) ----------------------------------------------
 
   /// Single library track — the rating lives on the track, not on the queue
