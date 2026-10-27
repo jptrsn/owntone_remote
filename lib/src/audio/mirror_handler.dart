@@ -4,6 +4,7 @@ import 'package:audio_service/audio_service.dart';
 
 import '../player/player_controller.dart';
 import '../player/player_state.dart';
+import '../settings/settings_store.dart';
 
 // -- pure notification mapping (R-07) ---------------------------------------
 //
@@ -85,12 +86,17 @@ PlaybackState playbackStateFor(PlayerState p, {int? positionMs}) =>
 /// `playing: true` once (with the real metadata/controls), then the real
 /// state. `androidStopForegroundOnPause: false` keeps the FGS up afterwards.
 class MirrorAudioHandler extends BaseAudioHandler {
-  MirrorAudioHandler(this._player) : super();
-
-  /// TODO(R-14): make the rocker step configurable in settings (P2).
-  static const rockerStep = 5;
+  MirrorAudioHandler(this._player, {required SettingsStore settings})
+    : _settings = settings,
+      super();
 
   final PlayerController _player;
+  final SettingsStore _settings;
+
+  /// The rocker step (R-14): 1–10, default 5, from [SettingsStore], read
+  /// **at keypress time** — a change in the Settings screen applies to the
+  /// next press with no restart (SharedPreferences is an in-memory cache).
+  int get rockerStep => _settings.rockerStep;
   Timer? _positionTicker;
   bool _started = false;
   bool _woken = false;

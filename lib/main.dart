@@ -85,7 +85,7 @@ Future<void> main() async {
   conn.addListener(() {
     if (conn.isConnected && !_audioStarted) {
       _audioStarted = true;
-      unawaited(_initAudio(player));
+      unawaited(_initAudio(player, store));
     }
   });
 
@@ -116,12 +116,12 @@ Future<void> main() async {
 /// audio_service wiring — the FGS/notification plumbing (spike-validated).
 /// Failures here degrade to a headless app (controls still work in-UI);
 /// they must never take the app down.
-Future<void> _initAudio(PlayerController player) async {
+Future<void> _initAudio(PlayerController player, SettingsStore store) async {
   try {
     // androidStopForegroundOnPause: false — keep the mediaPlayback FGS
     // alive while the server is paused (spike criterion 7, Finding 3).
     final handler = await AudioService.init(
-      builder: () => MirrorAudioHandler(player),
+      builder: () => MirrorAudioHandler(player, settings: store),
       config: const AudioServiceConfig(
         androidStopForegroundOnPause: false,
         androidNotificationChannelName: 'OwnTone Remote',

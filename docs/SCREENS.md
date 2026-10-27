@@ -18,7 +18,8 @@ reachable one tap away.
 
 | Screen | Spec | Required by |
 |---|---|---|
-| Settings (server host/port) | specified in unit 001 (see its Result) | R-01, R-14 |
+| **Settings** (server, rocker step, About entry) | below (units 001 + 008) | R-01, R-14 |
+| **About** | below (unit 008) | R-14 |
 | **Now playing** | below | R-03, R-04, R-05, R-07 |
 | Notification (persistent) | below | R-07 |
 | **Outputs / speakers** | below (unit 004) | R-09 |
@@ -454,3 +455,58 @@ Semantics labels match the browse rows exactly:
 | Every group's first page failed | "Could not load search results." + message + Retry | a failure never reads as "no results" |
 | One group's page failed | its rows stay + `Load failed — <msg>` + per-group Retry | other groups unaffected |
 | Offline | banner up; rows inert; searched-while-offline shows "Waiting for the server…" | reconnect starts/refetches |
+
+## Settings (R-01, R-14)
+
+Server configuration specified in unit 001; the **rocker step** row and
+the **About** entry added in unit 008. Reached from the now-playing app
+bar (gear, tooltip `Server settings`); the same screen *is* the launch
+screen while idle (then titled `Connect`, no back/cancel).
+
+### Layout (top → bottom, scrolls)
+
+| Element | Detail |
+|---|---|
+| Server section | icon + `OwnTone server` + ws-port explainer + `Host` / `JSON port` fields + `Connect` (+ `Disconnect` while connected) — unit 001 spec, unchanged |
+| **Volume rocker step** | label + helper `Server volume change per press (1–10), while the app is open.` · `−` button (tooltip `Decrease rocker step`, disabled at 1) · value `1–10` · `+` button (tooltip `Increase rocker step`, disabled at 10) |
+| **About** | list row `About` / `App and server versions`, chevron → pushes the [About](#about-r-14) screen |
+
+### Rocker-step behaviour (R-14; invariants from R-06/D20)
+
+- Value **1–10, default 5**, persisted (`SettingsStore`, key
+  `rocker.step`); clamped on read *and* write — an out-of-range stored
+  value can never reach the server as a bigger step.
+- **Applies to the next keypress — no restart**: the mirror handler
+  reads the store at keypress time (SharedPreferences is an in-memory
+  cache). Per-press effect: `raise → +step`, `lower → −step` via
+  `PUT /api/player/volume?step=`.
+- **Foreground-only** (D20, unchanged): rocker → server volume happens
+  only while the app is foregrounded; backgrounded the session is
+  `fixed` and the handler's volume paths stay inert — at any step.
+
+### States
+
+Server section as unit 001 (validation `Required` / `1–65535`); step row
+always available (offline too — it only writes local prefs); About row
+always available (About handles offline itself).
+
+## About (R-14)
+
+Specified + shipped in unit 008. Read-only; no controls beyond the
+re-fetch tap.
+
+### Layout
+
+| Element | Source |
+|---|---|
+| App icon + `OwnTone Remote` + version | **compile-time consts** (`core/app_info.dart`; `package_info_plus` deliberately not used — a test asserts the version mirrors `pubspec.yaml`) |
+| `Server version` → `OwnTone <version>` | `GET /api/config` → `version`; **tapping the row re-fetches** |
+| `Build options` → comma-joined list | `GET /api/config` → `buildoptions` |
+
+### States
+
+| State | Rendering |
+|---|---|
+| Loading (first fetch / re-fetch) | spinner in place of the rows |
+| Loaded | the two rows above, live values |
+| Unreachable (never connected, offline, or failed re-fetch) | wifi-off icon + `Could not reach the server.` + **Retry** — stale values are never presented as current |

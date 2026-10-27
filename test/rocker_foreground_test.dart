@@ -7,6 +7,8 @@ import 'package:owntone_remote/src/audio/mirror_handler.dart';
 import 'package:owntone_remote/src/connection/connection_controller.dart';
 import 'package:owntone_remote/src/core/server_config.dart';
 import 'package:owntone_remote/src/player/player_controller.dart';
+import 'package:owntone_remote/src/settings/settings_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'fakes/fake_owntone_server.dart';
 import 'fakes/fake_ws_channel.dart';
 
@@ -53,11 +55,14 @@ class VolumeServer {
 /// volume keys to the system streams) and the handler's volume overrides
 /// stay no-ops — even while the server would otherwise be selected (playing).
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late VolumeServer server;
   late ScriptedAdapter adapter;
   late List<FakeWsChannel> channels;
   late ConnectionController conn;
   late PlayerController player;
+  late SettingsStore store;
   late MirrorAudioHandler handler;
 
   const cfg = ServerConfig(host: '10.0.0.5', port: 3689);
@@ -92,7 +97,12 @@ void main() {
     await player.init();
     await conn.connectTo(cfg);
     await pump();
-    handler = MirrorAudioHandler(player);
+    // R-14: the handler reads the step from the store at keypress time;
+    // the mock starts empty → default 5, so the R-06 rows below are the
+    // exact pre-R-14 expectations (±5).
+    SharedPreferences.setMockInitialValues({});
+    store = await SettingsStore.create();
+    handler = MirrorAudioHandler(player, settings: store);
     await handler.start();
     await pump();
   });
@@ -184,6 +194,67 @@ void main() {
         expect(remote.volumeControlType, AndroidVolumeControlType.fixed);
 
         await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+        expect(volumePuts(), isEmpty);
+        expect(server.volume, 75);
+      },
+    );
+  });
+
+  group('R-14 custom step (read at keypress time — applies to the next '
+      'press, no restart):', () {
+    setUp(() async {
+      handler.setAppForeground(true);
+      await pump();
+    });
+
+    test('step=1 → ±1 per press; step=10 → ±10 per press', () async {
+      await store.saveRockerStep(1);
+      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+      expect(volumePuts(), ['PUT /api/player/volume?step=1']);
+      expect(server.volume, 76);
+      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.lower);
+      expect(server.volume, 75);
+
+      await store.saveRockerStep(10);
+      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+      expect(volumePuts().last, 'PUT /api/player/volume?step=10');
+      expect(server.volume, 85);
+    });
+
+    test('the *next* press after a Settings change uses the new step — '
+        'no handler restart', () async {
+      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+      expect(volumePuts().last, 'PUT /api/player/volume?step=5');
+      expect(server.volume, 80);
+
+      await store.saveRockerStep(2);
+      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+      expect(volumePuts().last, 'PUT /api/player/volume?step=2');
+      expect(server.volume, 82);
+    });
+
+    test(
+      'an out-of-range stored value reaches the server clamped (1–10)',
+      () async {
+        SharedPreferences.setMockInitialValues({'rocker.step': 99});
+        store = await SettingsStore.create();
+        handler = MirrorAudioHandler(player, settings: store);
+        handler.setAppForeground(true);
+
+        await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+        expect(volumePuts().last, 'PUT /api/player/volume?step=10');
+      },
+    );
+
+    test(
+      'R-06 regression guard: backgrounded stays inert at a custom step',
+      () async {
+        await store.saveRockerStep(10);
+        handler.setAppForeground(false);
+        await pump();
+
+        await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+        await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.lower);
         expect(volumePuts(), isEmpty);
         expect(server.volume, 75);
       },

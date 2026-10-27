@@ -1045,3 +1045,46 @@ removed) as a dump race, not an app bug.
 Next: remote-app **008** (rocker-step setting + About screen — re-runs the
 R-14 FAIL rows), then device-verification 002 (ReTune parity diff) /
 003 (release candidate on Pixel 10). Artwork-204 follow-up still open.
+
+## 2026-10-27 — remote-app unit 008 DONE: rocker-step setting + About (R-14), R-14 rows re-run PASS (opencode)
+
+R-14 closed — the last R-ID gap before device-verification 002/003.
+**Rocker step** (was `mirror_handler.dart:90` `static const rockerStep =
+5`, `TODO(R-14)`): now a persisted `SettingsStore` pref (`rocker.step`,
+1–10, default 5, clamped on read *and* write), read by the mirror handler
+**at keypress time** → a Settings change applies to the *next* press, no
+restart; exposed in Settings as `Volume rocker step` −/+ row (disabled at
+the bounds). **About** (`lib/src/ui/about_screen.dart`, from a Settings
+row): app name/version from compile-time consts (no `package_info_plus`
+— a test asserts `kAppVersion` mirrors pubspec.yaml) + server
+version/buildoptions from `GET /api/config`, server-version row tap
+re-fetches, unreachable → `Could not reach the server.` + Retry (never
+stale). R-06/D20 invariants preserved exactly (foreground flag still
+gates both volume overrides; backgrounded inert at any step — new
+regression test at step 10).
+
+Gates: analyze 0 · format 0 · **362/362** (341 + 21 new: store clamping,
+handler applied-immediately-on-next-press + backgrounded-inert guard,
+About render/offline/re-fetch, Settings/About 360-px) · debug APK ✓.
+
+Device pass on a fresh disposable `OwnToneVerify_API_36` (created +
+**deleted** by the unit; serial via `ro.boot.qemu.avd_name` → `emulator-
+5554` — the foreign `ZipCaptions_QA_API_36` was attached at `emulator-
+5560` throughout and never touched). **Volume-only, zero playback
+exposure**: `state=pause` re-verified before every keypress; no
+transport/track-row taps. step=1 → ±1/press (vol 30→31/32/33→32),
+step=10 **same session** (immediate effect) → 32→42→32; step restored 5
+(+ one default-active press 0→5, then vol 0) and both step and volume
+verified via API; settings persisted across `am force-stop`+relaunch
+(step 3, and restored 5 over a second restart). R-06 guard re-checked
+backgrounded at step 3: keyevents inert, vol 0 unchanged. About showed
+`0.1.0+1` + `OwnTone 29.3` + the full live buildoptions list. Server
+**byte-identical** to found (`pause`, vol 0, item 196947, progress
+183192); AVD deleted, `adb devices` shows only foreign devices.
+Evidence + harness notes in the unit Result; dv-001 R-14 rows replaced
+with the two PASS rows (About-tap re-fetch proven by the widget-test
+request-count assert — LAN re-fetch settles sub-frame: harness limit).
+
+**Next:** device-verification **002** (ReTune parity diff) / **003**
+(release candidate on Pixel 10, with the user). Artwork-204 follow-up
+still open.

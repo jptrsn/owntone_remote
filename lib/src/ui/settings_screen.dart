@@ -6,9 +6,13 @@ import 'package:provider/provider.dart';
 import '../connection/connection_controller.dart';
 import '../core/server_config.dart';
 import '../settings/settings_store.dart';
+import 'about_screen.dart';
 
-/// Server configuration (R-01): manual host + JSON-port entry, persisted
-/// via [SettingsStore]. Manual entry only in v1 (D8: no discovery).
+/// Settings (R-01, R-14): manual host + JSON-port entry persisted via
+/// [SettingsStore], the volume-rocker step (1–10, applied to the next
+/// press — the mirror handler reads the store at keypress time), and the
+/// entry to the read-only [AboutScreen]. Manual entry only in v1 (D8: no
+/// discovery).
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.initial});
 
@@ -24,6 +28,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _port;
   final _formKey = GlobalKey<FormState>();
 
+  /// Rocker step shown in the UI (R-14). Seeded from the store; every tap
+  /// persists immediately (the mirror handler reads the store at keypress
+  /// time, so the *next* press already uses the new step).
+  late int _step;
+
   @override
   void initState() {
     super.initState();
@@ -32,6 +41,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _port = TextEditingController(
       text: initial == null ? '' : initial.port.toString(),
     );
+    _step = context.read<SettingsStore>().rockerStep;
+  }
+
+  void _bumpStep(int delta) {
+    setState(
+      () => _step = (_step + delta).clamp(
+        SettingsStore.minRockerStep,
+        SettingsStore.maxRockerStep,
+      ),
+    );
+    unawaited(context.read<SettingsStore>().saveRockerStep(_step));
   }
 
   @override
@@ -166,6 +186,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: const Text('Disconnect'),
                     ),
                   ],
+                  const SizedBox(height: 24),
+                  const Divider(),
+                  // Volume-rocker step (R-14): persists on every tap — the
+                  // mirror handler reads the store at keypress time, so the
+                  // change applies to the next press with no restart.
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Volume rocker step',
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                            Text(
+                              'Server volume change per press (1–10), '
+                              'while the app is open.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        key: const ValueKey('rocker-step-decrease'),
+                        tooltip: 'Decrease rocker step',
+                        onPressed: _step > SettingsStore.minRockerStep
+                            ? () => _bumpStep(-1)
+                            : null,
+                        icon: const Icon(Icons.remove),
+                      ),
+                      SizedBox(
+                        width: 40,
+                        child: Text(
+                          '$_step',
+                          key: const ValueKey('rocker-step-value'),
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      IconButton(
+                        key: const ValueKey('rocker-step-increase'),
+                        tooltip: 'Increase rocker step',
+                        onPressed: _step < SettingsStore.maxRockerStep
+                            ? () => _bumpStep(1)
+                            : null,
+                        icon: const Icon(Icons.add),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  ListTile(
+                    key: const ValueKey('about-entry'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.info_outline),
+                    title: const Text('About'),
+                    subtitle: const Text('App and server versions'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AboutScreen(),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

@@ -2,14 +2,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/server_config.dart';
 
-/// Persisted user settings (R-01). Only the configured server is stored;
-/// the websocket port is discovered from `/api/config` each connect and
-/// deliberately not persisted (a server config change must not be cached).
+/// Persisted user settings (R-01, R-14): the configured server and the
+/// volume-rocker step. The websocket port is discovered from `/api/config`
+/// each connect and deliberately not persisted (a server config change must
+/// not be cached).
 class SettingsStore {
   SettingsStore(this._prefs);
 
   static const _hostKey = 'server.host';
   static const _portKey = 'server.port';
+  static const _rockerStepKey = 'rocker.step';
+
+  /// R-14 bounds for the volume-rocker step (server-volume delta per press
+  /// while foregrounded — R-06/D20 keeps it foreground-only).
+  static const int minRockerStep = 1;
+  static const int maxRockerStep = 10;
+  static const int defaultRockerStep = 5;
 
   final SharedPreferences _prefs;
 
@@ -30,4 +38,14 @@ class SettingsStore {
       _prefs.setInt(_portKey, config.port),
     ]);
   }
+
+  /// The volume-rocker step (R-14): read **per keypress** by the mirror
+  /// handler, so a Settings change applies to the next press without a
+  /// restart. Clamped on read *and* write — a hand-edited or legacy
+  /// out-of-range value can never reach the server as a bigger step.
+  int get rockerStep => (_prefs.getInt(_rockerStepKey) ?? defaultRockerStep)
+      .clamp(minRockerStep, maxRockerStep);
+
+  Future<void> saveRockerStep(int step) =>
+      _prefs.setInt(_rockerStepKey, step.clamp(minRockerStep, maxRockerStep));
 }
