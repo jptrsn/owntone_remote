@@ -1,6 +1,6 @@
 ---
 name: 009-ws-silent-drop-hardening
-status: pending
+status: in_progress
 intent: remote-app
 supervised_steps: []
 ---
