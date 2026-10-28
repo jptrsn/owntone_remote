@@ -1183,3 +1183,50 @@ Network perm → **verify release-build semantics export before trusting
 dumps** → steps 2–5; baseline restore block is in the unit Result).
 Follow-ups open (not units): artwork-204 log noise; dv-002 R-02 WS-ping
 hardening.
+
+## 2026-10-28 — remote-app unit 009 DONE: WS silent-drop hardening (opencode, unattended overnight)
+
+TDD build of the dv-002 hardening candidate (R-02 blind spot: a silent
+interface/middlebox drop left the WS `ESTAB` in the kernel with zero Dart
+events → app falsely `sync: live`). Implementation is the spec's minimal
+shape: `kWsPingInterval = 10 s` passed as `pingInterval:` to
+`IOWebSocketChannel.connect` in the default factory of `ws_client.dart` —
+dart:io fails an unponged socket (`goingAway`, pong must land within one
+interval, api.dart.dev/stable/3.11.5/dart-io/WebSocket/pingInterval.html)
+into the existing `onDone`/`onError` → Backoff reconnect; `notify`
+subprotocol, backoff sequence, re-subscribe and REST-probe-decides-offline
+untouched, no new packages. Executable contract at `05811ff` drove it:
+the 3 liveness tests RED→GREEN, all pre-green guards (c1b/1d/c2) held,
+kill-check performed (delete `pingInterval:` → 3/3 red, restored).
+`git diff 05811ff..HEAD -- test/` empty.
+
+On-device on a fresh disposable `OwnToneNight_009_API_36` (created +
+**deleted** by the unit; serial via `getprop ro.boot.qemu.avd_name` →
+`emulator-5554`; nothing else attached): iptables DROP of :3688 both ways
+(REST :3689 alive, curl 200) → socket `ESTAB` confirmed pre-detection
+(`ss -tp`) → **`ws: open → reconnecting` 18.4 s after the rule** (≤ 45 s,
+quoted from `logcat -v epoch`), no offline/banner while REST answered
+(degraded-sync live-confirmed); rules flushed → reconnect + `WS reconnected
+— full refetch`, app == server (`01:51/02:06` == 111908/126516 ms, 42 %,
+Kitchen selected). Healthy idle **130 s: 0** spurious reconnecting
+transitions, same socket port throughout (OwnTone's libwebsockets pongs
+land — the spec's live proof). Paused volume event: `pause` re-verified →
+`PUT volume=55` → app `55%` ≤ ~3 s → restored 42 (204, verified). Full
+isolation (`svc wifi disable` + `svc data disable`) → offline banner **+1.2 s**
+(≤ 60 s) with probe `errno 101`, re-enable → converge +13.9 s. pid stable,
+crash buffer 0. Server **byte-identical** start↔end (cmp of
+player/outputs/queue snapshots; volume probe self-restored). External-
+session deltas documented in the unit Result (queue churn 0→1514→0 by the
+other session; app chip last-dumped at 1514, server baseline restored) —
+not restored over. Harness notes in the unit file (logcat pipe vs `adb
+root`; device-clock bracketing for drop latency; IME re-tap trap re-
+confirmed).
+
+Gates (final tree): analyze **0 issues** · format **0 changed** (82 files)
+· `flutter test --exclude-tags live` **370/370** (362 + 8 unit-009) ·
+debug APK ✓. Commits `05811ff` (contract) → `e039649` (impl) +
+docs/result commit, pushed `origin/remote-app/009-ws-silent-drop-hardening`.
+
+**Next:** orchestrator merges 009 (cross-ref dv-002's hardening note closed);
+device-verification 003 (Pixel 10 release pass) still user-gated; artwork-204
+(unit 010) untouched by this run.
