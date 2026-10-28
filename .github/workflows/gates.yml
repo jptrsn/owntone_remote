@@ -1,0 +1,21 @@
+name: gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.7'
+          channel: 'stable'
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: flutter test --exclude-tags live
+      - run: flutter build apk --debug
