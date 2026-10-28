@@ -31,3 +31,6 @@ build/mcp_screenshots/
 # IDE
 .idea/
 *.iml
+
+# Overnight-pipeline run scratch (config + ledger) — never committed
+.agent/
