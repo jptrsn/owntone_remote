@@ -34,3 +34,4 @@ build/mcp_screenshots/
 
 # Overnight-pipeline run scratch (config + ledger) — never committed
 .agent/
+.night/
