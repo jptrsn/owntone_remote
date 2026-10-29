@@ -231,3 +231,53 @@ docs/refinement commit, pushed `origin/remote-app/010-artwork-204-filter`.
   expansion) — quote it.
 - The `poll_natural.py` first artwork curl logged `status=000` once
   (transient curl timeout) — re-check statuses before concluding absence.
+
+## Adversary round
+
+**DONE 2026-10-29** (fix cycle after test-adversary commit `bad97c1`).
+The adversary's hunt (13 new tests, one genuine violation) pinned **V1**:
+`ArtworkBox._probe`'s awaited continuation checked only `mounted`, so a
+URL swap mid-probe (the real now-playing path — same State,
+`didUpdateWidget`) let the stale verdict clobber the current URL **both
+ways**: a late 204 hid the swapped-in 200's rendered image (contract
+c1b), and a late `false` re-mounted the current URL's `Image` onto the
+failure branch of an already-probed 204 (Goal 1 / c1a oracle). Both reds
+reproduced verbatim.
+
+**The guard** (`lib/src/ui/now_playing_screen.dart`, `_probe`): capture
+`widget.url` at probe-schedule time; after the await, discard the
+verdict unless `mounted` **and** `widget.url` still matches — the same
+discipline as `mirror_handler._sameNowPlaying`. No ArtworkProbe redesign.
+
+**Second defect the guard exposed** (same violation site, adjudicated as
+part of V1): discarding a stale verdict unmounts nothing, but the swap
+*does* unmount the replaced URL's unknown-window `Image` — and that
+frozen fetch (the green profile tests pin its existence: `requestCount
+== 2` per entry: probe + unknown-window Image GET) can reject **after**
+the swap with zero listeners on its completer, so Flutter's
+`ImageStreamCompleter.reportError` escalates the late
+`NetworkImageLoadException` (e.g. the 204) to `FlutterError.onError` —
+an uncaught framework error. The URL-scope guard alone left red (a)
+failing on that escalation, not on state. Fix: `_absorbLateFailure` —
+for each probed URL the box attaches one `ImageStreamListener` (with
+`onError`) to the **same** `NetworkImage` key `Image.network` uses, so
+the `ImageCache` hands out the same completer (still exactly ONE GET per
+URL) and a late rejection lands as handled; the listener detaches when
+the load settles or the State disposes. Do not remove it when
+"simplifying" — it is what makes the V1 discard safe.
+
+Now-green tails (full suite, final tree):
+
+```
+$ flutter analyze
+No issues found! (ran in 2.6s)
+
+$ dart format --output=none --set-exit-if-changed .
+Formatted 92 files (0 changed) in 0.27 seconds.
+
+$ flutter test --exclude-tags live
+01:20 +419: All tests passed!
+```
+
+(`test/artwork_204_adversarial_test.dart` 13/13 including both race
+reds; `git diff bad97c1..HEAD -- test/` empty — lib-only fix.)
