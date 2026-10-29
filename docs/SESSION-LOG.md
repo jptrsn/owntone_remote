@@ -1279,3 +1279,66 @@ pushed `origin/remote-app/010-artwork-204-filter`.
 **Next:** device-verification 003 (Pixel 10 release pass, user-gated);
 dv-002's WS-ping hardening is closed (unit 009, merged). Artwork-204
 follow-up from 005a: **closed** by this unit.
+
+## 2026-10-28 (evening) — overnight-pipeline RUN COMPLETE: repo bootstrapped on GitHub, 009+010 merged (opencode)
+
+**What ran:** the `overnight-pipeline` skill, unattended, one unit at a
+time (test-author → TESTS_RED → builder → BUILD_VERIFIED → adversary →
+PR → reviewer → squash-merge; every gate re-run by the orchestrator,
+never taken on a subagent's word). Run config
+`.agent/overnight-run-config.md`, full evidence trail
+`.agent/overnight-ledger.md` (both gitignored run-scratch — the ledger
+is the authoritative transcript of the run).
+
+**Repo firsts:** GitHub created (user-approved): **public**
+`jptrsn/owntone_remote`, base `main`, squash merges. `origin` added,
+main pushed. CI: `.github/workflows/gates.yml` (analyze / format /
+test --exclude-tags live / debug APK) on PRs+main — proven by PR #1
+(head→merge, 6m1s, squash style). docs-mcp now indexes
+`web_socket_channel@3.0.3`.
+
+**Merged:** PR #2 `5fd2823` unit 009 (WS pingInterval liveness +
+adversary-pinned `_probeServer` generation guard; dv-002 note closed by
+pointer `aaa9632`) · PR #3 `4c8ba13` unit 010 (`ArtworkProbe` one-GET
+verdict gates `ArtworkBox` + `artUri`; 005a `Invalid statusCode: 204`
+closed) · status `79a909e`. **main `79a909e`: analyze 0 · format 0 ·
+419/419 (was 362) · APK ✓.** Server as found
+(pause/vol 42/item 197444/prog 111908; curl start+end); zero transport
+actions; `OwnToneNight_009/010_API_36` created+deleted by their units —
+no devices, no AVDs remain.
+
+**Skill hardening (user-instruction, persisted in
+`~/.config/opencode/skills/overnight-pipeline/`):** two subagents
+blocked the human session with out-of-cwd permission prompts (SDK/
+pub-cache reads; `/tmp` review worktree). The unattended contract now
+carries a hard **working-directory fence** (everything inside the repo;
+scratch/review worktrees in `<repo>/.night/`, gitignored — repo side
+main `ca13de2`) and the review template's worktree moved accordingly.
+All post-fix spawns ran prompt-free.
+
+**Adjudications (this run):** adversary-found stale-`_probeServer`
+resurrection fixed in 009's one fix cycle; 010's V1 (probe continuation
+not URL-scoped) fixed in its cycle (`b3cc1aa` incl. same-key
+late-failure absorber); unit 010's six queue edits accepted (AGENTS §1
+no-`playback=start`, restore field-identical, reviewer-confirmed);
+builder's on-branch AGENTS.md edit stripped (`78da36b`), status
+re-landed on main.
+
+**Resume list (next sessions, in order):**
+1. **device-verification/003** — Pixel 10 (GrapheneOS) release pass.
+   Needs the user present + the device; unit Result has the
+   start-instantly checklist; rebuild the release APK on current HEAD
+   first (dv-003 pre-staged at `e765dcb` lineage).
+2. Small unit candidate: **QueueController unserialized per-event
+   refresh** (`queue_controller.dart:78-95`, race candidate recorded in
+   009 Result — queue chip showed a stale count while another session
+   churned).
+3. Nits from 010's APPROVE (non-blocking): stale NOTE comment
+   `test/artwork_204_adversarial_test.dart:349-355`; two INFOs in the
+   PR #3 review comment; pre-010 generic observation — unknown-window
+   Image GET unmounted mid-flight escalates `NetworkImageLoadException`
+   (adversary-recorded).
+4. Next overnight run: invoke the skill again; update its
+   `units`/`prior state` keys at kickoff (Phases A–C repeat with you).
+
+**Next:** item 1 above — when you're at the machine with the Pixel 10.
