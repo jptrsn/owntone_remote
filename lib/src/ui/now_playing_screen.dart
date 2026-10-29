@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../connection/connection_controller.dart';
+import '../core/artwork_probe.dart';
 import '../outputs/outputs_controller.dart';
 import '../outputs/output.dart';
 import '../player/player_controller.dart';
@@ -554,7 +555,7 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
   }
 }
 
-class ArtworkBox extends StatelessWidget {
+class ArtworkBox extends StatefulWidget {
   const ArtworkBox({super.key, required this.url});
 
   final Uri? url;
@@ -568,9 +569,47 @@ class ArtworkBox extends StatelessWidget {
   }
 
   @override
+  State<ArtworkBox> createState() => _ArtworkBoxState();
+}
+
+class _ArtworkBoxState extends State<ArtworkBox> {
+  /// The [ArtworkProbe] verdict for the current URL: `null` while probing
+  /// (render exactly like today — mount the Image), `false` when the probe
+  /// saw anything but 204 (the Image stays; `errorBuilder` remains the
+  /// last line of defence for 404/500/garbage, unit 010 keeps that path
+  /// untouched), `true` when the server answered 204 — then **no Image is
+  /// ever mounted** and the placeholder comes from the same no-image
+  /// branch as a null URL (the unit's short-circuit-before-the-exception
+  /// contract; do not "simplify" this back into errorBuilder-only handling
+  /// — the 204 would reappear as a failed load).
+  bool? _noArtwork;
+
+  @override
+  void initState() {
+    super.initState();
+    _probe();
+  }
+
+  @override
+  void didUpdateWidget(ArtworkBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      setState(() => _noArtwork = null);
+      _probe();
+    }
+  }
+
+  Future<void> _probe() async {
+    final artworkUrl = ArtworkBox.withMaxWidth(widget.url);
+    if (artworkUrl == null) return;
+    final noArtwork = await ArtworkProbe.isNoArtwork(artworkUrl);
+    if (mounted) setState(() => _noArtwork = noArtwork);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final artworkUrl = withMaxWidth(url);
+    final artworkUrl = ArtworkBox.withMaxWidth(widget.url);
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: AspectRatio(
@@ -579,7 +618,7 @@ class ArtworkBox extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             ColoredBox(color: theme.colorScheme.surfaceContainerHighest),
-            if (artworkUrl != null)
+            if (artworkUrl != null && _noArtwork != true)
               Image.network(
                 artworkUrl.toString(),
                 fit: BoxFit.cover,

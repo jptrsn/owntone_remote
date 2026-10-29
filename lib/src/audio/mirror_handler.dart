@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 
+import '../core/artwork_probe.dart';
 import '../player/player_controller.dart';
 import '../player/player_state.dart';
 import '../settings/settings_store.dart';
@@ -13,9 +14,17 @@ import '../settings/settings_store.dart';
 
 /// The media-item mirror of the now-playing queue item (R-07: title,
 /// artist, album, artwork, duration). Null when there is no item to show.
+///
+/// [hideArtwork] drops `artUri` from the published item — the caller
+/// (MirrorAudioHandler._sync) sets it after [ArtworkProbe] confirmed the
+/// artwork URL answers 204 (R-03 unit 010: audio_service's
+/// flutter_cache_manager fetch of a 204 `artUri` logs `Invalid statusCode:
+/// 204` per artwork-less item; not publishing the URL removes the fetch).
+/// Default `false` keeps the pure mapping (and its tests) unchanged.
 MediaItem? mediaItemFor({
   required NowPlayingItem? item,
   required PlayerState? p,
+  bool hideArtwork = false,
 }) {
   if (item == null) return null;
   return MediaItem(
@@ -23,12 +32,25 @@ MediaItem? mediaItemFor({
     title: item.title ?? 'Unknown title',
     artist: item.artist ?? 'Unknown artist',
     album: item.album,
-    artUri: item.artworkUrl,
+    artUri: hideArtwork ? null : item.artworkUrl,
     duration: item.lengthMs != null
         ? Duration(milliseconds: item.lengthMs!)
         : null,
   );
 }
+
+/// Same now-playing item across a refetch: `PlayerController` replaces
+/// `_nowPlaying` with a fresh instance on every `GET /api/queue`
+/// (id=now_playing), so [identical] cannot be used across an await —
+/// compare the stable identity fields instead.
+bool _sameNowPlaying(NowPlayingItem? a, NowPlayingItem? b) =>
+    a != null &&
+    b != null &&
+    a.id == b.id &&
+    a.uri == b.uri &&
+    a.title == b.title &&
+    a.lengthMs == b.lengthMs &&
+    a.artworkUrl == b.artworkUrl;
 
 /// Transport controls for the notification / lockscreen (SCREENS.md:
 /// play/pause · next · previous — the v1 notification has no stop or mode
@@ -143,7 +165,22 @@ class MirrorAudioHandler extends BaseAudioHandler {
     final item = _player.nowPlaying;
 
     if (item != null) {
-      mediaItem.add(mediaItemFor(item: item, p: p));
+      // R-03 unit 010 (device-side half): never publish an `artUri` the
+      // server answers with 204 — audio_service's flutter_cache_manager
+      // would fetch it and log `Invalid statusCode: 204` as an exception
+      // on the happy path. The probe resolves once per URL (cached;
+      // failures/timeouts answer false so a reachable-but-flaky artwork
+      // endpoint degrades to today's behaviour, not missing art).
+      final artwork = item.artworkUrl;
+      final hideArtwork =
+          artwork != null && await ArtworkProbe.isNoArtwork(artwork);
+      // The await let another (newer) sync start if the item changed —
+      // every _nowPlaying replacement is followed by a notifyListeners →
+      // _sync, so skipping here never drops metadata.
+      if (!_sameNowPlaying(_player.nowPlaying, item)) return;
+      mediaItem.add(
+        mediaItemFor(item: item, p: _player.player, hideArtwork: hideArtwork),
+      );
     } else if (p != null && p.isStopped) {
       mediaItem.add(null);
     }
