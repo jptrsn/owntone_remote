@@ -227,3 +227,54 @@ is closed by this unit (orchestrator adds the cross-ref at merge).
 - A **silent** drop (iptables DROP) produces zero kernel events; dart:io
   ping detection fires at 1× interval + ≤ 1× pong-timeout (observed 18.4 s
   worst case, budget 45 s) — exactly the dv-002 blind spot now closed.
+
+## Adversary round (2026-10-28, test-adversary 7fc9b13 → build fix)
+
+The adversary round found **two genuine spec violations** in
+`ConnectionController` (both pinned red in
+`test/connection_controller_adversarial_test.dart`, fixed in `lib/` only —
+`git diff 7fc9b13..HEAD -- test/` = 0 lines):
+
+1. **Stale probe resurrects a disconnected controller.** A probe in flight
+   at `disconnect()` resolved success into the shared instance and flipped
+   `idle → connected` — an edge the class state machine (L69-76:
+   `connected → idle (explicit disconnect)`, idle exited only by
+   `connectTo`) does not contain. Pre-fix: `Expected: ConnectionPhase:<idle>
+   / Actual: <connected>`.
+2. **Same race resurrects `error`.** A stale probe (REST was alive when
+   scheduled) resolving after a `connectTo()` whose own `/api/config`
+   failed flipped `error → connected` — banner gone, controls enabled with
+   `errorMessage` set, contradicting `connecting → error` terminal-until-
+   new-connectTo and ARCHITECTURE.md § "Error / offline policy (v1)".
+   Pre-fix: `Expected: <error> / Actual: <connected>`.
+
+**Root cause** (adversary's, confirmed): `_probeServer` captured `api`
+before teardown, had no generation/mounted guard, and its success branch
+`_setPhase(connected)` had no precondition beyond `_wsPhase != open` —
+which `WsPhase.none` after teardown passes.
+
+**Fix (minimal, probe redesigned not at all — what decides offline is
+unchanged: probe-while-WS-down stays):** a connection **generation**
+counter — `int _generation` (`connection_controller.dart:120-127`) bumped
+by every `_teardownClient()` (connectTo start/failure, disconnect,
+dispose; `:274`), captured synchronously at probe-schedule time in
+`_probeServer` and checked before either branch may mutate phase
+(`:253`, `:259` — `if (generation != _generation) return;`). A probe
+continuation can therefore only act while it belongs to the current
+connection generation; the existing `_wsPhase != open` guards keep the
+unit-001 "never after the WS reopened" semantics inside the live
+generation.
+
+**Now green (assertion tails):**
+
+```
+00:00 +0: unit 009 adversary — REST probe vs client lifecycle a REST probe still in flight when disconnect() runs must not flip idle back to connected (connection_controller.dart state machine L69-76: `connected → idle (explicit disconnect)`; idle is exited only by connectTo — no idle→connected edge exists; unit spec L32-35: the probe decides offline *while the WS is down* for a live connection, it is not a phase authority after teardown)
+00:00 +1: unit 009 adversary — REST probe vs client lifecycle the same stale-probe race must not resurrect the error phase: a retry/connectTo whose REST attempt fails stays in error even when an older WS probe from the previous connection resolves successfully afterwards (state machine L69-76: `connecting → error` is terminal until a new connectTo; ARCHITECTURE.md § Error/offline policy: "REST failure → typed error surfaced" — phase connected with errorMessage set means the banner disappears and controls enable against an unreachable server)
+```
+
+Full suite after the fix: `flutter test --exclude-tags live` **394/394**
+(370 + 24 adversary) · analyze **0 issues** · format **0 changed** ·
+debug APK ✓. The storm/probe-cadence/refetch-exactly-once adversary
+tests (probes per reconnecting emission, one refetch per reopen) stayed
+green — the generation bump happens only at teardown, which none of those
+scenarios invoke mid-flight.
