@@ -119,6 +119,12 @@ none`, `ping: Network is unreachable` during windows).
   follow-up (WS app-level ping or periodic REST probe while "connected").
   A wifi-down→data-off *sequence* also left the zombie-ESTAB state until
   re-enable.
+  **CLOSED 2026-10-28 by remote-app/009** (main `5fd2823`):
+  `WsClient`'s default factory now sets `pingInterval` (10 s) — an
+  unponged dart:io socket fails into the unchanged Backoff reconnect;
+  silent-drop detection evidenced on-device at 18.4 s via iptables-DROP
+  (healthy-idle 130 s with zero spurious reconnects proves OwnTone pongs).
+  Evidence: `.ai-dlc/remote-app/units/009-ws-silent-drop-hardening.md` § Result.
 
 ### Scenario 2 — server restart (`supervised: true`): **PASS (user present, ran it)**
 
