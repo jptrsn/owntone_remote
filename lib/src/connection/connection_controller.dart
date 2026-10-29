@@ -117,6 +117,14 @@ class ConnectionController extends ChangeNotifier {
   StreamSubscription<List<String>>? _wsEventsSub;
   bool _firstWsOpen = true;
 
+  /// Bumped by every [_teardownClient] (connectTo start/failure, disconnect,
+  /// dispose). An async continuation — the REST probe — must belong to the
+  /// generation it started in before it may mutate [_phase]: without this, a
+  /// probe in flight at teardown resolves into the shared instance and flips
+  /// `idle → connected` / `error → connected`, edges the state machine
+  /// (class doc) does not contain (unit 009 adversary round).
+  int _generation = 0;
+
   ConnectionPhase get phase => _phase;
   WsPhase get wsPhase => _wsPhase;
 
@@ -240,12 +248,17 @@ class ConnectionController extends ChangeNotifier {
   Future<void> _probeServer() async {
     final api = _api;
     if (api == null) return;
+    // Captured before the await: the probe is the reachability authority
+    // only for the connection generation that scheduled it (see [_generation]).
+    final generation = _generation;
     try {
       await api.getConfig();
+      if (generation != _generation) return;
       if (_wsPhase != WsPhase.open) {
         _setPhase(ConnectionPhase.connected);
       }
     } on DioException catch (e) {
+      if (generation != _generation) return;
       if (_wsPhase != WsPhase.open && _phase == ConnectionPhase.connected) {
         _logger.w('server probe failed (${e.error ?? e.type}) — offline');
         _setPhase(ConnectionPhase.offline);
@@ -254,6 +267,7 @@ class ConnectionController extends ChangeNotifier {
   }
 
   void _teardownClient() {
+    _generation++;
     _wsStatusSub?.cancel();
     _wsStatusSub = null;
     _wsEventsSub?.cancel();

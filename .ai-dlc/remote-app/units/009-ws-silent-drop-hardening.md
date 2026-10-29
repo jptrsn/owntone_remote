@@ -1,6 +1,6 @@
 ---
 name: 009-ws-silent-drop-hardening
-status: pending
+status: done
 intent: remote-app
 supervised_steps: []
 ---
@@ -103,4 +103,178 @@ silent middlebox drop would keep the app falsely `sync: live`").
 
 ## Result
 
-(pending)
+**Status: DONE** — unattended overnight build (opencode, 2026-10-28).
+Zero supervised steps in this unit; **zero** play/transport actions taken.
+
+### What was built
+
+`lib/src/api/ws_client.dart`: named constant `kWsPingInterval = Duration(
+seconds: 10)` passed as `pingInterval:` to `IOWebSocketChannel.connect` in
+the **default** channel factory (next to the `notify` subprotocol). dart:io
+sends a ping every interval (re-armed on each pong) and fails the socket
+(`goingAway`) when a pong doesn't arrive within one interval —
+https://api.dart.dev/stable/3.11.5/dart-io/WebSocket/pingInterval.html —
+which surfaces as `onDone`/`onError` and drives the **existing** reconnect
+path unchanged. `notify` subprotocol, `Backoff` (1→2→4→8→16→30 s),
+re-subscribe on reconnect, and the REST-probe-decides-offline logic: all
+untouched (`git diff` confirms; no new packages).
+
+### Criterion 1 — WsClient unit tests (all green, 05811ff contract)
+
+| Sub | Test | Result |
+|---|---|---|
+| 1a liveness configured | `ws_client_liveness_test.dart` ping-observed-within-13 s | RED→**GREEN** |
+| 1a silent-dark detection | `ws_client_liveness_test.dart` reconnecting ≤ 25 s | RED→**GREEN** (detected at 1 ping unanswered; dart:io goingAway) |
+| 1c healthy idle | `ws_client_liveness_test.dart` ≥ 2 pings in 34 s, 0 reconnects, 1 handshake | RED→**GREEN** |
+| 1b close/error on open → backoff-delayed attempt | `ws_client_reconnect_test.dart` ×2 | GREEN (guard held) |
+| 1d stop() cancels timers | `ws_client_reconnect_test.dart` ×2 | GREEN (guard held) |
+| 1e existing suites | `ws_client_test` + `backoff_test` | GREEN |
+
+**Kill-check performed:** with `pingInterval:` deleted from the default
+factory, `flutter test test/ws_client_liveness_test.dart` → **0 passed, 3
+failed** ("peer saw no ping frame within 13 s"); restored → 3/3 green.
+`git diff 05811ff..HEAD -- test/` = **0 lines** (tests never touched).
+
+### Criterion 2 — degraded-sync contract
+
+`connection_controller_degraded_sync_test.dart` **GREEN** (WS `reconnecting`
++ REST alive → phase `connected`, no `offline/` transition, REST probe ran
+>1× on reconnect attempts; REST dead → `offline`; recovery → `connected` +
+exactly 1 `refetchAll` + notify re-subscribed). On-device corroboration:
+every iptables-drop detection logged `ws: open → reconnecting` with **no**
+`connected → offline` line while :3689 stayed reachable (banner absent in
+`u10_during_reconnecting.xml` — `sync: reconnecting…` chip only).
+
+### Criterion 3 — on-device (disposable `OwnToneNight_009_API_36`)
+
+Created by this unit (`android-36/google_apis/arm64-v8a`, `-d pixel_6`,
+`disk.dataPartition.size=8192M` replacing the duplicate 10G line — dv-002
+gotcha), booted headless, serial resolved at boot: `emulator-5554` verified
+`getprop ro.boot.qemu.avd_name` → `OwnToneNight_009_API_36`; `svc power
+stayon true`. **Deleted at the end**; `adb devices` afterwards: none of
+ours. Host/port entered on Settings (read-back verified `192.168.1.13`/
+`3689`), Connect → `sync: live` (`u07_connected.xml`).
+
+| Row | Evidence (device clock, `logcat -v epoch`) |
+|---|---|
+| Baseline start (as found) | `player: state=pause volume=42 item_id=197444 len=126516 prog=111908`; outputs selected `[Volumio Kitchen vol 42]`; queue 0 |
+| Silent drop #1 (harness dry-run) | `iptables -A INPUT -s 192.168.1.13 -p tcp --sport 3688 -j DROP` + OUTPUT `--dport 3688`; REST :3689 confirmed alive (host curl 200) |
+| Socket ESTAB pre-detection | `ss -tnp` → `ESTAB 10.0.2.16:59790→192.168.1.13:3688 pid=4549` (rule instant epoch 1793229513) |
+| Detection ≤ 45 s | **drop instant 1793229513 → `ws: open → reconnecting` 1793229531.431 = 18.4 s**; then `FIN-WAIT-1` + `SYN-SENT` (dart:io failed the socket, reconnect loop running) |
+| No false offline while REST alive | no `connected → offline` log line in the whole drop window; `u10_during_reconnecting.xml`: `sync: reconnecting…`, **no** `Server unreachable` |
+| Flush → reconnect + full refetch | rules deleted → `ws: reconnecting → open` **1793229568.459** + `WS reconnected — full refetch`; `u11_after_flush.xml` == server (`01:51/02:06` = 111908/126516 ms, 42 %, `Playing via: Volumio Kitchen`, `sync: live`) |
+| Healthy idle ≥ 2 min | epoch 1793229590→1793229720 (130 s): `ss` same socket `:44150` start and end (0 re-handshakes), `reconnecting|ws:` grep count in window = **0** (server pongs land) |
+| Event flow while paused | re-verified `pause` via curl → `PUT /api/player/volume?volume=55` → **204** → app content-desc `55%` within **3 s** (≤ ~2 s + 1 s dump poll) → restored `volume=42` (204, server confirmed) |
+| Full isolation → offline ≤ 60 s | `svc wifi disable` + `svc data disable` epoch 1793229783 → `ws: open → reconnecting` 1793229784.186 → probe `SocketException … Network is unreachable, errno = 101` → `connected → offline` **1793229784.190 (+1.2 s)**; banner `Server unreachable — retrying. Controls disabled.` (`u14_offline.xml`) |
+| Restore → converge | `svc wifi/data enable` ~1793229802 → `offline → connected` + `reconnecting → open` + `WS reconnected — full refetch` **1793229815.927 (+13.9 s)**; `sync: live`, stale mirror replaced with correct values |
+| Stability | pid 4549 stable whole session; `logcat -b crash` grep owntone = **0** |
+
+### Criterion 4 — gates (verbatim tails, run on the final tree)
+
+```
+$ flutter analyze
+No issues found! (ran in 2.8s)
+
+$ dart format --output=none --set-exit-if-changed .
+Formatted 82 files (0 changed) in 0.25 seconds.
+
+$ flutter test --exclude-tags live
+01:14 +370: All tests passed!
+
+$ flutter build apk --debug
+✓ Built build/app/outputs/flutter-apk/app-debug.apk
+```
+
+### Criterion 5 — server left as found; AVD deleted
+
+`cmp` of start vs end snapshots (`build/night-009/server_{player,outputs,
+queue}_{start,end}.json`): **player, outputs, queue all byte-identical**
+(`pause / vol 42 / item 197444 / len 126516 / prog 111908`; selected
+[Volumio Kitchen 42]; queue 0). No play/next/prev/queue-add/rescan/update
+was ever issued; volume probe restored to the found value and verified.
+**External-session delta (not restored over, per policy):** the other
+active session on this server refilled the queue to 1514 items between the
+baseline curl and the app connect, and cleared it again near the end of the
+window — the app's queue chip showed `Queue · 1514` at the last dump;
+server queue returned to the baseline (0) by the end snapshot, matching
+baseline. Player/outputs never moved from baseline during the run.
+`avdmanager delete avd -n OwnToneNight_009_API_36` ✓; final `adb devices`
+= none of ours.
+
+### Criterion 6 — log + commit
+
+SESSION-LOG entry appended; implementation commit `e039649`
+(`remote-app/009: WS liveness via dart:io pingInterval …`), pushed to
+`origin/remote-app/009-ws-silent-drop-hardening`. dv-002's hardening note
+is closed by this unit (orchestrator adds the cross-ref at merge).
+
+### Harness notes (for the next verification run)
+
+- `adb root` kills running `adb logcat` pipes — start the capture **after**
+  rooting, or re-read history with `logcat -d -v epoch` (timestamps are
+  monotonic device-clock seconds; deltas are trustworthy).
+- iptables on the AVD needs `-s/-d 192.168.1.13/32` scoping; a system
+  `tetherctrl_FORWARD -j DROP` rule exists by default — never blanket-`-F`.
+- Emulator clock vs host: run `adb shell date +%s` brackets around the
+  disturbing command; the device clock is authoritative for detection
+  latency (host/device offset ≈ 1 s).
+- Flutter export: labels land in `content-desc` (grep it); EditText fields
+  expose `hint="Host"` / `hint="JSON port"` and the *label* migrates into
+  content-desc after typing — locate by `hint`+`bounds`. IME re-tap trap
+  confirmed again (second field tap while keyboard open re-hits the first
+  field): `keyevent 111`(ESC)/4 + `mInputShown=false` verify between
+  fields (dv-008 lesson re-earned).
+- A **silent** drop (iptables DROP) produces zero kernel events; dart:io
+  ping detection fires at 1× interval + ≤ 1× pong-timeout (observed 18.4 s
+  worst case, budget 45 s) — exactly the dv-002 blind spot now closed.
+
+## Adversary round (2026-10-28, test-adversary 7fc9b13 → build fix)
+
+The adversary round found **two genuine spec violations** in
+`ConnectionController` (both pinned red in
+`test/connection_controller_adversarial_test.dart`, fixed in `lib/` only —
+`git diff 7fc9b13..HEAD -- test/` = 0 lines):
+
+1. **Stale probe resurrects a disconnected controller.** A probe in flight
+   at `disconnect()` resolved success into the shared instance and flipped
+   `idle → connected` — an edge the class state machine (L69-76:
+   `connected → idle (explicit disconnect)`, idle exited only by
+   `connectTo`) does not contain. Pre-fix: `Expected: ConnectionPhase:<idle>
+   / Actual: <connected>`.
+2. **Same race resurrects `error`.** A stale probe (REST was alive when
+   scheduled) resolving after a `connectTo()` whose own `/api/config`
+   failed flipped `error → connected` — banner gone, controls enabled with
+   `errorMessage` set, contradicting `connecting → error` terminal-until-
+   new-connectTo and ARCHITECTURE.md § "Error / offline policy (v1)".
+   Pre-fix: `Expected: <error> / Actual: <connected>`.
+
+**Root cause** (adversary's, confirmed): `_probeServer` captured `api`
+before teardown, had no generation/mounted guard, and its success branch
+`_setPhase(connected)` had no precondition beyond `_wsPhase != open` —
+which `WsPhase.none` after teardown passes.
+
+**Fix (minimal, probe redesigned not at all — what decides offline is
+unchanged: probe-while-WS-down stays):** a connection **generation**
+counter — `int _generation` (`connection_controller.dart:120-127`) bumped
+by every `_teardownClient()` (connectTo start/failure, disconnect,
+dispose; `:274`), captured synchronously at probe-schedule time in
+`_probeServer` and checked before either branch may mutate phase
+(`:253`, `:259` — `if (generation != _generation) return;`). A probe
+continuation can therefore only act while it belongs to the current
+connection generation; the existing `_wsPhase != open` guards keep the
+unit-001 "never after the WS reopened" semantics inside the live
+generation.
+
+**Now green (assertion tails):**
+
+```
+00:00 +0: unit 009 adversary — REST probe vs client lifecycle a REST probe still in flight when disconnect() runs must not flip idle back to connected (connection_controller.dart state machine L69-76: `connected → idle (explicit disconnect)`; idle is exited only by connectTo — no idle→connected edge exists; unit spec L32-35: the probe decides offline *while the WS is down* for a live connection, it is not a phase authority after teardown)
+00:00 +1: unit 009 adversary — REST probe vs client lifecycle the same stale-probe race must not resurrect the error phase: a retry/connectTo whose REST attempt fails stays in error even when an older WS probe from the previous connection resolves successfully afterwards (state machine L69-76: `connecting → error` is terminal until a new connectTo; ARCHITECTURE.md § Error/offline policy: "REST failure → typed error surfaced" — phase connected with errorMessage set means the banner disappears and controls enable against an unreachable server)
+```
+
+Full suite after the fix: `flutter test --exclude-tags live` **394/394**
+(370 + 24 adversary) · analyze **0 issues** · format **0 changed** ·
+debug APK ✓. The storm/probe-cadence/refetch-exactly-once adversary
+tests (probes per reconnecting emission, one refetch per reopen) stayed
+green — the generation bump happens only at teardown, which none of those
+scenarios invoke mid-flight.

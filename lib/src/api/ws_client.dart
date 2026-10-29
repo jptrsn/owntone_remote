@@ -6,6 +6,20 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'backoff.dart';
 
+/// Keep-alive cadence for the open socket (unit 009, R-02 silent-drop
+/// hardening). dart:io sends a ping every [pingInterval] (first one one
+/// interval after assignment, the next timer re-armed on each pong) and
+/// assumes the peer is dead — closing with `goingAway` — when a pong does not
+/// arrive within one interval (
+/// https://api.dart.dev/stable/3.11.5/dart-io/WebSocket/pingInterval.html),
+/// which surfaces on the stream as `onError`/`onDone` and drives the existing
+/// reconnect path. A silent drop (no FIN/RST — middlebox/interface death
+/// leaving the kernel socket `ESTAB`, dv-002 observation) is therefore
+/// discovered in ≤ 2× this value; keep the cap at 10 s so detection stays
+/// under the unit's 30 s bound. Raising it past 10 s breaks the liveness
+/// tests' wire budgets (`test/ws_client_liveness_test.dart`).
+const Duration kWsPingInterval = Duration(seconds: 10);
+
 /// OwnTone websocket (R-02): on connect (and after every reconnect) sends the
 /// `notify` subscription and re-emits event names as they arrive. Reconnects
 /// with exponential backoff. Events are invalidation signals only — the
@@ -26,7 +40,11 @@ class WsClient {
     // unsubscribed, so no events ever arrive.
     _channelFactory =
         channelFactory ??
-        (uri) => IOWebSocketChannel.connect(uri, protocols: ['notify']);
+        (uri) => IOWebSocketChannel.connect(
+          uri,
+          protocols: ['notify'],
+          pingInterval: kWsPingInterval,
+        );
   }
 
   final Uri _uri;
