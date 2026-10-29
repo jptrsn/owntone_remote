@@ -1230,3 +1230,52 @@ docs/result commit, pushed `origin/remote-app/009-ws-silent-drop-hardening`.
 **Next:** orchestrator merges 009 (cross-ref dv-002's hardening note closed);
 device-verification 003 (Pixel 10 release pass) still user-gated; artwork-204
 (unit 010) untouched by this run.
+
+## 2026-10-28 — remote-app unit 010 DONE: artwork 204 demoted to the no-image branch (opencode, unattended overnight)
+
+TDD build per `test/artwork_204_test.dart` (contract 67d45eb): c1a RED at
+baseline (400+1, the failure exactly c1a) → **401/401 GREEN**; every
+pre-green guard (200→RawImage, 404/500/garbage→errorBuilder placeholder,
+null-URL→placeholder, `maxwidth=600` fetch contract) held;
+`git diff 67d45eb..HEAD -- test/` empty. Implementation: shared
+`ArtworkProbe` (one cached dart:io GET per URL for the process lifetime,
+in-flight dedup, error entries evicted, 3 s timeout — **only a probed 204**
+maps to "no image"; everything else answers false so errorBuilder stays
+the decider for real failures), `ArtworkBox` → StatefulWidget unmounting
+the Image on a probed 204 (placeholder comes from the null-URL branch —
+the branch-identity oracle), and `MirrorAudioHandler._sync` publishing
+`artUri: null` (new optional `hideArtwork` on the pure `mediaItemFor`)
+when the artUri URL answers 204, so audio_service's flutter_cache_manager
+never fetches it. No new packages (`pubspec.yaml` byte-identical).
+
+On-device (`OwnToneNight_010_API_36`, created + **deleted** by the unit,
+serial verified via `ro.boot.qemu.avd_name` every phase): BEFORE-fix the
+adjudicated line was captured verbatim — `Error loading artUri:
+HttpException: Invalid statusCode: 204` + `WebHelper._manageResponse
+(flutter_cache_manager …)` at 1793244632.426 with the ~20 s cache_manager
+retry storm, both fetch sites logged (Image `?maxwidth=600` 204 +
+cache_manager plain 204). AFTER-fix: 76 s clean window (spans the old
+retry points) with **zero** 204/cache_manager/exception lines, exactly 3
+launch GETs then total silence (probe cache; artUri suppressed),
+placeholder renders, and an item WITH artwork still renders (mock 200 +
+real-server `Invincible`, pixel-verified 217 k distinct colours). The
+shared server's paused current item (track 2660 → 200) was provably
+immovable without transport (now_playing is item-id anchored — insert
+probe; artwork_url is server-regenerated — edit probe; both self-restored
+field-identical), so the 204 rows ran against a loopback mock via
+`adb reverse` serving the real snapshots and **proxying every /artwork
+request byte-for-byte to the real 192.168.1.13** — OwnTone's own 204s,
+both fetch sites unmodified, zero audio risk. Player + outputs
+**byte-identical** start↔end; queue items field-identical (version
+self-delta documented); zero transport actions; crash buffer 0. Harness
+notes in the unit Result (Connect-tap-hits-Disconnect under open IME,
+`pm clear` re-config trick, mock WS masked-frame parsing = fake
+silent-drop, zsh `===` abort).
+
+Gates (final tree): analyze **0** · format **0 changed** (89 files) ·
+test **401/401** · debug APK ✓. Commits `620bb69` (impl) + docs/result,
+pushed `origin/remote-app/010-artwork-204-filter`.
+
+**Next:** device-verification 003 (Pixel 10 release pass, user-gated);
+dv-002's WS-ping hardening is closed (unit 009, merged). Artwork-204
+follow-up from 005a: **closed** by this unit.

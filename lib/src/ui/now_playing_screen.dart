@@ -577,11 +577,14 @@ class _ArtworkBoxState extends State<ArtworkBox> {
   /// (render exactly like today — mount the Image), `false` when the probe
   /// saw anything but 204 (the Image stays; `errorBuilder` remains the
   /// last line of defence for 404/500/garbage, unit 010 keeps that path
-  /// untouched), `true` when the server answered 204 — then **no Image is
-  /// ever mounted** and the placeholder comes from the same no-image
+  /// untouched), `true` when the server answered 204 — then the Image is
+  /// unmounted entirely and the placeholder comes from the same no-image
   /// branch as a null URL (the unit's short-circuit-before-the-exception
   /// contract; do not "simplify" this back into errorBuilder-only handling
-  /// — the 204 would reappear as a failed load).
+  /// — the 204 would reappear as a mounted failing load). Rendering the
+  /// placeholder during the unknown window instead was tried and reverted:
+  /// it delays the Image mount one frame past the fixed pump budgets the
+  /// existing now_playing_screen artwork tests pin (test is immutable).
   bool? _noArtwork;
 
   @override

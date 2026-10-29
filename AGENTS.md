@@ -31,7 +31,13 @@ iTunes-specific features.
   unit 002 DONE 2026-10-27** (reconnect robustness R-01/R-02: 4/4 scenarios
   incl. supervised server restart; backoff 1→2→4→8→16→30 s quoted from
   logcat; own AVD created + deleted; open hardening candidate — no WS
-  ping/heartbeat so a silent network drop never shows the offline banner).
+  ping/heartbeat so a silent network drop never shows the offline banner
+  — **closed by remote-app unit 009 DONE 2026-10-28**, pingInterval 10 s,
+  merged `5fd2823`). **`remote-app` unit 010 DONE 2026-10-28** (artwork
+  204 demoted to the normal no-image branch at BOTH fetch sites —
+  `ArtworkProbe` one-GET-per-URL verdict gates `ArtworkBox` and the
+  mirror's `artUri`; the 005a `Invalid statusCode: 204` follow-up is
+  closed; own AVD created + deleted).
   **Next: device-verification 003** (release candidate on Pixel 10, with the
   user). Device decision (user
  2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
