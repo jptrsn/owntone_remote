@@ -59,6 +59,63 @@ class FakeWsLivenessServer {
   int get clientDataFrames =>
       _conns.fold(0, (int sum, _Conn c) => sum + c.dataFrames);
 
+  /// When each accepted TCP connection arrived (accept order, same indexing
+  /// as [dataFramesPerConnection]) — lets tests bound the reconnect delay on
+  /// the wire.
+  List<DateTime> get acceptTimes => [for (final c in _conns) c.acceptedAt];
+
+  // -- Adversarial hooks (unit 009 test-adversary). All default-off: the
+  // behaviour existing liveness tests rely on is unchanged unless one of
+  // these is set.
+
+  /// When true, the 101 response is withheld for every new upgrade request
+  /// until [releaseHandshake] — the client sits with `ready` pending, which
+  /// lets a test race `stop()` against the handshake.
+  bool holdHandshake = false;
+
+  /// When true, upgrade requests are answered `400 Bad Request` — the
+  /// dart:io client fails the connect (HandshakeException), like a server
+  /// whose WS is dead while TCP still accepts.
+  bool rejectHandshake = false;
+
+  /// Successful 101 responses sent so far. Unlike [handshakes] (raw TCP
+  /// accepts), this counts only *completed* upgrades — the honest oracle
+  /// for "exactly one reconnect attempt".
+  int get completedHandshakes => _responded;
+
+  /// True once at least one full HTTP upgrade request has been parsed.
+  bool get upgradeRequested => _sawUpgrade > 0;
+
+  bool _released = false;
+  int _responded = 0;
+  int _sawUpgrade = 0;
+
+  /// Answer every withheld handshake (see [holdHandshake]).
+  void releaseHandshake() {
+    _released = true;
+    for (final c in _conns) {
+      c.respondIfHeld();
+    }
+  }
+
+  /// Override the pong behaviour for one accepted connection (index into the
+  /// accept order) — e.g. go silently dark *mid-session* on connection 0
+  /// while letting a later reconnect connection answer pongs normally.
+  void setAutoPongFor(int index, bool value) =>
+      _conns[index].autoPongOverride = value;
+
+  /// Data frames received per accepted connection, in accept order — proves
+  /// e.g. the `notify` re-subscribe landed on the *reconnect* connection.
+  List<int> get dataFramesPerConnection => [
+    for (final c in _conns) c.dataFrames,
+  ];
+
+  /// Decoded text frames per accepted connection, in accept order — lets a
+  /// test assert the *contents* of the `notify` re-subscribe on the wire.
+  List<List<String>> get textFramesPerConnection => [
+    for (final c in _conns) c.textFrames,
+  ];
+
   Future<Uri> start() async {
     final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
     _server = server;
@@ -102,6 +159,16 @@ class _Conn {
 
   final List<DateTime> pings = [];
   int dataFrames = 0;
+  final List<String> textFrames = [];
+  final DateTime acceptedAt = DateTime.now();
+
+  /// Per-connection override of the server-level `autoPong` (null = inherit),
+  /// for mid-session-silence scenarios (test-adversary).
+  bool? autoPongOverride;
+
+  String? _heldKey;
+  String? _heldProtocol;
+  bool _responded = false;
 
   void _onData(Uint8List bytes) {
     if (_closed) return;
@@ -118,24 +185,50 @@ class _Conn {
         destroy();
         return;
       }
-      final response = StringBuffer()
-        ..write('HTTP/1.1 101 Switching Protocols\r\n')
-        ..write('Upgrade: websocket\r\n')
-        ..write('Connection: Upgrade\r\n')
-        ..write('Sec-WebSocket-Accept: ${_acceptToken(key)}\r\n');
-      final protocol = _headerValue(headers, 'sec-websocket-protocol');
-      if (protocol != null && protocol.trim().isNotEmpty) {
-        // Echo the first offered subprotocol (the client asks for `notify`
-        // and dart:io records what the server selected).
-        response.write(
-          'Sec-WebSocket-Protocol: ${protocol.split(',').first.trim()}\r\n',
-        );
+      _srv._sawUpgrade++;
+      _heldKey = key;
+      _heldProtocol = _headerValue(headers, 'sec-websocket-protocol');
+      if (_srv.rejectHandshake) {
+        _responded = true;
+        _socket.add(latin1.encode('HTTP/1.1 400 Bad Request\r\n\r\n'));
+        unawaited(_socket.close());
+        return;
       }
-      response.write('\r\n');
-      _socket.add(latin1.encode(response.toString()));
-      _upgraded = true;
+      if (_srv.holdHandshake && !_srv._released) {
+        return; // 101 withheld; respondIfHeld() answers on release
+      }
+      _respond();
     }
     _parseFrames();
+  }
+
+  /// Send the withheld 101 (see `holdHandshake`) and process whatever frames
+  /// arrived while the handshake was pending.
+  void respondIfHeld() {
+    if (_closed || _upgraded || _responded || _heldKey == null) return;
+    _respond();
+    _parseFrames();
+  }
+
+  void _respond() {
+    final response = StringBuffer()
+      ..write('HTTP/1.1 101 Switching Protocols\r\n')
+      ..write('Upgrade: websocket\r\n')
+      ..write('Connection: Upgrade\r\n')
+      ..write('Sec-WebSocket-Accept: ${_acceptToken(_heldKey!)}\r\n');
+    final protocol = _heldProtocol;
+    if (protocol != null && protocol.trim().isNotEmpty) {
+      // Echo the first offered subprotocol (the client asks for `notify`
+      // and dart:io records what the server selected).
+      response.write(
+        'Sec-WebSocket-Protocol: ${protocol.split(',').first.trim()}\r\n',
+      );
+    }
+    response.write('\r\n');
+    _socket.add(latin1.encode(response.toString()));
+    _upgraded = true;
+    _responded = true;
+    _srv._responded++;
   }
 
   /// Parse whatever whole frames are buffered (client frames are masked per
@@ -180,7 +273,8 @@ class _Conn {
       if (opcode == 0x9) {
         // ping
         pings.add(DateTime.now());
-        if (_srv.autoPong && payload.length < 126) {
+        final pong = autoPongOverride ?? _srv.autoPong;
+        if (pong && payload.length < 126) {
           // Server→client frames are never masked (RFC 6455 §5.1).
           _socket.add(
             Uint8List.fromList(<int>[0x8A, payload.length, ...payload]),
@@ -188,6 +282,9 @@ class _Conn {
         }
       } else if (opcode == 0x1 || opcode == 0x2) {
         dataFrames++;
+        if (opcode == 0x1 && textFrames.length < 8) {
+          textFrames.add(latin1.decode(payload));
+        }
       } else if (opcode == 0x8) {
         // close from the client (WsClient.stop()) — hang up.
         destroy();
