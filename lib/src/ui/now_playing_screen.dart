@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../connection/connection_controller.dart';
+import '../core/artwork_probe.dart';
 import '../outputs/outputs_controller.dart';
 import '../outputs/output.dart';
 import '../player/player_controller.dart';
@@ -554,7 +555,7 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
   }
 }
 
-class ArtworkBox extends StatelessWidget {
+class ArtworkBox extends StatefulWidget {
   const ArtworkBox({super.key, required this.url});
 
   final Uri? url;
@@ -568,9 +569,112 @@ class ArtworkBox extends StatelessWidget {
   }
 
   @override
+  State<ArtworkBox> createState() => _ArtworkBoxState();
+}
+
+class _ArtworkBoxState extends State<ArtworkBox> {
+  /// The [ArtworkProbe] verdict for the current URL: `null` while probing
+  /// (render exactly like today — mount the Image), `false` when the probe
+  /// saw anything but 204 (the Image stays; `errorBuilder` remains the
+  /// last line of defence for 404/500/garbage, unit 010 keeps that path
+  /// untouched), `true` when the server answered 204 — then the Image is
+  /// unmounted entirely and the placeholder comes from the same no-image
+  /// branch as a null URL (the unit's short-circuit-before-the-exception
+  /// contract; do not "simplify" this back into errorBuilder-only handling
+  /// — the 204 would reappear as a mounted failing load). Rendering the
+  /// placeholder during the unknown window instead was tried and reverted:
+  /// it delays the Image mount one frame past the fixed pump budgets the
+  /// existing now_playing_screen artwork tests pin (test is immutable).
+  bool? _noArtwork;
+
+  /// Absorbing listeners on the unknown-window image loads (keyed by the
+  /// exact [NetworkImage] `Image.network` will use, so the [ImageCache]
+  /// hands out the SAME completer and the fetch stays a single GET). If a
+  /// URL swap unmounts the unknown-window Image before its response
+  /// lands, the completer rejects with zero listeners and Flutter's
+  /// `reportError` would escalate the late `NetworkImageLoadException`
+  /// (e.g. a 204) to `FlutterError.onError` — an uncaught framework
+  /// error. A registered `onError` listener makes the completer treat the
+  /// error as handled; we detach as soon as the load settles. Do not
+  /// remove: it is what makes discarding a stale probe verdict (V1 guard
+  /// in [_probe]) safe for the replaced URL's in-flight fetch.
+  final Map<NetworkImage, ({ImageStream stream, ImageStreamListener listener})>
+  _absorbers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _probe();
+  }
+
+  @override
+  void didUpdateWidget(ArtworkBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      setState(() => _noArtwork = null);
+      _probe();
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final entry in _absorbers.values) {
+      entry.stream.removeListener(entry.listener);
+    }
+    _absorbers.clear();
+    super.dispose();
+  }
+
+  void _absorbLateFailure(Uri artworkUrl) {
+    final provider = NetworkImage(artworkUrl.toString());
+    if (_absorbers.containsKey(provider)) return;
+    var resolved = false, settled = false;
+    void onSettled() {
+      settled = true;
+      if (resolved) _dropAbsorber(provider);
+    }
+
+    final listener = ImageStreamListener((image, _) {
+      image.dispose(); // our clone; Image.network holds its own
+      onSettled();
+    }, onError: (_, _) => onSettled());
+    final stream = provider.resolve(ImageConfiguration.empty);
+    stream.addListener(listener); // may dispatch a cached error synchronously
+    resolved = true;
+    _absorbers[provider] = (stream: stream, listener: listener);
+    if (settled) _dropAbsorber(provider); // cache-hit error, dispatched sync
+  }
+
+  void _dropAbsorber(NetworkImage provider) {
+    final entry = _absorbers.remove(provider);
+    entry?.stream.removeListener(entry.listener);
+  }
+
+  Future<void> _probe() async {
+    // V1 (unit-010 adversary): the awaited verdict is scoped to the URL it
+    // probed — the now-playing item can be swapped mid-probe (same State,
+    // didUpdateWidget path), and a stale continuation must then be
+    // DISCARDED, not applied: a late 204 for the replaced URL must not
+    // hide the new URL's rendered image (c1b), and a late `false` must not
+    // re-mount the current URL's Image onto the failure branch of an
+    // already-probed 204 (Goal 1 / c1a oracle). Same discipline as
+    // mirror_handler's `_sameNowPlaying` stale-publish guard — do not drop
+    // the `url` comparison back down to a bare `mounted` check.
+    final url = widget.url;
+    final artworkUrl = ArtworkBox.withMaxWidth(url);
+    if (artworkUrl == null) return;
+    // Mounting the Image this frame (unknown window) is the unit-010
+    // adjudicated shape; absorb its response in case a URL swap orphans it.
+    _absorbLateFailure(artworkUrl);
+    final noArtwork = await ArtworkProbe.isNoArtwork(artworkUrl);
+    if (!mounted || widget.url != url) return;
+    setState(() => _noArtwork = noArtwork);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final artworkUrl = withMaxWidth(url);
+    final artworkUrl = ArtworkBox.withMaxWidth(widget.url);
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: AspectRatio(
@@ -579,7 +683,7 @@ class ArtworkBox extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             ColoredBox(color: theme.colorScheme.surfaceContainerHighest),
-            if (artworkUrl != null)
+            if (artworkUrl != null && _noArtwork != true)
               Image.network(
                 artworkUrl.toString(),
                 fit: BoxFit.cover,
