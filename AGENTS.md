@@ -184,6 +184,10 @@ the app.
   ws_client_adversarial_wire) sit byte-identical to main and show "Changed"
   under the host formatter — **do not reformat them** (PR #4 blocker: doing
   so was `26ddef4` and reddened the gates job; PR #4 review found it).
+  The same drift poisons `android/gradle.properties`: a host build
+  re-adds the migrator's `builtInKotlin`/`newDsl` flags and the pinned
+  3.41.7 CI then fails `flutter build apk` ("What went wrong: 25.0.5") —
+  keep that file at main's bytes and ignore the re-dirty after host builds.
 - `adb` at `/opt/homebrew/bin/adb`.
   git 2.50.1, git identity configured globally.
 - Android SDK at `~/Library/Android/sdk`. `ANDROID_HOME` is **not** set in
