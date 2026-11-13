@@ -1420,8 +1420,14 @@ duplicate unit-011 test preamble removed; release notes ≤20 s → ~20 s
 (tested bound ≤25 s); `_action` now sets `_pendingRefresh` before awaiting
 so a resolved action always re-reads post-commit state (421/421 stands).
 Not taken (logged as candidate): test 2's timing-contingent oracle-strength
-(raise hold / gate events on arrival). **Open decision for the user:**
-keep CI pinned at 3.41.7 (current) or deliberately bump gates.yml +
-AGENTS to 3.47.9 and re-verify all gates on it. Resume: watch `gh pr
-checks 4` green, then merge per repo convention; reviewer report lives in
-the session transcript, not the repo.
+(raise hold / gate events on arrival). Two further CI-side discoveries while
+greening: the runner image itself had drifted to **Java 25.0.5** (Gradle
+8.14 rejects it — main's own October-green commit fails identically on
+rerun), fixed by `setup-java` temurin 21 in gates.yml (`407c198`); and the
+`gradle.properties` migrator flags `0c497fe` committed were the same
+host-drift artifact class as the formatter output — the pinned CI's APK
+build breaks with them, so they are reverted and the trap documented
+(`1052289`). **Gates green @ `407c198`** (7m1s, CI-pinned 3.41.7).
+**Open decisions for the user:** merge PR #4 (squash per repo convention);
+keep CI pinned at 3.41.7 (current) or deliberately bump gates.yml + AGENTS
+to 3.47.9 and re-verify all gates on it.
