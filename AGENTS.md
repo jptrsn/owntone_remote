@@ -38,8 +38,14 @@ iTunes-specific features.
   `ArtworkProbe` one-GET-per-URL verdict gates `ArtworkBox` and the
   mirror's `artUri`; the 005a `Invalid statusCode: 204` follow-up is
   closed; merged `4c8ba13`; own AVD created + deleted).
-  **Next: device-verification 003** (release candidate on Pixel 10, with the
-  user). Device decision (user
+   **`remote-app` unit 011 DONE 2026-11-13** (QueueController per-event
+   refreshes serialized — single-flight + trailing refetch; unit 009's
+   stale-chip race candidate closed). **Next: device-verification 003** —
+   release pass on a **per-unit disposable AVD** (user decision
+   2026-11-13: replaces the Pixel 10/GrapheneOS daily-driver plan, which
+   never ran; real-carrier-call + GrapheneOS-specific checks move to a
+   documented-untested list in the release notes). Audible steps still
+   need the user present. Device decision (user
  2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
  and deletes it when finished** — never start or reuse an existing AVD;
  other sessions own the running emulators. The supervised play window
@@ -112,7 +118,10 @@ unexpectedly.
   never an existing AVD (user 2026-10-26) | _resolve by serial at boot:
   `getprop ro.boot.qemu.avd_name`_ |
 | Real device — volume-key routing tests | Pixel 6 (oriole, Android 16, **no SIM** — cannot receive calls) | `25071FDF600953` (connected 2026-10-10) |
-| Release candidate | Pixel 10 (GrapheneOS) | _record when connected_ |
+| Release pass (dv-003) | per-unit disposable AVD (user decision
+  2026-11-13 — replaces the Pixel 10/GrapheneOS daily-driver plan; real-
+  hardware-only checks documented as untested, see the unit file) |
+  _resolve by serial at boot: `getprop ro.boot.qemu.avd_name`_ |
 
 ### 3. ReTune on the capture AVD is a read-only reference
 

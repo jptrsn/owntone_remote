@@ -23,8 +23,9 @@ quality_gates:
 
 "Builds and passes unit tests" is not "works as a remote". v1 is proven
 by a full requirements pass on the dev AVD, a reconnect-robustness pass,
-and a supervised pass on the real Pixel 10 (GrapheneOS) — the only device
-that can test a real incoming call.
+and (unit 003) a supervised release-build pass on a disposable AVD —
+including the incoming-call pause/auto-resume path driven through the
+emulator's Telecom layer (`adb emu gsm call`).
 
 ## Solution
 
@@ -34,24 +35,28 @@ Three units, in order:
 |---|---|---|
 | 001 | Full requirements pass | `RemoteDev_API_36` |
 | 002 | Reconnect robustness | `RemoteDev_API_36` |
-| 003 | Pixel 10 GrapheneOS (release build) | Pixel 10, user-driven |
+| 003 | Release pass | `OwnToneVerify003_API_36` (created + deleted by the unit) |
 
 ## Success Criteria (intent-level)
 
 - [ ] Every v1 R-ID's acceptance criteria: pass/fail table recorded
 - [ ] Reconnect scenarios: no crash, state converges to server truth
-- [ ] Pixel 10: install, per-app Network permission, FGS survival,
-      rocker, **real call + auto-resume** — all verified with the user
+- [ ] 003: release APK install, FGS survival, rocker, **call pause +
+      auto-resume (emulated call)** — all verified with the user
 - [ ] Release APK built (`flutter build apk --release`) and recorded
+- [ ] Untested-on-real-hardware items (real carrier call, GrapheneOS
+      per-app Network permission, battery optimisation) explicitly
+      documented — not silently dropped
 
 ## Context
 
-- The Pixel 10 is the user's **daily driver** — unit 003 is entirely at
-  the user's convenience, with the user holding the device; the agent
-  drives via `adb -s <pixel-serial>` only when the user has it connected
-  and has agreed.
-- GrapheneOS specifics (unit 003): per-app Network permission must be
-  granted manually (no legacy auto-grant); check the notification
-  permission too; FGS type enforcement is stricter than AOSP.
+- **Device decision (user, 2026-11-13):** the original 003 gated release
+  on the user's Pixel 10 (GrapheneOS) daily driver; it never ran
+  (BLOCKED-PENDING-SUPERVISION, 2026-10-27) and the user replaced it with
+  the disposable-AVD plan. The superseded GrapheneOS/static/gate evidence
+  is preserved in the unit file; real-hardware-only checks stay documented
+  as untested.
+- 003 still needs the **user present** for its audible window — the
+  emulator does not change D16/AGENTS §1; every start is confirmed.
 - Everything that plays audio is supervised (D16). The full pass includes
   play — it happens in one agreed window, and the server is left paused.
