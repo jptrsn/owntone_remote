@@ -341,10 +341,14 @@ void main() {
       await h.settle();
       expect(h.controller.phase, ConnectionPhase.connected);
       expect(h.refetches, 0, reason: 'first open must not refetch (L79-80)');
-      expect(h.script.created.first.clientSent, [
-        '{"notify":["player","volume","outputs","queue","options",'
-            '"database","update"]}',
-      ], reason: 'docs/API.md L144-147 prescribes exactly this subscribe');
+      expect(
+        h.script.created.first.clientSent,
+        [
+          '{"notify":["player","volume","outputs","queue","options",'
+              '"database","update"]}',
+        ],
+        reason: 'docs/API.md L144-147 prescribes exactly this subscribe',
+      );
 
       h.script.created.first.serverClose();
       expect(

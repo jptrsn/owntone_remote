@@ -175,10 +175,16 @@ the app.
 | `docs/API.md` | Touching the network layer | Endpoint reference, live examples, WS protocol |
 | `docs/retune-capture/CAPTURE-PROTOCOL.md` | Capture intent only | Walk procedure, static pass, output format |
 
-## Environment (verified 2026-10-08)
+## Environment (verified 2026-10-08; host drift noted 2026-11-13)
 
-- macOS Apple Silicon. Flutter **3.41.7** stable, Dart **3.11.5** at
-  `/opt/homebrew/bin/{flutter,dart}`. `adb` at `/opt/homebrew/bin/adb`.
+- macOS Apple Silicon. `/opt/homebrew/bin/{flutter,dart}` — brew has since
+  drifted the host to **Flutter 3.47.9 / Dart 3.13.7**. CI pins **3.41.7**
+  (`.github/workflows/gates.yml`) and the **pinned formatter is the gate**:
+  three test files (connection_controller_adversarial, ws_client_adversarial,
+  ws_client_adversarial_wire) sit byte-identical to main and show "Changed"
+  under the host formatter — **do not reformat them** (PR #4 blocker: doing
+  so was `26ddef4` and reddened the gates job; PR #4 review found it).
+- `adb` at `/opt/homebrew/bin/adb`.
   git 2.50.1, git identity configured globally.
 - Android SDK at `~/Library/Android/sdk`. `ANDROID_HOME` is **not** set in
   shells; use absolute paths:
