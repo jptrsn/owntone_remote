@@ -370,8 +370,12 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       });
 
-      // External change while A is in flight; event 2 → refresh B, which
-      // answers immediately with the new list.
+      // External change while A is in flight; event 2 arrives during the
+      // same flight — the contract is on the FINAL state: after A lands,
+      // the list must show the server's current state (a single-flight
+      // impl defers event 2 into a trailing fetch; an unserialized impl
+      // lets A's stale response overwrite B's newer one; a skipping impl
+      // drops event 2 and keeps the stale list).
       await tester.runAsync(() async {
         fx.items.insert(
           0,
@@ -379,12 +383,10 @@ void main() {
         );
         fx.renumber();
         channels.last.serverSend('{"notify":["queue"]}');
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
       });
-      await settle(tester);
-      expect(find.text('Fresh Change'), findsOneWidget); // B landed
 
-      // A's superseded response lands late.
+      // A's superseded response lands.
       gate.complete();
       await settle(tester);
       expect(
