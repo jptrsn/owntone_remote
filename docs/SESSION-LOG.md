@@ -1420,7 +1420,13 @@ duplicate unit-011 test preamble removed; release notes ≤20 s → ~20 s
 (tested bound ≤25 s); `_action` now sets `_pendingRefresh` before awaiting
 so a resolved action always re-reads post-commit state (421/421 stands).
 Not taken (logged as candidate): test 2's timing-contingent oracle-strength
-(raise hold / gate events on arrival). Two further CI-side discoveries while
+(raise hold / gate events on arrival). → **Follow-up (same day): taken.**
+Test 2 now holds A 150 ms (A-only), iterates settles, asserts
+`arrivals == 2`; skip-impl/no-trailing/concurrent mutations all red and
+the reviewer's save-the-skip scenario (skip × 80 ms spacing) flips
+green→red; 10/10 stress. Harness facts (unit 011 Result documents them):
+responder timers tick on real time flowing only inside runAsync windows;
+big `pump(1s)` deadlocks in elapse re-entry. Two further CI-side discoveries while
 greening: the runner image itself had drifted to **Java 25.0.5** (Gradle
 8.14 rejects it — main's own October-green commit fails identically on
 rerun), fixed by `setup-java` temurin 21 in gates.yml (`407c198`); and the

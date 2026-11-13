@@ -120,6 +120,22 @@ here); debouncing (this is single-flight + trailing, not a timer).
   The `_action` post-action refresh now forces `_pendingRefresh` before
   awaiting so a resolved action always re-reads post-commit state
   (reviewer minor; 421/421 stands).
+  *Test 2 oracle-strength nit — taken:* A is now held 150 ms (6× the
+  burst's ~25 ms firing window) instead of 45 ms, A-only (the trailing
+  refetch answers promptly), and the test iterates settles until the
+  trailing fetch arrives, then asserts `arrivals == 2` (A plus EXACTLY
+  one coalesced trailing). Evidence: skip-impl, no-trailing and
+  concurrent mutations all make both unit-011 tests red; the reviewer's
+  decisive scenario (skip-impl × 80 ms event spacing — the case that
+  SAVED the skip impl under the 45 ms hold) is now red; 10/10 green
+  stress. Harness facts learned (they burned a long detour and will
+  burn the next editor too): responder `Future.delayed`s tick on real
+  time that flows ONLY inside `runAsync` windows — `pump()` does not
+  advance them and a looped-hold variant starves; `pump(Duration(1s))`
+  deadlocks in fake-async elapse re-entry (50 ms steps are the proven
+  granularity); `settle()` = 80 ms runAsync + 3×50 ms pumps, so hold
+  durations must be budgeted against the runAsync window, not the pump
+  total.
 - **Criterion 4 (on-device, release build, dv-003 window):** with the
   queue screen open on `OwnToneVerify003_API_36`, external
   `POST /api/queue/items/add` (no `playback=start`) → row +
