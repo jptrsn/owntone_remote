@@ -169,6 +169,11 @@ class QueueController extends ChangeNotifier {
       if (!_disposed) notifyListeners();
       return false;
     }
+    // The action's own WS `queue` event usually starts a refresh before we
+    // get here, and the guard would coalesce this await onto that
+    // pre-commit fetch. Demand the trailing fetch instead: a resolved
+    // _action always re-reads post-commit state (PR #4 review).
+    _pendingRefresh = true;
     await _refresh();
     return true;
   }

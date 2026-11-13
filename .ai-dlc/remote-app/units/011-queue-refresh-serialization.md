@@ -110,6 +110,16 @@ here); debouncing (this is single-flight + trailing, not a timer).
 - **Gates (final tree):** analyze 0 issues · format 0 changed (92 files)
   · `flutter test --exclude-tags live` **421/421** · debug APK ✓ +
   release APK 54.6 MB (`926a6be`).
+  *PR #4 review addendum:* the "format 0" row quoted the host toolchain,
+  which brew had drifted to 3.47.9 while CI pins 3.41.7 — `26ddef4`
+  reformatted three main-green test files under the wrong formatter and
+  reddened the gates job. Those files are restored to their main bytes
+  (byte-identical to a pinned-CI-green tree); the pinned CI is the
+  format gate and is green at the PR #4 fix commit. `dart format` on the
+  host reports those 3 files "Changed" — expected, do not act on it.
+  The `_action` post-action refresh now forces `_pendingRefresh` before
+  awaiting so a resolved action always re-reads post-commit state
+  (reviewer minor; 421/421 stands).
 - **Criterion 4 (on-device, release build, dv-003 window):** with the
   queue screen open on `OwnToneVerify003_API_36`, external
   `POST /api/queue/items/add` (no `playback=start`) → row +

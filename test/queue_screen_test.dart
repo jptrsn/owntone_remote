@@ -335,11 +335,6 @@ void main() {
   // stale count while the server churned): R-11 "queue list matches the
   // server" + R-02 (D2 event → refetch) require per-event refreshes to be
   // serialized — one GET in flight, coalesced trailing refetch, and a
-  // superseded response can never overwrite a newer list.
-  // Unit 011 (race candidate from unit 009's Result: the queue chip held a
-  // stale count while the server churned): R-11 "queue list matches the
-  // server" + R-02 (D2 event → refetch) require per-event refreshes to be
-  // serialized — one GET in flight, coalesced trailing refetch, and a
   // superseded response can never overwrite a newer list. Zone note: the
   // gates here are polling flags, not Completers — the fetch chain crosses
   // runAsync zones and a Completer created in the testWidgets (fake-async)
