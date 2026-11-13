@@ -1,6 +1,6 @@
 ---
 name: 011-queue-refresh-serialization
-status: in_progress
+status: done
 intent: remote-app
 supervised_steps: []
 ---
@@ -70,3 +70,54 @@ here); debouncing (this is single-flight + trailing, not a timer).
    snapshot → restore, byte-identical) converges in the chip + list.
 5. **Server unmutated** (start == end snapshot), **no AVDs remain**.
 6. **SESSION-LOG entry + commit** `remote-app/011: …`.
+
+## Result
+
+**Status: DONE (2026-11-13).**
+
+- **Contract (test-author first, RED at baseline):** two tests in
+  `test/queue_screen_test.dart` group `R-11 refresh serialization
+  (unit 011)`, committed at `96730f3` before any impl. The first
+  contract revision asserted an impossible interleaving (event 2's
+  fetch *landing* while event 1's was still in flight contradicts
+  single-flight) — fixed to a FINAL-state oracle in `aa778e0` **before
+  GREEN**; the fix was re-verified RED at baseline by stashing the
+  impl (`git stash push lib/src/queue/queue_controller.dart`).
+  Baseline RED reasons were the two exact oracles: (a) `Fresh Change`
+  gone after the late stale response (0 widgets); (b) `maxInFlight ==
+  3` under the burst.
+- **Impl (`5f27e55`):** single-flight + coalesced trailing fetch in
+  `_refresh` (in-flight guard sets `_pendingRefresh`; do-while re-fetches
+  after the last event; `_disposed` breaks the loop; `_action`'s
+  post-action `await _refresh()` contract kept).
+- **Test hardening (`4885ddb`, pre-final):** the gates moved from blind
+  delays + Completers to **polling flags with request-arrival
+  synchronisation** — a Completer created in the testWidgets
+  (fake-async) zone deadlocks a waiter inside `runAsync` (deadlock
+  observed: `TimeoutException` 2 s on `firstArrived`), and blind delays
+  let A's request-time snapshot race past the mid-burst change,
+  letting a skip-impl survive a kill-check. Responses are snapshotted
+  at **request** time (a real server answers from
+  request-handling state; response-time reads hid the lost-trailing
+  oracle), and all five burst events provably land inside the 45 ms
+  in-flight window.
+- **Kill-checks (final tests):** delete the trailing loop
+  (`while (false)`) → **both** tests red ((a) stale list kept, (b)
+  `Burst Track` lost — skip-impl dies); delete the in-flight guard
+  (`if (false)`) → **both** red ((b) via `maxInFlight`, (a) via
+  clobber). Restored: **16/16**, green on 3 consecutive runs.
+  Pre-existing queue tests (005b set) green unedited.
+- **Gates (final tree):** analyze 0 issues · format 0 changed (92 files)
+  · `flutter test --exclude-tags live` **421/421** · debug APK ✓ +
+  release APK 54.6 MB (`926a6be`).
+- **Criterion 4 (on-device, release build, dv-003 window):** with the
+  queue screen open on `OwnToneVerify003_API_36`, external
+  `POST /api/queue/items/add` (no `playback=start`) → row +
+  `now playing` marker present ≤3 s; `DELETE /api/queue/items/198830`
+  → empty state + `count: 0` ≤3 s; `GET /api/player` `state=stop`
+  throughout; queue snapshots start == end (0 items). Full rows +
+  harness notes: `device-verification/003` § Result (Step 2
+  "queue WS convergence" row, Baseline block).
+- **Follow-up noted, not built (same pattern elsewhere):**
+  `PlayerController`/`OutputsController` `_refresh` share the
+  unguarded shape (smaller slices, no observed staleness).
