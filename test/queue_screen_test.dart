@@ -441,10 +441,15 @@ void main() {
           final snap = jsonDecode(jsonEncode(fx.items)) as List;
           arrivals++;
           try {
-            // Long enough that ALL five events provably arrive during
-            // A's flight (fired at 5 ms spacing below) — a skipping
-            // impl then has no post-flight event to save it.
-            await Future<void>.delayed(const Duration(milliseconds: 45));
+            // A ONLY, 150 ms: 6× the burst's ~25 ms firing window, so
+            // late handling cannot slip past the flight even under CI
+            // timer stretch (PR #4 review nit; a 45 ms hold left 20 ms
+            // of headroom — an 80 ms-spacing mutation slipped past it
+            // and a skipping impl survived). The trailing refetch must
+            // answer promptly so the test can observe it.
+            if (arrivals == 1) {
+              await Future<void>.delayed(const Duration(milliseconds: 150));
+            }
             return jsonResponse(o, {
               'version': 1,
               'count': snap.length,
@@ -476,8 +481,22 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 5));
         }
       });
+      // A's hold ticks on real time, which flows only inside settle()'s
+      // runAsync window (80 ms) — iterate settles until the coalesced
+      // trailing fetch has reached the server, then one more to answer
+      // and paint it.
+      for (var i = 0; i < 6 && arrivals < 2; i++) {
+        await settle(tester);
+      }
       await settle(tester);
-
+      expect(
+        arrivals,
+        2,
+        reason:
+            'A plus EXACTLY one coalesced trailing refetch — a third '
+            'GET means per-event fetches slipped through the guard, '
+            'one means the trailing refetch was lost (unit 011)',
+      );
       expect(
         find.text('Burst Track'),
         findsOneWidget,
