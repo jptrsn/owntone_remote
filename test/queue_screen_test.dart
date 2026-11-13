@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -326,6 +329,133 @@ void main() {
       await settle(tester);
       expect(find.textContaining('Queue disabled'), findsNothing);
       expect(find.text('Offline Change'), findsOneWidget);
+    });
+  });
+
+  // Unit 011 (race candidate from unit 009's Result: the queue chip held a
+  // stale count while the server churned): R-11 "queue list matches the
+  // server" + R-02 (D2 event → refetch) require per-event refreshes to be
+  // serialized — one GET in flight, coalesced trailing refetch, and a
+  // superseded response can never overwrite a newer list.
+  group('R-11 refresh serialization (unit 011)', () {
+    testWidgets('a superseded fetch answering late must not clobber the '
+        'newer list (stale-write race)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(find.text('Skunk'), findsOneWidget);
+
+      // The next queue GET is held in flight, answering from a snapshot
+      // taken when it started (the server state as of that event).
+      final gate = Completer<void>();
+      var held = false;
+      final live = fx.handle;
+      adapter.responder = (o) {
+        if (!held && o.method == 'GET' && o.uri.path == '/api/queue') {
+          held = true;
+          final snap = jsonDecode(jsonEncode(fx.items)) as List;
+          return gate.future.then(
+            (_) => jsonResponse(
+              o,
+              {'version': 1, 'count': snap.length, 'items': snap},
+            ),
+          );
+        }
+        return live(o);
+      };
+
+      // Event 1 → refresh A starts and is now held with the 3-item list.
+      await tester.runAsync(() async {
+        channels.last.serverSend('{"notify":["queue"]}');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+
+      // External change while A is in flight; event 2 → refresh B, which
+      // answers immediately with the new list.
+      await tester.runAsync(() async {
+        fx.items.insert(
+          0,
+          Fixture.track(200003, 0, 'Fresh Change', 1203, 310000),
+        );
+        fx.renumber();
+        channels.last.serverSend('{"notify":["queue"]}');
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      });
+      await settle(tester);
+      expect(find.text('Fresh Change'), findsOneWidget); // B landed
+
+      // A's superseded response lands late.
+      gate.complete();
+      await settle(tester);
+      expect(
+        find.text('Fresh Change'),
+        findsOneWidget,
+        reason:
+            'the stale response from the superseded fetch overwrote '
+            'the newer list (unit 011: per-event refreshes must be '
+            'serialized)',
+      );
+    });
+
+    testWidgets('a burst of queue events keeps at most one GET in flight '
+        'and the mid-burst change still lands (trailing refetch)', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+
+      // Every queue GET is slowed and counted, to observe concurrency.
+      final live = fx.handle;
+      var inFlight = 0;
+      var maxInFlight = 0;
+      adapter.responder = (o) async {
+        if (o.method == 'GET' && o.uri.path == '/api/queue') {
+          inFlight++;
+          if (inFlight > maxInFlight) maxInFlight = inFlight;
+          try {
+            await Future<void>.delayed(const Duration(milliseconds: 30));
+            return live(o);
+          } finally {
+            inFlight--;
+          }
+        }
+        return live(o);
+      };
+
+      // Event 1 → fetch A starts against the OLD list; the external
+      // change lands mid-flight; four more events pile on that same
+      // flight (the unit 009 churn pattern).
+      await tester.runAsync(() async {
+        channels.last.serverSend('{"notify":["queue"]}');
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        fx.items.insert(
+          0,
+          Fixture.track(200004, 0, 'Burst Track', 1204, 320000),
+        );
+        fx.renumber();
+        for (var i = 0; i < 4; i++) {
+          channels.last.serverSend('{"notify":["queue"]}');
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      });
+      await settle(tester);
+
+      expect(
+        find.text('Burst Track'),
+        findsOneWidget,
+        reason:
+            'events arriving during the in-flight fetch were lost — '
+            'they must coalesce into a trailing refetch (R-11: the '
+            'list matches the server)',
+      );
+      expect(
+        maxInFlight,
+        1,
+        reason:
+            'per-event refreshes must be single-flight: $maxInFlight '
+            'concurrent GET /api/queue observed (unit 011)',
+      );
     });
   });
 
