@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -337,7 +336,27 @@ void main() {
   // server" + R-02 (D2 event → refetch) require per-event refreshes to be
   // serialized — one GET in flight, coalesced trailing refetch, and a
   // superseded response can never overwrite a newer list.
+  // Unit 011 (race candidate from unit 009's Result: the queue chip held a
+  // stale count while the server churned): R-11 "queue list matches the
+  // server" + R-02 (D2 event → refetch) require per-event refreshes to be
+  // serialized — one GET in flight, coalesced trailing refetch, and a
+  // superseded response can never overwrite a newer list. Zone note: the
+  // gates here are polling flags, not Completers — the fetch chain crosses
+  // runAsync zones and a Completer created in the testWidgets (fake-async)
+  // zone never resumes a waiter inside runAsync (deadlock: its completion
+  // microtasks queue on the paused fake clock).
   group('R-11 refresh serialization (unit 011)', () {
+    Future<void> waitUntil(
+      WidgetTester tester,
+      bool Function() cond,
+      String what,
+    ) => tester.runAsync(() async {
+      for (var i = 0; i < 400 && !cond(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      if (!cond()) fail('$what timed out');
+    });
+
     testWidgets('a superseded fetch answering late must not clobber the '
         'newer list (stale-write race)', (tester) async {
       await tester.runAsync(wireUp);
@@ -345,30 +364,37 @@ void main() {
       await settle(tester);
       expect(find.text('Skunk'), findsOneWidget);
 
-      // The next queue GET is held in flight, answering from a snapshot
-      // taken when it started (the server state as of that event).
-      final gate = Completer<void>();
-      var held = false;
+      // The next queue GET blocks inside the adapter until released,
+      // answering from a snapshot taken at REQUEST time (a real server
+      // answers from the state it saw handling the request).
+      var gateUsed = false;
+      var gateArrived = false;
+      var gateRelease = false;
       final live = fx.handle;
-      adapter.responder = (o) {
-        if (!held && o.method == 'GET' && o.uri.path == '/api/queue') {
-          held = true;
+      adapter.responder = (o) async {
+        if (!gateUsed && o.method == 'GET' && o.uri.path == '/api/queue') {
+          gateUsed = true;
           final snap = jsonDecode(jsonEncode(fx.items)) as List;
-          return gate.future.then(
-            (_) => jsonResponse(
-              o,
-              {'version': 1, 'count': snap.length, 'items': snap},
-            ),
-          );
+          gateArrived = true;
+          for (var i = 0; i < 400 && !gateRelease; i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
+          return jsonResponse(o, {
+            'version': 1,
+            'count': snap.length,
+            'items': snap,
+          });
         }
         return live(o);
       };
 
-      // Event 1 → refresh A starts and is now held with the 3-item list.
+      // Event 1 → refresh A starts and blocks in the adapter holding the
+      // pre-change snapshot (waited for: a blind delay let A's snapshot
+      // race past the change and hid a lost trailing refetch).
       await tester.runAsync(() async {
         channels.last.serverSend('{"notify":["queue"]}');
-        await Future<void>.delayed(const Duration(milliseconds: 20));
       });
+      await waitUntil(tester, () => gateArrived, 'event 1 fetch arrival');
 
       // External change while A is in flight; event 2 arrives during the
       // same flight — the contract is on the FINAL state: after A lands,
@@ -386,8 +412,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       });
 
-      // A's superseded response lands.
-      gate.complete();
+      gateRelease = true; // A's superseded response lands
       await settle(tester);
       expect(
         find.text('Fresh Change'),
@@ -407,17 +432,29 @@ void main() {
       await pumpScreen(tester, const QueueScreen());
       await settle(tester);
 
-      // Every queue GET is slowed and counted, to observe concurrency.
+      // Every queue GET is slowed and counted, to observe concurrency;
+      // the response body is snapshotted at REQUEST time (response-time
+      // reads would hide a lost trailing refetch).
       final live = fx.handle;
       var inFlight = 0;
       var maxInFlight = 0;
+      var arrivals = 0;
       adapter.responder = (o) async {
         if (o.method == 'GET' && o.uri.path == '/api/queue') {
           inFlight++;
           if (inFlight > maxInFlight) maxInFlight = inFlight;
+          final snap = jsonDecode(jsonEncode(fx.items)) as List;
+          arrivals++;
           try {
-            await Future<void>.delayed(const Duration(milliseconds: 30));
-            return live(o);
+            // Long enough that ALL five events provably arrive during
+            // A's flight (fired at 5 ms spacing below) — a skipping
+            // impl then has no post-flight event to save it.
+            await Future<void>.delayed(const Duration(milliseconds: 45));
+            return jsonResponse(o, {
+              'version': 1,
+              'count': snap.length,
+              'items': snap,
+            });
           } finally {
             inFlight--;
           }
@@ -425,12 +462,15 @@ void main() {
         return live(o);
       };
 
-      // Event 1 → fetch A starts against the OLD list; the external
-      // change lands mid-flight; four more events pile on that same
-      // flight (the unit 009 churn pattern).
+      // Event 1 → fetch A starts against the OLD list. The external
+      // change lands only AFTER A's request has arrived (deterministic
+      // gate); four more events pile on that same flight (the unit 009
+      // churn pattern).
       await tester.runAsync(() async {
         channels.last.serverSend('{"notify":["queue"]}');
-        await Future<void>.delayed(const Duration(milliseconds: 10));
+      });
+      await waitUntil(tester, () => arrivals >= 1, 'event 1 fetch arrival');
+      await tester.runAsync(() async {
         fx.items.insert(
           0,
           Fixture.track(200004, 0, 'Burst Track', 1204, 320000),
@@ -438,7 +478,7 @@ void main() {
         fx.renumber();
         for (var i = 0; i < 4; i++) {
           channels.last.serverSend('{"notify":["queue"]}');
-          await Future<void>.delayed(const Duration(milliseconds: 10));
+          await Future<void>.delayed(const Duration(milliseconds: 5));
         }
       });
       await settle(tester);
