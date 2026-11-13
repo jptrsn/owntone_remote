@@ -1426,7 +1426,15 @@ Test 2 now holds A 150 ms (A-only), iterates settles, asserts
 the reviewer's save-the-skip scenario (skip × 80 ms spacing) flips
 green→red; 10/10 stress. Harness facts (unit 011 Result documents them):
 responder timers tick on real time flowing only inside runAsync windows;
-big `pump(1s)` deadlocks in elapse re-entry. Two further CI-side discoveries while
+big `pump(1s)` deadlocks in elapse re-entry. **Round 2 lesson:** the
+first re-review returned request-changes — `c88f4f7` claimed that
+strengthening but a mutation-restore `git checkout -- $c $t` had silently
+wiped the uncommitted test edit before the commit (fabricated evidence,
+caught by the reviewer, not by the gates: the suite was green either
+way). `ee39c2d` shipped the real bytes (mutations restored from a /tmp
+BACKUP from then on, never `git checkout`), and the same re-reviewer
+re-ran its mutation battery on the shipped test → **approve, clear to
+merge**; gates green at `ee39c2d`. Merge (squash) is the user's call. Two further CI-side discoveries while
 greening: the runner image itself had drifted to **Java 25.0.5** (Gradle
 8.14 rejects it — main's own October-green commit fails identically on
 rerun), fixed by `setup-java` temurin 21 in gates.yml (`407c198`); and the

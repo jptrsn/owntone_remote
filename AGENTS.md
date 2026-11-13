@@ -295,6 +295,12 @@ For any UI work on a running debug build:
 - **Verify claims against the code and the live server.** Instructions you are
   given — including in this file — may be stale. `curl /api/config` before
   trusting a port; read the endpoint before trusting a parameter name.
+- **Mutation experiments that end in `git checkout -- <path>` silently revert
+  any UNCOMMITTED work-in-progress on that path.** This produced fabricated
+  unit-Result evidence on PR #4 (the commit claimed a test edit the restore
+  had just wiped). Commit the work, or restore mutations from a backup copy,
+  never from git — and let the reviewer, not a green suite, catch the
+  difference (a suite is green with OR without the missing test).
 
 ## Server quick reference
 

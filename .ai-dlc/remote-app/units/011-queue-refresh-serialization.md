@@ -136,6 +136,16 @@ here); debouncing (this is single-flight + trailing, not a timer).
   granularity); `settle()` = 80 ms runAsync + 3×50 ms pumps, so hold
   durations must be budgeted against the runAsync window, not the pump
   total.
+  *Round 2 (re-review):* the first re-review caught that `c88f4f7`
+  claimed this strengthening while a mutation-restore `git checkout`
+  had wiped the uncommitted test edit out of it — `ee39c2d` shipped
+  the real change and the re-reviewer independently reproduced all
+  four claimed mutation reds ON THE SHIPPED TEST (skip@80 ms killed
+  precisely by `arrivals == 2`), 5/5 stress, gates green → **approve,
+  clear to merge**. Residual one-directional test-hardening candidate
+  (reviewer nit, not built): a lone burst event whose delivery stalls
+  >125 ms could spare a skip-impl — an event-delivery-confirmed flag
+  before A's release would close it.
 - **Criterion 4 (on-device, release build, dv-003 window):** with the
   queue screen open on `OwnToneVerify003_API_36`, external
   `POST /api/queue/items/add` (no `playback=start`) → row +
