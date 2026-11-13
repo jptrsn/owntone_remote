@@ -1,6 +1,6 @@
 ---
 name: 003-release-pass-disposable-avd
-status: in_progress
+status: done
 intent: device-verification
 supervised_steps: [1, 2, 3]
 ---
@@ -121,7 +121,152 @@ start individually confirmed, and the server left paused + verified.
 
 ## Result
 
-_(pending — run in progress)_
+**Status: PASS — release pass complete (2026-11-13, supervised window,
+user present and confirming each audible action).** HEAD `926a6be`;
+release APK **54.6 MB** (`flutter build apk --release`, Gradle 72.7 s) —
+same HEAD as all gates re-run here: analyze 0 issues · format 0 changed
+(92 files) · `flutter test --exclude-tags live` **421/421** · debug APK ✓.
+AVD `OwnToneVerify003_API_36` (`system-images;android-36;google_apis;
+arm64-v8a`, no Play Store UI) **created and deleted by this unit**;
+serial resolved and re-verified via `ro.boot.qemu.avd_name` (was
+`emulator-5554`, free at start — the other session's emulator was not
+running; `adb devices` before/after showed only the foreign Pixel 6,
+untouched). Zero audio incidents; server restored to the as-found
+baseline (below).
+
+### Baseline (start) → end (byte-identical)
+
+```
+GET /api/player:   state=stop volume=67 item_id=0 shuffle=true repeat=off consume=false
+GET /api/outputs:  none selected; Server(ALSA) unselected vol 8
+GET /api/queue:    0 items
+```
+
+Mid-window drifts were all self-restored and re-verified above: master
+volume 51 observed at the FGS t_off (from the slider-row taps; restored
+67), Server output 51 (row-slider mis-tap; restored 8), queue (15 → 0
+via `PUT /api/queue/clear`). No external-session interference was
+observed in the window (queue/player were static outside my own actions).
+`item_id` anchor: 0 at start, 0 at end.
+
+### Step 1 — install + permissions: PASS (release build)
+
+`app-release.apk` (54.6 MB) → `Success`, `versionName=0.1.0`.
+`pm grant POST_NOTIFICATIONS READ_PHONE_STATE` →
+`dumpsys package`: both `granted=true`. Launch → Connect (host
+`192.168.1.13`, port `3689`) → now-playing shows
+`OwnTone 29.3` + `sync: live` (WS open) + `Playing via:`/`Queue ·`
+chips. **Release-build semantics export validated first** (the v1
+checklist's "before trusting dumps" rule): content-descs land
+(`OwnTone server`, `Connect`, `Queue · 0`, `sync: live`, …) — the dump
+harness sees known-present labels, so later absence-checks are trusted.
+Field-entry trap hit: `input text` gained a stray `y` (IME compose) —
+field verified against dumps after every entry.
+
+### Step 2 — full smoke: PASS (server-verified per feature)
+
+| Feature | Evidence (app ⟷ server) |
+|---|---|
+| now-playing display | `Time Is Running Out` / `Muse · Absolution` / `01:52`/`03:56` / `Rating: 4 of 5 stars` ⟷ `/api/player` prog 112301/236277 ms, `/api/search` rating 80 (=4★) |
+| play (supervised, user-confirmed) | album Play → `state=play`, `count: 15` |
+| app play/pause button | pause→play tap: `pause`@112301 → `play`@112611 |
+| app next / previous | `Time Is Running Out(198834)` → `Fury(198846)` → `198834` (titles via queue map) |
+| next past end of queue | single-item queue + repeat off → `stop` item 0 (server behavior, app follows) |
+| modes | app toggles: shuffle→false, repeat→`all`, consume→true on `GET /api/player`; restored baseline |
+| volume slider | tap → server 90 then 73; restored 67 |
+| browse album | Albums row `Absolution, album, Muse, 15 tracks`; track rows `title, M:SS, N stars` |
+| rating display | 4★/5★ rows ⟷ server ratings 80/100 |
+| queue list + highlight | row `Time Is Running Out, now playing, …` follows `item_id` |
+| queue WS convergence (**unit 011 C4**) | external `POST add` (no `playback=start`) at t0 → row visible by t0+3 s incl. `now playing`; `DELETE /api/queue/items/198830` → `The queue is empty.` + `count: 0` by t+3 s; `state=stop` throughout (zero audio) |
+| speakers list | 5 rows verbatim ⟷ `/api/outputs` (name/type/selected/volume); Server row checkbox tap → `selected` in-row + server `SELECTED: Server` |
+| cold start | `am force-stop`+start → `sync: live`, `Queue · 15`, `Playing via: Server` without re-entry (R-01 branch) |
+
+### Step 3 — emulated call test: PASS (user-confirmed)
+
+`adb emu gsm call 5551234` while playing → **`GET /api/player`:
+`pause` at prog 21447 (frozen)** ≤3 s. UI stays coherent (now-playing
+intact). The Kotlin plugin logs nothing (no `Log.*` in the call path —
+recorded harness fact; oracle is the server transition + the R-08 unit
+tests). `adb emu gsm cancel 5551234` (`--cancel` is rejected by this
+image's console — "bad phone number format") → **`play` resuming at
+21447→21717 — same item, same position**. User: *"paused and resumed"*
+(audible confirmation). Server re-verified paused before leaving the
+call step.
+
+### Step 4 — FGS + notification survive 10 min backgrounded: PASS
+
+Screen off (`input keyevent 26`, `mWakefulness=Asleep`) for **620 s
+while playing** (server `play`, auto-advancing tracks, item 198834→198840
+by check time). Same `pid 6713` at t_off and t+620 s (no restart).
+`dumpsys activity services`: AudioService `isForeground=true`; the
+launch-time log line `Background started FGS: Allowed …
+cmp=…/com.ryanheise.audioservice.AudioService; code:PROC_STATE_TOP`
+quoted from logcat. Notification present (`dumpsys notification`:
+`id=1124 … NO_CLEAR|FOREGROUND_SERVICE category=transport actions=3`).
+Crash buffer: **0**. Controls: shade shows `Blackout by Muse is playing
+from owntone_remote` with `Previous track / Play / Next track`; tapping
+**Play** after a server-side pause → `play` resumed (prog advancing).
+Note: `cmd media_session dispatch` no-oped (media-button session null
+with app unfocused) and the `media` shell binary is absent on this
+image — the notification tap is the working control path.
+
+### Step 5 — volume rocker: PASS with adjudication (screen-off = inert by design)
+
+Screen-on, MainActivity focus, paused: `keyevent 24` ×5 → server volume
+**51→76 (+5/press, step 5)**. Screen off (`Asleep`): ×5 (paused) and ×6
+(**playing**) presses → volume **held (76)** — the R-06
+"never hijacks from the background" invariant holds with the screen off
+(activity onPause); the v1 wording expected an off-screen rocker to move
+volume, but that is not the R-06 design (the handler is lifecycle-scoped
+by the unit-003 remote-app decision) — adjudicated here as **correct
+safe behaviour**, not a fail.
+
+### Step 6 — checklist
+
+- FGS type `mediaPlayback` accepted on Android 36 AOSP:
+  `isForeground=true` + Background-started-Allowed row (step 4).
+- Permissions: `INTERNET, WAKE_LOCK, READ_PHONE_STATE, FOREGROUND_SERVICE,
+  FOREGROUND_SERVICE_MEDIA_PLAYBACK, POST_NOTIFICATIONS` — runtime two
+  granted; declared set unchanged (v1 static rows stand).
+- **No-GMS honesty**: this `google_apis` image *ships*
+  `com.google.android.gms`/`gsf`/`vending` (contrary to the plan's
+  expectation) — so "no-GMS crash-free" is evidenced as: static
+  (zero play-services/firebase in Gradle + pubspec.lock, v1) + runtime
+  zero crashes with GMS idle present; a true no-GMS OS observation
+  remains **untested** (real-hardware list).
+- Battery: mediaPlayback FGS exempt while playing (observed 10 min
+  screen-off playback); "Don't optimize" note stays in the release notes.
+- **Untested on real hardware (documented, not dropped)**: real carrier
+  call/RIL edge cases (this pass used the emulator Telecom path, which
+  drove the real `TelephonyCallback`); GrapheneOS per-app Network
+  permission behaviour; GrapheneOS battery-optimisation specifics.
+
+### Step 7 — `docs/RELEASE-NOTES.md`: updated this commit
+
+Device gate moved to "verified (release build, Android 36 AOSP emulator)"
+with the explicit untested-on-real-hardware list; 009/010/011 fixes
+reflected; silent-drop and 204-artwork limitations removed (closed);
+screen-off rocker inertness documented as design.
+
+### Harness notes (cost time; record for future device units)
+
+- **uiautomator dump cannot idle while the now-playing progress ticker
+  animates (playing)** — pause the server first, or work blind with
+  curl-verified taps at known coords (both patterns used here).
+- Agent cannot read screencap PNGs in this stack → dumps + server API
+  are the evidence oracles.
+- `input text` can gain stray characters (IME) — verify field text via
+  dump after every entry; IME commit may append late (the `y`).
+- Outputs row: the row's Checkbox reports full-row a11y bounds but the
+  volume slider child eats centre taps → tap the far-left icon (x≈28);
+  a centre tap silently changes **output** volume (happened, restored).
+- `adb emu "gsm call --cancel X"` invalid on this image → use
+  `gsm cancel X`.
+- uiautomator frames can be stale (showed `…1.13y` after a clean fix) —
+  re-dump before concluding.
+- Outputs `PUT /api/outputs/{id}` needs the string id from the API
+  (Server=**'0'**, not list index) and JSON body; `?volume=` query form
+  400s.
 
 ---
 

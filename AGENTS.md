@@ -40,12 +40,17 @@ iTunes-specific features.
   closed; merged `4c8ba13`; own AVD created + deleted).
    **`remote-app` unit 011 DONE 2026-11-13** (QueueController per-event
    refreshes serialized — single-flight + trailing refetch; unit 009's
-   stale-chip race candidate closed). **Next: device-verification 003** —
-   release pass on a **per-unit disposable AVD** (user decision
-   2026-11-13: replaces the Pixel 10/GrapheneOS daily-driver plan, which
-   never ran; real-carrier-call + GrapheneOS-specific checks move to a
-   documented-untested list in the release notes). Audible steps still
-   need the user present. Device decision (user
+   stale-chip race candidate closed). **`device-verification` unit 003 DONE
+   2026-11-13** — release pass PASSED on a per-unit disposable AVD
+   (`OwnToneVerify003_API_36`, created + deleted by the unit; user
+   decision 2026-11-13 retired the never-run Pixel 10/GrapheneOS plan;
+   real-carrier-call + GrapheneOS-specific checks are a documented-
+   untested list in `docs/RELEASE-NOTES.md`). Release APK 54.6 MB @
+   `926a6be`; server restored byte-identical; **all intent units
+   (remote-app 001–011, dv 001–003) are DONE — no pending work in the
+   plan** (candidates: same-shape `_refresh` hardening in
+   Player/OutputsController; real-hardware checks 1–3; signing for
+   anything beyond debug-signed sideload). Device decision (user
  2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
  and deletes it when finished** — never start or reuse an existing AVD;
  other sessions own the running emulators. The supervised play window

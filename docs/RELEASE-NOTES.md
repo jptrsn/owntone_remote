@@ -1,25 +1,33 @@
 # Release notes — OwnTone Remote 0.1.0
 
-Release candidate: `app-release.apk` 52.9 MB, built from `e765dcb`
+Release candidate: `app-release.apk` 54.6 MB, built from `926a6be`
 (`flutter build apk --release`, gates green: analyze 0 issues ·
-format 0 changed · 362/362 tests). Package `dev.educoder.owntone_remote`,
+format 0 changed · 421/421 tests). Package `dev.educoder.owntone_remote`,
 minSdk 26, targetSdk 36. Verified against OwnTone **29.3**
 (JSON API `:3689`, websocket `:3688`).
 
 ## What works
 
-Verified on-device (Android 16 AVD, full R-ID pass, device-verification
-units 001–002; see `.ai-dlc/device-verification/units/`):
+Verified on-device (Android 16/36 AVDs; full R-ID + reconnect passes by
+device-verification units 001–002, release-build pass by unit 003, and
+per-feature device passes in the cited `remote-app` units — see
+`.ai-dlc/device-verification/units/` and `.ai-dlc/remote-app/units/`).
+The silent-drop row was proven on-device in unit 009 (debug build; the
+release build runs the identical dart:io `pingInterval` code path):
 
 - **Connection** — host/port settings, auto-reconnect on relaunch, and
   distinct errors for DNS failure vs refused port vs auth (`R-01`).
 - **Reconnect robustness** — offline banner in ~1.4 s of a hard network
   loss, reconnect backoff 1→2→4→8→16→30 s (capped), full refetch on
   reconnect, no notification duplication or state thrash under rapid
-  flapping (`R-02`).
+  flapping, and **silent drops detected in ≤20 s** via a 10 s websocket
+  ping/pong liveness check (a dead socket now fails into reconnect
+  instead of leaving the app falsely `sync: live`) (`R-02`).
 - **Now playing** — metadata + artwork (server-relative artwork URLs
   resolved against the webroot with `maxwidth`), progress follows the
-  server, seek accurate to ≤50 ms (`R-03`).
+  server, seek accurate to ≤50 ms; a **204 (no artwork) answer renders
+  the placeholder as the normal case** — no exception or retry storm
+  from the caching layer at either fetch site (`R-03`).
 - **Transport & controls** — play/pause/next/previous, media-session
   (lock screen) and notification actions, all working with the app
   backgrounded (`R-04`).
@@ -40,7 +48,10 @@ units 001–002; see `.ai-dlc/device-verification/units/`):
 - **Library** — Playlists, Artists, Albums, Genres; pagination beyond
   page 1 without duplicates; explicit empty states (`R-10`).
 - **Queue** — list mirrors the server, exactly one "now playing"
-  marker, tap-to-play, clear with confirm (`R-11`).
+  marker, tap-to-play, clear with confirm; per-event refetches are
+  **single-flight with a coalesced trailing refresh**, so overlapping
+  server churn can't leave a stale count or an out-of-date list
+  (`R-11`).
 - **Ratings** — star display (server rating ÷ 20) and star taps
   persist to the server and update via websocket (`R-12`).
 - **Search** — grouped Tracks/Artists/Albums results with per-group
@@ -48,8 +59,10 @@ units 001–002; see `.ai-dlc/device-verification/units/`):
   states (`R-13`).
 - **Call handling** — incoming call pauses playback; playback
   auto-resumes when the call ends unless the user paused it meanwhile
-  (verified with emulator-simulated calls, `R-08`; the real-call pass
-  is part of the GrapheneOS gate below).
+  (verified with emulator-simulated calls on both the debug and the
+  **release** build — the release pass confirmed pause at the call and
+  same-position auto-resume on cancel, user-confirmed audible, `R-08`;
+  a real carrier call remains on the untested list below).
 - **Settings / About** — host/port persist and prefill; rocker-step
   setting; About screen with app version, live server version, and
   server build options (`R-14`).
@@ -88,12 +101,15 @@ battery behaviour is recorded at the device gate — see below.)
 - **Chromecast outputs** fail to select server-side on OwnTone 29.3
   (server-side issue) — AirPlay and ALSA outputs work; Chromecast
   selection is untested end-to-end because of it.
-- **Silent network drops** (middlebox that kills the path without a
-  TCP error) can leave the app showing `sync: live` until a request
-  fails — the websocket has no app-level ping yet; hardening unit
-  planned.
-- **204 artwork** renders the placeholder correctly, but the
-  caching layer logs the 204 as an exception (cosmetic log noise).
+- **Volume rocker works while the app screen is on**; with the screen
+  off (or the app backgrounded) the rocker is deliberately **inert** —
+  it never changes server volume from behind, at the cost of not
+  acting as an in-pocket media rocker (R-06 design decision).
+- **No-GMS verified statically, not on a GMS-less OS.** The app has
+  zero Google/Play dependencies (Gradle + resolved pubspec), but the
+  emulator images used for verification ship `com.google.android.gms`;
+  crash-free operation on a true no-GMS ROM (GrapheneOS, CalyxOS) is
+  on the untested list below.
 - **Process death** while paused is not spontaneously recovered: the
   audio service is `START_NOT_STICKY`, so the notification re-appears
   when you next open the app (which auto-reconnects).
@@ -101,12 +117,32 @@ battery behaviour is recorded at the device gate — see below.)
   exercisable on the reference server (no auth, no protected outputs);
   covered by tests only.
 
-## GrapheneOS device gate — pending
+## Device gate — verified (release build) + untested list
 
-The Pixel 10 (GrapheneOS) pass — real incoming call + auto-resume,
-per-app network permission behaviour, FGS survival 10 min backgrounded
-with screen off, real-device volume rocker, no-GMS crash check — is the
-remaining step of `device-verification/003`. Until it runs, the rows
-above marked "verified" are Android 16 (emulator) evidence; GrapheneOS
-is expected to behave the same minus the GMS/permission differences
-above.
+`device-verification/003` passed on 2026-11-13: the release APK
+(`926a6be`) on a **disposable Android 36 AOSP emulator** (created and
+deleted by the unit; no GMS UI on the image). Verified in that pass:
+install + permission grants, the full smoke (all rows above), the
+**incoming-call pause + same-position auto-resume** through the
+emulator's Telecom layer (user-confirmed audible), **FGS + notification
+survival 10 min backgrounded with the screen off** (`isForeground=true`,
+same pid, zero crashes, notification controls still working), the
+server-verified volume rocker, and cold-start auto-reconnect. Full
+evidence: `.ai-dlc/device-verification/units/003-release-pass-disposable-avd.md`.
+
+Explicitly **untested on real hardware** (documented, not silently
+dropped; all emulator-approximated or statically covered):
+
+1. A **real carrier call** (the RIL/Telecom edge cases a simulated
+   `gsm call` can't model — the app's `TelephonyCallback` path itself
+   was exercised end-to-end).
+2. **GrapheneOS per-app Network permission** behaviour (the setup steps
+   above are documentation, not a GrapheneOS-verified procedure).
+3. **GrapheneOS battery-optimisation** specifics (FGS mediaPlayback is
+   an AOSP-standard type; GrapheneOS's stricter enforcement was not
+   exercised).
+
+The original release gate — a supervised pass on a Pixel 10 daily
+driver under GrapheneOS — was retired by the project owner on
+2026-11-13 in favour of the disposable-AVD pass above; real-hardware
+items 1–3 stay open as a user-side check whenever convenient.
