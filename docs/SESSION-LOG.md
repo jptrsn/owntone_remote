@@ -1401,3 +1401,27 @@ verified/untested split. Open candidates (not units): `PlayerController`/
 staleness); real-hardware checks 1–3 in the release notes; publishing
 (tagging/Play) not started — needs signing config for anything beyond
 debug-signed sideload.
+
+## 2026-11-13 (later) — PR #4 opened + agentic review; format-gate blocker fixed (opencode)
+
+Pushed the 11 unit commits as branch `release/dv-003-pass-and-011` and
+opened **PR #4** (base `main`); ran the agentic-code-review skill — one
+independent reviewer in a dedicated worktree (`.night/pr4`), gates
+re-run, both unit-011 kill-checks reproduced, absorber "green-both-ways"
+verified. Verdict **request-changes**, one blocker: the host brew had
+silently drifted to Flutter 3.47.9/Dart 3.13.7 while CI pins 3.41.7, and
+`26ddef4` had reformatted three main-green test files under the wrong
+formatter → CI `gates` red on the format step. Fix: restored those files
+to their main bytes (provably pinned-CI-green), no reformat; recorded the
+drift + do-not-reformat trap in AGENTS.md Environment and both unit
+Results. Reviewer minors/nits taken: dv-003 GMS table row now matches the
+Result's honest admission; PLAN.md D15 carries the supersession pointer;
+duplicate unit-011 test preamble removed; release notes ≤20 s → ~20 s
+(tested bound ≤25 s); `_action` now sets `_pendingRefresh` before awaiting
+so a resolved action always re-reads post-commit state (421/421 stands).
+Not taken (logged as candidate): test 2's timing-contingent oracle-strength
+(raise hold / gate events on arrival). **Open decision for the user:**
+keep CI pinned at 3.41.7 (current) or deliberately bump gates.yml +
+AGENTS to 3.47.9 and re-verify all gates on it. Resume: watch `gh pr
+checks 4` green, then merge per repo convention; reviewer report lives in
+the session transcript, not the repo.

@@ -20,7 +20,7 @@ release build runs the identical dart:io `pingInterval` code path):
 - **Reconnect robustness** — offline banner in ~1.4 s of a hard network
   loss, reconnect backoff 1→2→4→8→16→30 s (capped), full refetch on
   reconnect, no notification duplication or state thrash under rapid
-  flapping, and **silent drops detected in ≤20 s** via a 10 s websocket
+  flapping, and **silent drops detected in ~20 s** (tested bound ≤25 s) via a 10 s websocket
   ping/pong liveness check (a dead socket now fails into reconnect
   instead of leaving the app falsely `sync: live`) (`R-02`).
 - **Now playing** — metadata + artwork (server-relative artwork URLs

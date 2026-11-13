@@ -25,7 +25,7 @@ What this *does* still test, and what it cannot:
 | FGS/notification survival | **yes** — `dumpsys activity services` evidence |
 | volume rocker (screen off) | **yes** — `input keyevent` 24/25, server-verified |
 | incoming-call pause/auto-resume | **yes, emulated** — `adb emu gsm call` drives the real Telecom callback path (`TelephonyCallback.onCallAdded/Removed`), which is exactly what the app hooks |
-| no-GMS crash-free | **yes** — `android-36/google_apis` has **no** GMS/Play services |
+| no-GMS crash-free | **partial** — the `google_apis` image *ships* gms/gsf (idle); evidenced as static-clean + zero crashes with GMS present; true no-GMS OS untested (see Result, real-hardware list) |
 | real carrier call (RIL edge cases) | **no** — documented as untested |
 | GrapheneOS per-app Network permission, stricter FGS enforcement, battery optimisation | **no** — documented as untested (setup steps stay in the release notes for real users) |
 
@@ -125,7 +125,9 @@ start individually confirmed, and the server left paused + verified.
 user present and confirming each audible action).** HEAD `926a6be`;
 release APK **54.6 MB** (`flutter build apk --release`, Gradle 72.7 s) —
 same HEAD as all gates re-run here: analyze 0 issues · format 0 changed
-(92 files) · `flutter test --exclude-tags live` **421/421** · debug APK ✓.
+(92 files — host-toolchain quote, see unit 011's PR #4 addendum: the
+pinned 3.41.7 CI is the format gate) ·
+`flutter test --exclude-tags live` **421/421** · debug APK ✓.
 AVD `OwnToneVerify003_API_36` (`system-images;android-36;google_apis;
 arm64-v8a`, no Play Store UI) **created and deleted by this unit**;
 serial resolved and re-verified via `ro.boot.qemu.avd_name` (was
