@@ -343,11 +343,9 @@ void main() {
           'stop() must cancel the armed reconnect timer(s) — the '
           'storm must not touch the peer again (c1d)',
     );
-    expect(
-      rec.statuses.sublist(marker),
-      ['stopped'],
-      reason: 'only the "stopped" emission may follow stop()',
-    );
+    expect(rec.statuses.sublist(marker), [
+      'stopped',
+    ], reason: 'only the "stopped" emission may follow stop()');
     await server.stop();
     await rec.dispose();
   }, timeout: const Timeout(Duration(seconds: 60)));

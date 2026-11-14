@@ -191,21 +191,17 @@ void main() {
         final rec = _Recorder(ws);
         ws.start();
         await _settle();
-        expect(
-          script.created.first.clientSent,
-          ['{"notify":["queue","player","database"]}'],
-          reason: 'API.md prescribes {"notify": [...]} on connect',
-        );
+        expect(script.created.first.clientSent, [
+          '{"notify":["queue","player","database"]}',
+        ], reason: 'API.md prescribes {"notify": [...]} on connect');
 
         // Reconnect → the *new* channel must receive the re-subscribe
         // (unit spec L43-44: "After reconnect: re-subscribe notify").
         script.created.first.serverClose();
         await _settle();
-        expect(
-          script.created[1].clientSent,
-          ['{"notify":["queue","player","database"]}'],
-          reason: 'API.md L144: send on connect *and after every reconnect*',
-        );
+        expect(script.created[1].clientSent, [
+          '{"notify":["queue","player","database"]}',
+        ], reason: 'API.md L144: send on connect *and after every reconnect*');
         ws.stop();
         await rec.dispose();
       },
@@ -287,11 +283,12 @@ void main() {
       ws.start();
       await _settle();
       expect(script.created.length, 2);
-      expect(
-        rec.statuses,
-        ['connecting', 'connecting', 'open', 'open'],
-        reason: 'each channel subscribes and opens once (D2 per connect)',
-      );
+      expect(rec.statuses, [
+        'connecting',
+        'connecting',
+        'open',
+        'open',
+      ], reason: 'each channel subscribes and opens once (D2 per connect)');
       for (final ch in script.created) {
         expect(ch.clientSent, [
           '{"notify":["player","volume"]}',
@@ -393,11 +390,13 @@ void main() {
       );
 
       await _settle();
-      expect(
-        rec.statuses,
-        ['connecting', 'open', 'reconnecting', 'connecting', 'open'],
-        reason: 'no duplicate status emissions around one transition',
-      );
+      expect(rec.statuses, [
+        'connecting',
+        'open',
+        'reconnecting',
+        'connecting',
+        'open',
+      ], reason: 'no duplicate status emissions around one transition');
       ws.stop();
       await rec.dispose();
     });
