@@ -170,8 +170,7 @@ void main() {
       expect(
         arrivals,
         burstStart + 1,
-        reason:
-            'A plus EXACTLY one coalesced trailing refetch (unit 012)',
+        reason: 'A plus EXACTLY one coalesced trailing refetch (unit 012)',
       );
       expect(
         maxInFlight,
@@ -183,7 +182,8 @@ void main() {
       expect(
         bSelected(),
         isTrue,
-        reason: 'the mid-burst change must be present after settle '
+        reason:
+            'the mid-burst change must be present after settle '
             '(R-09: outputs list reflects the server)',
       );
     });

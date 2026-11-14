@@ -246,9 +246,7 @@ void main() {
           if (holdFirst && playerArrivals == holdArrival) {
             final deadline = DateTime.now().add(const Duration(seconds: 2));
             while (!releaseA && DateTime.now().isBefore(deadline)) {
-              await Future<void>.delayed(
-                const Duration(milliseconds: 5),
-              );
+              await Future<void>.delayed(const Duration(milliseconds: 5));
             }
           }
           inFlight--;
