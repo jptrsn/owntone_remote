@@ -144,7 +144,10 @@ class PlayerController extends ChangeNotifier {
     // return a pre-event state. Always fetches, like before unit 012.
     // Notifies like before too — RatingController mirrors the slice
     // via this notification (its own test pins it: "stop clears the
-    // rating slice").
+    // rating slice"). Accepted cost of the always-fetch contract: this
+    // raw chain may overlap a guarded one, so a guardrail read's older
+    // snapshot can momentarily precede a fresher event result — the
+    // next event's serialized fetch self-heals it (PR #6 review).
     await _refreshChain();
     if (!_disposed) notifyListeners();
     return _player;
