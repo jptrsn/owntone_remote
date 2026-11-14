@@ -214,3 +214,11 @@ raw-vs-guarded overlap) taken as comment `ee168a5`. All four gates and
 kill-checks M1/M2 reproduced independently by the reviewer; on-device
 criterion accepted on this unit's evidence (reviewers are barred from the
 shared server by design).
+
+Round 2: **approve** — all four gates + M2/M3/M4 reproduced independently
+on shipped bytes; §1 corrections verified against the reviewer's own
+round-1 captures. One optional nit taken: the 1c tests' precondition (the
+PUT commits while A is held) is now delivery-confirmed — the test waits
+for the action's `PUT` line in `adapter.requests` before releasing A, so
+the confirming fetch provably hits the guard instead of assuming a 20 ms
+window (full-M4 re-verified red on the hardened tests).

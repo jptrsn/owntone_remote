@@ -1511,3 +1511,8 @@ to 3.47.9 and re-verify all gates on it.
   param is an int → `int.parse` threw into `_action`'s catch);
   `ee168a5` takes the refreshState-overlap nit as a comment. Suite
   **427/427**. Re-review requested.
+  Re-review (same reviewer, round 2): **approve** — gates + M2/M3/M4
+  reproduced on shipped bytes; its optional nit (delivery-confirm the
+  1c precondition via the adapter's PUT line) taken, full-M4 re-verified
+  red on the hardened tests. Suite 427/427, analyze 0, format 0. PR #6
+  clear for merge (user call); retarget to main after PR #5 merges.

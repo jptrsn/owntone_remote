@@ -397,7 +397,26 @@ void main() {
       // red under a coalesce-without-demand regression, like M2 reds it
       // under trailing removal; see unit Result M3 notes).
       final action = player.setVolume(42);
-      await pump(20); // PUT committed; the confirming call sees A in flight
+      // Delivery-confirmed precondition (the queue_screen_test pattern,
+      // PR #6 round-2 nit): wait until the PUT actually reached the fake
+      // server, so the confirming call provably hits the guard while A
+      // is held — not an assumed 20 ms.
+      const putLine = 'PUT /api/player/volume?volume=42';
+      var waited = 0;
+      while (!adapter.requests.contains(putLine) && waited < 100) {
+        await pump(10);
+        waited += 10;
+      }
+      expect(
+        adapter.requests,
+        contains(putLine),
+        reason:
+            'the action PUT must commit before the release (delivery-'
+            'confirmed precondition — otherwise the confirming fetch '
+            'may take the guard itself and spare a coalesce-without-'
+            'demand regression)',
+      );
+      await pump(10); // let the confirming call reach the guard
       await releaseFetch(); // A answers with the stale pre-commit 75
       await action;
       await pump(60);
