@@ -194,9 +194,11 @@ the app.
   migrator's `builtInKotlin`/`newDsl` flags in `android/gradle.properties`
   broke the pinned CI's APK build. With both sides on 3.47.9 the
   formatter agrees and the migrator flags are the tool's own accepted
-  output — they are committed; expect the tool to keep rewriting
-  `analysis_options.yaml`/`gradle.properties` after host builds, and
-  commit that churn rather than reverting it.
+  output — they are committed. Expect `analysis_options.yaml` to be
+  re-written by `flutter analyze` on every run (commit that churn);
+  `gradle.properties` should now STAY clean (the migrator is idempotent
+  once the flags are present) — if it re-dirties, verify it is the
+  tool's own flag text before committing it.
 - `adb` at `/opt/homebrew/bin/adb`.
   git 2.50.1, git identity configured globally.
 - Android SDK at `~/Library/Android/sdk`. `ANDROID_HOME` is **not** set in
