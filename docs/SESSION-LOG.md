@@ -1500,3 +1500,14 @@ to 3.47.9 and re-verify all gates on it.
   main`) → agentic review of 012 → full pass → user merge. Still open:
   release tag (signing decision), real-hardware checks 1–3 in
   docs/RELEASE-NOTES.md.
+- Review round 1 (PR #6): **request-changes** — reviewer's M3 mutation
+  (delete the `_action` post-commit demand lines) stayed green → the
+  criterion-1c test had never been shipped, and the unit Result cited
+  red tests that didn't exist. Both upheld: `b0ceb0e` adds the two 1c
+  tests (post-commit re-read pinned — red under trailing-removal M2 and
+  under coalesce-without-demand M4, the unit-011 round-1 shape; M3 itself
+  is an equivalent mutant in this shape, documented not glossed) and
+  fixes a silent fake-server bug the new test exposed (volume query
+  param is an int → `int.parse` threw into `_action`'s catch);
+  `ee168a5` takes the refreshState-overlap nit as a comment. Suite
+  **427/427**. Re-review requested.

@@ -90,22 +90,45 @@ event-driven refetch).
 
 ## Result
 
-**DONE 2026-11-14.** Commits: `796364b` contract (RED), `a91c8d3` pre-green
-contract fix (missing `await pump(60)` in the stale-write test — unit-011
-`aa778e0` precedent), `f067039` impl, `3bbdf28` formatter-only (pure
-formatter output on the two new test files, 26ddef4 precedent).
+**DONE 2026-11-14 (after one request-changes round — see § Review).**
+Commits: `796364b` contract (RED), `a91c8d3` pre-green contract fix
+(missing `await pump(60)` in the stale-write test — unit-011 `aa778e0`
+precedent), `f067039` impl, `3bbdf28` formatter-only (pure formatter
+output on the two new test files, 26ddef4 precedent), `b0ceb0e` review
+round-1 contract addition (criterion-1c tests), `ee168a5` review nit
+(comment).
 
 ### 1. Contract tests (RED → GREEN)
 
-Baseline (impl unguarded), player group `R-04 refresh serialization (unit
-012)`: `01:0x +2 -2` → **`+0 -2`** for the group (burst serialization +
-action-post-commit red; stale-write passes baseline as predicted in the
-contract commit — a single clobber needs the mid-burst mutation, pinned by
-the kill-checks instead, same regression-guard role as unit-011 Goal 3).
-New `test/outputs_refresh_serialization_test.dart` group `R-09 refresh
-serialization (unit 012)`: **`+0 -2`** (burst + action-post-commit red).
+Baseline (impl unguarded, at contract commit `a91c8d3`): player group
+`R-04 refresh serialization (unit 012)` **`+0 -2`** — BOTH shipped tests
+(stale-write race + burst serialization) red; new
+`test/outputs_refresh_serialization_test.dart` group `R-09 refresh
+serialization (unit 012)` **`+0 -2`** (both tests red). (PR #6 review
+correction: an earlier wording here claimed "stale-write passes baseline"
+and named a red "action-post-commit" test — both wrong; the stale-write
+tests were red at baseline after the `a91c8d3` pump fix, and no 1c test
+existed yet. Reviewer reproduced the reds; the numbers above are the true
+shipped reality.)
 GREEN after `f067039`: full suite `flutter test --exclude-tags live` →
-**`+425: All tests passed!`** (421 pre-existing, all unedited, + 4 new).
+**`+425`**; with the round-1 1c tests (`b0ceb0e`): **`+427: All tests
+passed!`** (421 pre-existing, all unedited, + 6 new).
+Criterion 1c (added in review round 1): one test per controller — an
+event fetch holds answering from a PRE-action request-time snapshot while
+the action's PUT commits; the slice must end at the committed value with
+A plus exactly ONE trailing fetch. RED under M2 (trailing removed) and
+under M4 (coalesce-without-demand — the unit-011 round-1 bug shape,
+reproduced red). RED evidence nuance, stated honestly: M3 (deleting only
+the `_action` `_pendingRefresh = true;` demand line) keeps the suite
+green — with the guard's coalesce branch setting the same flag, the line
+is an **equivalent mutant** in the current shape (defense-in-depth for a
+future coalesce-branch regression); the pinned behavior is the post-commit
+observation itself, which M2/M4 redden.
+The same test first exercised the player volume-PUT responder branch: the
+query param arrives as an int, so the shipped `int.parse(v)` threw and
+`_action`'s catch silently swallowed it — now `int.parse('$v')`
+(`b0ceb0e`; the class of bug where a green suite hides untested fake
+paths).
 Criterion 1d: the queue burst test now carries a delivery-confirmed gate
 (`expect(probe, 4, …)` before judging the outcome — green-now,
 red-if-stalled; mid-test `cancel()` from the fake zone hangs the next
@@ -132,15 +155,20 @@ Both `_action`s set `_pendingRefresh = true` before the confirming await
 | guard skips (always refetch) | red `+0 -2` | red `+0 -2` |
 | trailing-loop removed | red (trailing assert) | red (trailing assert) |
 | concurrent (guard removed) | red (concurrency assert) | red (concurrency assert) |
+| M3: `_action` demand line only | green — equivalent mutant, see §1 | green — same |
+| M4: coalesce-without-demand (round-1 shape) | 1c test red | 1c test red |
 
-`git status` clean after every restore.
+`git status` clean after every restore (lib files md5-verified against
+pre-mutation copies: player `ade24c18…`, outputs `58156ac8…` — the same
+md5s the independent reviewer later recorded from their own restore).
 
 ### 3. Gates + APK (host==CI 3.47.9)
 
-At HEAD `3bbdf28`: `flutter analyze` → **No issues found!**;
-`dart format --output=none --set-exit-if-changed .` → **93 files, 0
-changed**; `flutter test --exclude-tags live` → **+425: All tests
-passed!** `flutter build apk --debug` succeeded (installed on-device below).
+`flutter build apk --debug` succeeded (installed on-device below).
+Gates re-run at final HEAD `ee168a5`: `flutter analyze` → **No issues
+found!**; `dart format --output=none --set-exit-if-changed .` → **93
+files, 0 changed**; `flutter test --exclude-tags live` → **+427: All
+tests passed!** (at `3bbdf28` pre-review: 425/425.)
 
 ### 4. On-device (Pixel 6 `25071FDF600953`, THE test device — user decision 2026-11-14)
 
@@ -172,5 +200,17 @@ created.
 ### 5. Wrap
 
 SESSION-LOG entry appended; pushed as stacked PR against
-`ci/flutter-3.47.9` (retarget to `main` once PR #5 merges); agentic review
-below.
+`ci/flutter-3.47.9` (retarget to `main` once PR #5 merges).
+
+### 6. Review (PR #6)
+
+Round 1 (independent reviewer, own worktree, no device/server access):
+**request-changes** — two majors, both upheld and fixed in `b0ceb0e`:
+(1) criterion 1c had no test (reviewer's M3 mutation stayed green —
+added the two 1c tests, killed under M2/M4, M3 documented as equivalent
+mutant); (2) this Result's §1 misreported the baseline color and named a
+non-existent red test (corrected above). Minor (judgment, refreshState
+raw-vs-guarded overlap) taken as comment `ee168a5`. All four gates and
+kill-checks M1/M2 reproduced independently by the reviewer; on-device
+criterion accepted on this unit's evidence (reviewers are barred from the
+shared server by design).
