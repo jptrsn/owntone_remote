@@ -323,6 +323,7 @@ void main() {
       channels.single.serverSend('{"notify":["volume"]}');
       await pump(20);
       await releaseFetch();
+      await pump(60); // let the release propagate + trailing chain land
       expect(
         player.player!.volume,
         42,
