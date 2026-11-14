@@ -1466,3 +1466,37 @@ to 3.47.9 and re-verify all gates on it.
 - Resume: watch the CI-bump PR, merge (user), then branch unit 012 off
   the updated main; AGENTS gates/env sections are the source of truth
   for the pinned toolchain afterwards.
+
+## 2026-11-14 — CI pin PR #5 up (approve-with-nits taken, gates green @ e699683); remote-app unit 012 DONE on-device (opencode)
+
+- **PR #5 (CI pin 3.47.9)** branch `ci/flutter-3.47.9`: gates.yml pin bumped,
+  the three drift test files reformatted under the matching formatter,
+  `android/gradle.properties` migrator flags re-committed (accepted by a
+  3.47.9 CI), AGENTS Environment rewritten (host==CI now; analysis_options
+  churn is commit-every-time, gradle.properties should stay clean — verify
+  migrator text if it re-dirties; the pre-bump `evaluate_expression` caveats
+  flagged for re-verification). Agentic reviewer: approve-with-nits, both
+  nits taken (`e699683`). **Gates green @ `e699683` (7m52s).** Awaiting user
+  merge.
+- **`remote-app` unit 012 DONE** (branch `remote-app/012-refresh-serialization`,
+  stacked on `ci/flutter-3.47.9`): `PlayerController._refreshAll` and
+  `OutputsController._refresh` are now unit-011-shape single-flight +
+  coalesced trailing refetch; both `_action`s demand the post-commit trailing
+  fetch; `refreshState()` bypasses the guard (unit-004 always-fetch) but must
+  keep notifying — RatingController mirrors the slice through it (a dropped
+  notify reddened `stop clears the rating slice` during impl; pinned).
+  Queue test-2 gained the delivery-confirmed probe gate. Contract RED
+  (`+0 -2` both groups) → GREEN (**425/425**); kill-checks (skip/notrail/
+  concurrent) each redden both groups, restored from `cp` backups. Gates
+  green at `3bbdf28`; debug APK on the **Pixel 6** (THE test device):
+  server-side `/api/outputs/set` + `volume` writes (paused, AGENTS-safe)
+  converged on-screen with no UI interaction — read from the live widget
+  tree via VM (`evaluate_expression`; uiautomator dead, `flutter_driver`
+  extension not enabled). Chromecast `Will clock` confirmed un-selectable
+  (400/500) — reliable pair used instead. Server byte-identical vs
+  `/tmp/u012` baselines, `state=pause` throughout, `flutter run` killed,
+  stayon restored, no AVDs.
+- Resume: user merges PR #5 → retarget the 012 PR (`gh pr edit <n> --base
+  main`) → agentic review of 012 → full pass → user merge. Still open:
+  release tag (signing decision), real-hardware checks 1–3 in
+  docs/RELEASE-NOTES.md.
