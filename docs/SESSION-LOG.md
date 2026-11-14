@@ -1445,3 +1445,24 @@ build breaks with them, so they are reverted and the trap documented
 **Open decisions for the user:** merge PR #4 (squash per repo convention);
 keep CI pinned at 3.41.7 (current) or deliberately bump gates.yml + AGENTS
 to 3.47.9 and re-verify all gates on it.
+
+## 2026-11-14 — PR #4 MERGED (squash `85923ed`); user decisions: CI pin bump to 3.47.9, hardening unit 012, Pixel 6 = THE test device (opencode)
+
+- PR #4 squash-merged by the user; branch deleted; local main synced.
+  All plan units (remote-app 001–011, dv 001–003) DONE and on main.
+- User decisions this session: (1) **bump CI to the host's Flutter
+  3.47.9** ("a good version to use") — gates.yml pin + reformat the
+  three drift files under the now-matching formatter + restore the
+  migrator's gradle.properties flags (accepted by a 3.47.9 CI) — done
+  as its own PR, review before merge; (2) **build the approved
+  hardening as unit `remote-app/012`**: single-flight + trailing
+  `_refresh` in `PlayerController`/`OutputsController` (unit-011 shape)
+  + the reviewer's test-2 event-delivery-confirmed gate; (3) **device
+  policy: the Pixel 6 (`25071FDF600953`) is THE real test device; the
+  Pixel 10 is the user's personal phone — never a dev/test/verification
+  target** (AGENTS status + device table updated; the release-notes
+  untested list stands — real-carrier-call stays untested on the
+  no-SIM Pixel 6).
+- Resume: watch the CI-bump PR, merge (user), then branch unit 012 off
+  the updated main; AGENTS gates/env sections are the source of truth
+  for the pinned toolchain afterwards.

@@ -45,15 +45,21 @@ iTunes-specific features.
    (`OwnToneVerify003_API_36`, created + deleted by the unit; user
    decision 2026-11-13 retired the never-run Pixel 10/GrapheneOS plan;
    real-carrier-call + GrapheneOS-specific checks are a documented-
-   untested list in `docs/RELEASE-NOTES.md`). Release APK 54.6 MB @
-   `926a6be`; server restored byte-identical; **all intent units
-   (remote-app 001–011, dv 001–003) are DONE — no pending work in the
-   plan** (candidates: same-shape `_refresh` hardening in
-   Player/OutputsController; real-hardware checks 1–3; signing for
-   anything beyond debug-signed sideload). Device decision (user
- 2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
- and deletes it when finished** — never start or reuse an existing AVD;
- other sessions own the running emulators. The supervised play window
+    untested list in `docs/RELEASE-NOTES.md`). Release APK 54.6 MB @
+    `926a6be`; server restored byte-identical; **all intent units
+    (remote-app 001–011, dv 001–003) are DONE — PR #4 squash-merged
+    `85923ed` 2026-11-14; no pending work in the plan** (candidates:
+    same-shape `_refresh` hardening in Player/OutputsController +
+    test-2 delivery-gate nit — **approved 2026-11-14, building as
+    unit 012**; CI pin bump to the host's Flutter 3.47.9 — **approved
+    2026-11-14, in flight**; real-hardware checks 1–3; signing for
+    anything beyond debug-signed sideload). Device decision (user
+  2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
+  and deletes it when finished** — never start or reuse an existing AVD;
+  other sessions own the running emulators. Device decision (user
+  2026-11-14): **the Pixel 6 is THE real test device**; the Pixel 10 is
+  the user's personal phone — never a dev/test/verification target.
+  The supervised play window
  needs the user. The server at 192.168.1.13 is **shared with another
  active session** — expect concurrent player/queue changes; snapshot before
  and restore after any mutation, and re-verify `state` immediately before
@@ -122,7 +128,7 @@ unexpectedly.
   each verification unit itself** (unit 001's copy was deleted after the pass);
   never an existing AVD (user 2026-10-26) | _resolve by serial at boot:
   `getprop ro.boot.qemu.avd_name`_ |
-| Real device — volume-key routing tests | Pixel 6 (oriole, Android 16, **no SIM** — cannot receive calls) | `25071FDF600953` (connected 2026-10-10) |
+| Real device — **THE test device** (user decision 2026-11-14; volume-key routing, on-device verification) | Pixel 6 (oriole, Android 16, **no SIM** — cannot receive calls) | `25071FDF600953` (connected 2026-10-10) |
 | Release pass (dv-003) | per-unit disposable AVD (user decision
   2026-11-13 — replaces the Pixel 10/GrapheneOS daily-driver plan; real-
   hardware-only checks documented as untested, see the unit file) |
