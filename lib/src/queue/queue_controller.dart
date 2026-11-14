@@ -84,22 +84,46 @@ class QueueController extends ChangeNotifier {
   /// Manual refetch (the error-state retry button).
   Future<void> refresh() => _refresh();
 
+  /// Single-flight: at most one `GET /api/queue` per controller at a time
+  /// (unit 011). Events arriving during a fetch set [_pendingRefresh] and
+  /// are answered by a trailing fetch after it — NOT skipped (R-11 says
+  /// the list must match the server as of the *last* event) and NOT
+  /// fetched concurrently (overlapping responses land out of order and an
+  /// older one clobbers the newer list — the stale queue chip unit 009
+  /// observed under server churn). Do not collapse this into a bare
+  /// `await api.getQueue()`.
+  bool _refreshing = false;
+  bool _pendingRefresh = false;
+
   Future<void> _refresh() async {
-    final api = _conn.api;
-    if (api == null) return;
-    try {
-      _queue = await api.getQueue();
-      _hasLoaded = true;
-      _syncError = null;
-    } catch (e) {
-      _logger.e('queue refetch failed', error: e);
-      // First fetch failed: a typed message for the error state; later
-      // failures keep the stale list and show a strip instead.
-      _syncError = !_hasLoaded
-          ? describePagedFetchError(e)
-          : 'Sync failed — showing last known state.';
+    if (_refreshing) {
+      _pendingRefresh = true;
+      return;
     }
-    if (!_disposed) notifyListeners();
+    _refreshing = true;
+    try {
+      do {
+        _pendingRefresh = false;
+        final api = _conn.api;
+        if (api == null) break;
+        try {
+          _queue = await api.getQueue();
+          _hasLoaded = true;
+          _syncError = null;
+        } catch (e) {
+          _logger.e('queue refetch failed', error: e);
+          // First fetch failed: a typed message for the error state;
+          // later failures keep the stale list and show a strip instead.
+          _syncError = !_hasLoaded
+              ? describePagedFetchError(e)
+              : 'Sync failed — showing last known state.';
+        }
+        if (_disposed) break;
+        notifyListeners();
+      } while (_pendingRefresh);
+    } finally {
+      _refreshing = false;
+    }
   }
 
   // -- user actions (R-11, unit 005b) ---------------------------------------
@@ -145,6 +169,11 @@ class QueueController extends ChangeNotifier {
       if (!_disposed) notifyListeners();
       return false;
     }
+    // The action's own WS `queue` event usually starts a refresh before we
+    // get here, and the guard would coalesce this await onto that
+    // pre-commit fetch. Demand the trailing fetch instead: a resolved
+    // _action always re-reads post-commit state (PR #4 review).
+    _pendingRefresh = true;
     await _refresh();
     return true;
   }

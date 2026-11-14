@@ -38,8 +38,19 @@ iTunes-specific features.
   `ArtworkProbe` one-GET-per-URL verdict gates `ArtworkBox` and the
   mirror's `artUri`; the 005a `Invalid statusCode: 204` follow-up is
   closed; merged `4c8ba13`; own AVD created + deleted).
-  **Next: device-verification 003** (release candidate on Pixel 10, with the
-  user). Device decision (user
+   **`remote-app` unit 011 DONE 2026-11-13** (QueueController per-event
+   refreshes serialized — single-flight + trailing refetch; unit 009's
+   stale-chip race candidate closed). **`device-verification` unit 003 DONE
+   2026-11-13** — release pass PASSED on a per-unit disposable AVD
+   (`OwnToneVerify003_API_36`, created + deleted by the unit; user
+   decision 2026-11-13 retired the never-run Pixel 10/GrapheneOS plan;
+   real-carrier-call + GrapheneOS-specific checks are a documented-
+   untested list in `docs/RELEASE-NOTES.md`). Release APK 54.6 MB @
+   `926a6be`; server restored byte-identical; **all intent units
+   (remote-app 001–011, dv 001–003) are DONE — no pending work in the
+   plan** (candidates: same-shape `_refresh` hardening in
+   Player/OutputsController; real-hardware checks 1–3; signing for
+   anything beyond debug-signed sideload). Device decision (user
  2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
  and deletes it when finished** — never start or reuse an existing AVD;
  other sessions own the running emulators. The supervised play window
@@ -112,7 +123,10 @@ unexpectedly.
   never an existing AVD (user 2026-10-26) | _resolve by serial at boot:
   `getprop ro.boot.qemu.avd_name`_ |
 | Real device — volume-key routing tests | Pixel 6 (oriole, Android 16, **no SIM** — cannot receive calls) | `25071FDF600953` (connected 2026-10-10) |
-| Release candidate | Pixel 10 (GrapheneOS) | _record when connected_ |
+| Release pass (dv-003) | per-unit disposable AVD (user decision
+  2026-11-13 — replaces the Pixel 10/GrapheneOS daily-driver plan; real-
+  hardware-only checks documented as untested, see the unit file) |
+  _resolve by serial at boot: `getprop ro.boot.qemu.avd_name`_ |
 
 ### 3. ReTune on the capture AVD is a read-only reference
 
@@ -161,10 +175,20 @@ the app.
 | `docs/API.md` | Touching the network layer | Endpoint reference, live examples, WS protocol |
 | `docs/retune-capture/CAPTURE-PROTOCOL.md` | Capture intent only | Walk procedure, static pass, output format |
 
-## Environment (verified 2026-10-08)
+## Environment (verified 2026-10-08; host drift noted 2026-11-13)
 
-- macOS Apple Silicon. Flutter **3.41.7** stable, Dart **3.11.5** at
-  `/opt/homebrew/bin/{flutter,dart}`. `adb` at `/opt/homebrew/bin/adb`.
+- macOS Apple Silicon. `/opt/homebrew/bin/{flutter,dart}` — brew has since
+  drifted the host to **Flutter 3.47.9 / Dart 3.13.7**. CI pins **3.41.7**
+  (`.github/workflows/gates.yml`) and the **pinned formatter is the gate**:
+  three test files (connection_controller_adversarial, ws_client_adversarial,
+  ws_client_adversarial_wire) sit byte-identical to main and show "Changed"
+  under the host formatter — **do not reformat them** (PR #4 blocker: doing
+  so was `26ddef4` and reddened the gates job; PR #4 review found it).
+  The same drift poisons `android/gradle.properties`: a host build
+  re-adds the migrator's `builtInKotlin`/`newDsl` flags and the pinned
+  3.41.7 CI then fails `flutter build apk` ("What went wrong: 25.0.5") —
+  keep that file at main's bytes and ignore the re-dirty after host builds.
+- `adb` at `/opt/homebrew/bin/adb`.
   git 2.50.1, git identity configured globally.
 - Android SDK at `~/Library/Android/sdk`. `ANDROID_HOME` is **not** set in
   shells; use absolute paths:
@@ -271,6 +295,12 @@ For any UI work on a running debug build:
 - **Verify claims against the code and the live server.** Instructions you are
   given — including in this file — may be stale. `curl /api/config` before
   trusting a port; read the endpoint before trusting a parameter name.
+- **Mutation experiments that end in `git checkout -- <path>` silently revert
+  any UNCOMMITTED work-in-progress on that path.** This produced fabricated
+  unit-Result evidence on PR #4 (the commit claimed a test edit the restore
+  had just wiped). Commit the work, or restore mutations from a backup copy,
+  never from git — and let the reviewer, not a green suite, catch the
+  difference (a suite is green with OR without the missing test).
 
 ## Server quick reference
 

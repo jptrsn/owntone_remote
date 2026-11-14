@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -326,6 +328,190 @@ void main() {
       await settle(tester);
       expect(find.textContaining('Queue disabled'), findsNothing);
       expect(find.text('Offline Change'), findsOneWidget);
+    });
+  });
+
+  // Unit 011 (race candidate from unit 009's Result: the queue chip held a
+  // stale count while the server churned): R-11 "queue list matches the
+  // server" + R-02 (D2 event → refetch) require per-event refreshes to be
+  // serialized — one GET in flight, coalesced trailing refetch, and a
+  // superseded response can never overwrite a newer list. Zone note: the
+  // gates here are polling flags, not Completers — the fetch chain crosses
+  // runAsync zones and a Completer created in the testWidgets (fake-async)
+  // zone never resumes a waiter inside runAsync (deadlock: its completion
+  // microtasks queue on the paused fake clock).
+  group('R-11 refresh serialization (unit 011)', () {
+    Future<void> waitUntil(
+      WidgetTester tester,
+      bool Function() cond,
+      String what,
+    ) => tester.runAsync(() async {
+      for (var i = 0; i < 400 && !cond(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      if (!cond()) fail('$what timed out');
+    });
+
+    testWidgets('a superseded fetch answering late must not clobber the '
+        'newer list (stale-write race)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(find.text('Skunk'), findsOneWidget);
+
+      // The next queue GET blocks inside the adapter until released,
+      // answering from a snapshot taken at REQUEST time (a real server
+      // answers from the state it saw handling the request).
+      var gateUsed = false;
+      var gateArrived = false;
+      var gateRelease = false;
+      final live = fx.handle;
+      adapter.responder = (o) async {
+        if (!gateUsed && o.method == 'GET' && o.uri.path == '/api/queue') {
+          gateUsed = true;
+          final snap = jsonDecode(jsonEncode(fx.items)) as List;
+          gateArrived = true;
+          for (var i = 0; i < 400 && !gateRelease; i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
+          return jsonResponse(o, {
+            'version': 1,
+            'count': snap.length,
+            'items': snap,
+          });
+        }
+        return live(o);
+      };
+
+      // Event 1 → refresh A starts and blocks in the adapter holding the
+      // pre-change snapshot (waited for: a blind delay let A's snapshot
+      // race past the change and hid a lost trailing refetch).
+      await tester.runAsync(() async {
+        channels.last.serverSend('{"notify":["queue"]}');
+      });
+      await waitUntil(tester, () => gateArrived, 'event 1 fetch arrival');
+
+      // External change while A is in flight; event 2 arrives during the
+      // same flight — the contract is on the FINAL state: after A lands,
+      // the list must show the server's current state (a single-flight
+      // impl defers event 2 into a trailing fetch; an unserialized impl
+      // lets A's stale response overwrite B's newer one; a skipping impl
+      // drops event 2 and keeps the stale list).
+      await tester.runAsync(() async {
+        fx.items.insert(
+          0,
+          Fixture.track(200003, 0, 'Fresh Change', 1203, 310000),
+        );
+        fx.renumber();
+        channels.last.serverSend('{"notify":["queue"]}');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+
+      gateRelease = true; // A's superseded response lands
+      await settle(tester);
+      expect(
+        find.text('Fresh Change'),
+        findsOneWidget,
+        reason:
+            'the stale response from the superseded fetch overwrote '
+            'the newer list (unit 011: per-event refreshes must be '
+            'serialized)',
+      );
+    });
+
+    testWidgets('a burst of queue events keeps at most one GET in flight '
+        'and the mid-burst change still lands (trailing refetch)', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+
+      // Every queue GET is slowed and counted, to observe concurrency;
+      // the response body is snapshotted at REQUEST time (response-time
+      // reads would hide a lost trailing refetch).
+      final live = fx.handle;
+      var inFlight = 0;
+      var maxInFlight = 0;
+      var arrivals = 0;
+      adapter.responder = (o) async {
+        if (o.method == 'GET' && o.uri.path == '/api/queue') {
+          inFlight++;
+          if (inFlight > maxInFlight) maxInFlight = inFlight;
+          final snap = jsonDecode(jsonEncode(fx.items)) as List;
+          arrivals++;
+          try {
+            // A ONLY, 150 ms: 6× the burst's ~25 ms firing window, so
+            // late handling cannot slip past the flight even under CI
+            // timer stretch (PR #4 review nit; a 45 ms hold left 20 ms
+            // of headroom — an 80 ms-spacing mutation slipped past it
+            // and a skipping impl survived). The trailing refetch must
+            // answer promptly so the test can observe it.
+            if (arrivals == 1) {
+              await Future<void>.delayed(const Duration(milliseconds: 150));
+            }
+            return jsonResponse(o, {
+              'version': 1,
+              'count': snap.length,
+              'items': snap,
+            });
+          } finally {
+            inFlight--;
+          }
+        }
+        return live(o);
+      };
+
+      // Event 1 → fetch A starts against the OLD list. The external
+      // change lands only AFTER A's request has arrived (deterministic
+      // gate); four more events pile on that same flight (the unit 009
+      // churn pattern).
+      await tester.runAsync(() async {
+        channels.last.serverSend('{"notify":["queue"]}');
+      });
+      await waitUntil(tester, () => arrivals >= 1, 'event 1 fetch arrival');
+      await tester.runAsync(() async {
+        fx.items.insert(
+          0,
+          Fixture.track(200004, 0, 'Burst Track', 1204, 320000),
+        );
+        fx.renumber();
+        for (var i = 0; i < 4; i++) {
+          channels.last.serverSend('{"notify":["queue"]}');
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+      });
+      // A's hold ticks on real time, which flows only inside settle()'s
+      // runAsync window (80 ms) — iterate settles until the coalesced
+      // trailing fetch has reached the server, then one more to answer
+      // and paint it.
+      for (var i = 0; i < 6 && arrivals < 2; i++) {
+        await settle(tester);
+      }
+      await settle(tester);
+      expect(
+        arrivals,
+        2,
+        reason:
+            'A plus EXACTLY one coalesced trailing refetch — a third '
+            'GET means per-event fetches slipped through the guard, '
+            'one means the trailing refetch was lost (unit 011)',
+      );
+      expect(
+        find.text('Burst Track'),
+        findsOneWidget,
+        reason:
+            'events arriving during the in-flight fetch were lost — '
+            'they must coalesce into a trailing refetch (R-11: the '
+            'list matches the server)',
+      );
+      expect(
+        maxInFlight,
+        1,
+        reason:
+            'per-event refreshes must be single-flight: $maxInFlight '
+            'concurrent GET /api/queue observed (unit 011)',
+      );
     });
   });
 

@@ -343,16 +343,23 @@ void main() {
       );
 
       http.release(idSlow); // A's 204 continuation lands late
-      await tester.pump();
-      await tester.pump();
+      await settle(tester); // real time — the gated GET resolves only on
+      // the real event loop, so the orphaned load's fate is observable
+      // only after a runAsync window (pump alone proves nothing here).
+      expectQuiet(tester, out); // the orphaned load is silent in this
+      // window (replaces the pre-absorber NOTE claiming its
+      // NetworkImageLoadException "reaches FlutterError.onError with no
+      // listener" — PR #3 review LOW). Honest scope: this assert holds
+      // with AND without _absorbLateFailure (kill-checked on main
+      // 2026-11-13 — the escalation the reviewer's (e) saw at b3cc1aa is
+      // timing-window-dependent and not reproducible here); the absorber
+      // stays as defence-in-depth for the window where the orphan
+      // response lands while its completer has zero listeners (unit 010
+      // captured such exceptions pre-fix on-device:
+      // "Invalid statusCode: 204" + retry storm). Do not read this
+      // green-both-ways as "absorber is dead code" — delete it and the
+      // flakiness moves from tests to production.
       out.restore();
-      // NOTE: no expectQuiet here — A's adjudicated unknown-window Image GET
-      // (unit Result: "the unknown-window Image GET is silent") was
-      // unmounted by the swap before its response landed, so its
-      // NetworkImageLoadException reaches FlutterError.onError with no
-      // listener. That is pre-existing generic Image.network behaviour
-      // (identical before unit 010), reported as an observation, not gated
-      // by this state-correctness regression.
       expect(
         find.byType(RawImage),
         findsOneWidget,
