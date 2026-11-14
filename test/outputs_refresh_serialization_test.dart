@@ -54,6 +54,15 @@ void main() {
       if (o.method == 'GET' && o.path == '/api/config') {
         return jsonResponse(o, _configJson);
       }
+      if (o.method == 'PUT' && o.path == '/api/outputs/set') {
+        // Commit the selection set the way the real server does, so the
+        // post-commit trailing fetch can observe it (action tests).
+        final ids = ((o.data as Map)['outputs'] as List).cast<String>().toSet();
+        for (final e in store) {
+          e['selected'] = ids.contains(e['id']);
+        }
+        return jsonResponse(o, <String, dynamic>{});
+      }
       if (o.method == 'GET' && o.path == '/api/outputs') {
         inFlight++;
         arrivals++;
@@ -185,6 +194,46 @@ void main() {
         reason:
             'the mid-burst change must be present after settle '
             '(R-09: outputs list reflects the server)',
+      );
+    });
+
+    test('a resolved action with a fetch in flight re-reads post-commit '
+        'state (action-demand contract)', () async {
+      // Event → fetch A starts and holds; its response can only ever
+      // carry the PRE-action list (b: false — request-time snapshot).
+      holdArrival = arrivals + 1;
+      holdFirst = true;
+      releaseA = false;
+      channels.single.serverSend('{"notify":["outputs"]}');
+      await pump(20);
+      final preAction = arrivals;
+      // The toggle's PUT /api/outputs/set commits b: true to the fake
+      // server while A is in flight. The only way the slice can end with
+      // b selected is a re-read AFTER the commit — coalescing the
+      // confirming fetch onto A's pre-commit answer is the unit-011
+      // round-1 bug shape this pins (red under a coalesce-without-demand
+      // regression; see unit Result M3 notes).
+      final action = outputs.toggle('b');
+      await pump(20); // PUT committed; the confirming call sees A in flight
+      releaseA = true;
+      holdFirst = false; // A answers with the stale pre-commit list
+      await action;
+      await pump(80);
+      expect(
+        bSelected(),
+        isTrue,
+        reason:
+            'the action resolved against a pre-commit fetch — the list '
+            'is stale (unit 012 criterion 1c: a resolved action must '
+            're-read post-commit state)',
+      );
+      expect(
+        arrivals,
+        preAction + 1,
+        reason:
+            'A plus EXACTLY one post-commit trailing fetch (the action '
+            'demanded a re-read; none means it coalesced onto the '
+            'pre-commit fetch)',
       );
     });
   });

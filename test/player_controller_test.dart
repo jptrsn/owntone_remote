@@ -231,7 +231,7 @@ void main() {
           return jsonResponse(o, _queueJson);
         case '/api/player/volume':
           final v = o.queryParameters['volume'];
-          if (v != null) serverVolume = int.parse(v);
+          if (v != null) serverVolume = int.parse('$v');
           return jsonResponse(o, <String, dynamic>{});
         case '/api/player':
           inFlight++;
@@ -377,6 +377,45 @@ void main() {
         reason:
             'the mid-burst change must be present after settle '
             '(R-04: transport state reflects the server)',
+      );
+    });
+
+    test('a resolved action with a fetch in flight re-reads post-commit '
+        'state (action-demand contract)', () async {
+      // Event → fetch A starts and holds, its response answering from the
+      // PRE-action volume 75 (request-time snapshot).
+      await holdFetch();
+      channels.single.serverSend('{"notify":["volume"]}');
+      await pump(20);
+      final preAction = playerArrivals;
+      // The action's PUT commits volume 42 to the fake server while A is
+      // still in flight. A's in-flight chain has already asked the
+      // responder, so its response can only ever carry 75 — the only way
+      // the slice can end at 42 is a re-read AFTER the commit: the
+      // action must demand one (coalescing its confirming read onto A's
+      // pre-commit answer is the unit-011 round-1 bug shape this pins —
+      // red under a coalesce-without-demand regression, like M2 reds it
+      // under trailing removal; see unit Result M3 notes).
+      final action = player.setVolume(42);
+      await pump(20); // PUT committed; the confirming call sees A in flight
+      await releaseFetch(); // A answers with the stale pre-commit 75
+      await action;
+      await pump(60);
+      expect(
+        player.player!.volume,
+        42,
+        reason:
+            'the action resolved against a pre-commit fetch — the slice '
+            'is stale (unit 012 criterion 1c: a resolved action must '
+            're-read post-commit state)',
+      );
+      expect(
+        playerArrivals,
+        preAction + 1,
+        reason:
+            'A plus EXACTLY one post-commit trailing chain (the action '
+            'demanded a re-read; none means it coalesced onto the '
+            'pre-commit fetch)',
       );
     });
   });
