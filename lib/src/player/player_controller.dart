@@ -85,7 +85,38 @@ class PlayerController extends ChangeNotifier {
     unawaited(_refreshAll());
   }
 
+  /// Single-flight: at most one player-slice refetch chain
+  /// (`GET /api/player` + `GET /api/nowplaying`) per controller at a
+  /// time (unit 012 — the unit-011 shape applied to the Player slice).
+  /// Events arriving during a fetch set [_pendingRefresh] and are
+  /// answered by a trailing chain after it — NOT skipped (R-04: the
+  /// slice must reflect the server as of the *last* event) and NOT
+  /// fetched concurrently (overlapping responses land out of order and
+  /// an older one clobbers the newer slice). Do not collapse this into
+  /// a bare `_refreshChain()`.
+  bool _refreshing = false;
+  bool _pendingRefresh = false;
+
   Future<void> _refreshAll() async {
+    if (_refreshing) {
+      _pendingRefresh = true;
+      return;
+    }
+    _refreshing = true;
+    try {
+      do {
+        _pendingRefresh = false;
+        if (_conn.api == null) break;
+        await _refreshChain();
+        if (_disposed) break;
+        notifyListeners();
+      } while (_pendingRefresh);
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  Future<void> _refreshChain() async {
     final api = _conn.api;
     if (api == null) return;
     try {
@@ -98,7 +129,6 @@ class PlayerController extends ChangeNotifier {
       _logger.e('player refetch failed', error: e);
       _syncError = 'Sync failed — showing last known state.';
     }
-    if (!_disposed) notifyListeners();
   }
 
   /// One-shot fresh read of the player slice for guardrail decisions
@@ -108,7 +138,15 @@ class PlayerController extends ChangeNotifier {
   /// and returns the fresh state; keeps the last known state if the
   /// refetch fails.
   Future<PlayerState?> refreshState() async {
-    await _refreshAll();
+    // Deliberately the RAW chain, bypassing the single-flight guard:
+    // unit 004's guardrail contract is "never trust the cached slice"
+    // — waiting out (or coalescing onto) an in-flight fetch could
+    // return a pre-event state. Always fetches, like before unit 012.
+    // Notifies like before too — RatingController mirrors the slice
+    // via this notification (its own test pins it: "stop clears the
+    // rating slice").
+    await _refreshChain();
+    if (!_disposed) notifyListeners();
     return _player;
   }
 
@@ -142,6 +180,11 @@ class PlayerController extends ChangeNotifier {
       if (!_disposed) notifyListeners();
       return false;
     }
+    // The action's own WS event usually starts a refresh before we get
+    // here, and the guard would coalesce this await onto that
+    // pre-commit fetch. Demand the trailing chain instead: a resolved
+    // action always re-reads post-commit state (unit-011 lesson).
+    _pendingRefresh = true;
     await _refreshAll();
     return true;
   }
