@@ -1603,3 +1603,30 @@ to 3.47.9 and re-verify all gates on it.
   1–3 of the RELEASE-NOTES untested list (owner's documented call
   2026-11-16); docs nit for a future pass: REQUIREMENTS R-03 seek bar
   (±1 s) vs RELEASE-NOTES "≤50 ms" prose — align before the tag.
+
+## 2026-11-16 — publish channel decided (GitHub releases + Obtainium); `release.sh` tooling PR (opencode)
+
+- **Decision (user):** the app publishes **only via GitHub releases**,
+  installed via **Obtainium**. This closes the standing "signing beyond
+  debug-signed sideload" candidate — debug signing is accepted for this
+  channel (matches dv-003/dv-004 practice). Consequence worth remembering:
+  `~/.android/debug.keystore` must stay stable across release machines or
+  Obtainium updates break with a signature mismatch (`release.sh` prints
+  that warning every run).
+- **Tooling:** added `release.sh`, modeled on
+  `~/Documents/owntone_sync/release.sh`, adapted to this repo's gates:
+  requires a clean tree BEFORE *and after* the gates (flutter's
+  `analysis_options.yaml` churn would otherwise tag a commit that isn't
+  what was built), runs the three CI gates (analyze / format
+  --set-exit-if-changed / test --exclude-tags live) before building,
+  soft-warns on host-vs-CI Flutter drift, builds `--split-per-abi`
+  (arm64-v8a / armeabi-v7a / x86_64), annotated-tags `v<version>` from
+  `pubspec.yaml`, then `gh release create --verify-tag` with per-ABI APKs.
+  Release notes default to `docs/RELEASE-NOTES.md`
+  (`RELEASE_NOTES_FILE=` / `RELEASE_NOTES_ASK=1` to override).
+  `--dry-run` does everything except tag/push/release.
+- **Evidence:** `./release.sh --dry-run` on the tooling branch: preflight
+  → gates green → notes preview from RELEASE-NOTES.md → 3 APKs
+  (18M/16M/20M) → exit without push; dry-run APKs deleted; `git tag -l`
+  and `gh release list` verified still empty.
+- AGENTS status block: signing candidate marked decided.
