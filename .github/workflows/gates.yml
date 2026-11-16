@@ -4,7 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
-    # release.sh pushes the annotated tag as its first remote action; without
+    # release.sh pushes the annotated tag as its first remote write (its
+    # fetch/ls-remote calls are read-only); without
     # this trigger the "CI cross-checks the tag" claim in release.sh is false
     # and a published artifact's toolchain is never cross-checked (PR #9 review).
     tags: ['v*']

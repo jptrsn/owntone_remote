@@ -41,6 +41,10 @@ NOTES_DEFAULT="docs/RELEASE-NOTES.md"
 GATES_FILE=".github/workflows/gates.yml"
 
 DRY_RUN=0
+if [[ $# -gt 1 ]]; then
+    echo "usage: $0 [--dry-run]" >&2
+    exit 1
+fi
 if [[ "${1:-}" == "--dry-run" ]]; then
     DRY_RUN=1
 elif [[ -n "${1:-}" ]]; then
@@ -87,7 +91,7 @@ fi
 # Toolchain drift is how the two-formatters fight started (AGENTS Environment)
 # — warn, don't die; the tag push triggers the same gates on CI as a
 # cross-check of the toolchain that produced the published artifact.
-CI_FLUTTER_PIN=$(sed -n "s/.*flutter-version: '\(.*\)'.*/\1/p" "$GATES_FILE" 2>/dev/null | head -1)
+CI_FLUTTER_PIN=$(sed -n "s/.*flutter-version: '\(.*\)'.*/\1/p" "$GATES_FILE" 2>/dev/null | head -1) || CI_FLUTTER_PIN=""
 [[ -n "$CI_FLUTTER_PIN" ]] || CI_FLUTTER_PIN="3.47.9"  # fall back to the pin-era literal
 LOCAL_FLUTTER=$(flutter --version 2>/dev/null | head -1 | sed -E 's/Flutter ([0-9.]+).*/\1/') || LOCAL_FLUTTER="unknown"
 if [[ "$LOCAL_FLUTTER" != "$CI_FLUTTER_PIN" ]]; then
@@ -107,6 +111,9 @@ bold "Version:  ${VERSION_FULL}"
 bold "Tag:      ${TAG}"
 bold "APKs:     ${APK_PREFIX}-${TAG}-{arm64-v8a,armeabi-v7a,x86_64}.apk"
 bold "Signing:  debug (accepted for the GitHub-release/Obtainium channel)"
+yellow "  Keystore stability: a rotated ~/.android/debug.keystore between"
+yellow "  release machines breaks Obtainium updates (signature mismatch —"
+yellow "  users must uninstall/reinstall). Keep this machine's keystore."
 echo
 
 if [[ -n "$(git status --porcelain)" ]]; then
@@ -194,7 +201,9 @@ fi
 # artifact (a specific commit/build); the thing being uploaded is built HERE
 # and now, so the body must say so.
 SHORT_SHA=$(git rev-parse --short HEAD)
-NOTES_HEADER="> Built from \`${SHORT_SHA}\` (main @ publish) with \`flutter build apk --release --split-per-abi\` on Flutter ${LOCAL_FLUTTER}; debug-signed per the GitHub-release/Obtainium channel."
+FLUTTER_LABEL="$LOCAL_FLUTTER"
+if [[ "$FLUTTER_LABEL" == "unknown" ]]; then FLUTTER_LABEL="version not detected (see operator console drift warning)"; fi
+NOTES_HEADER="> Built from \`${SHORT_SHA}\` (main @ publish) with \`flutter build apk --release --split-per-abi\` on Flutter ${FLUTTER_LABEL}; debug-signed per the GitHub-release/Obtainium channel. The body below is the release doc as of publish — it describes the audited release-candidate build, while the attached per-ABI APKs are the artifacts built here."
 RELEASE_NOTES="${NOTES_HEADER}
 
 ${RELEASE_NOTES}"
@@ -210,7 +219,7 @@ echo "           ${APK_PREFIX}-${TAG}-x86_64.apk"
 echo
 TOTAL_LINES=$(printf '%s\n' "$RELEASE_NOTES" | wc -l | tr -d ' ')
 bold "Release notes (first 40 of ${TOTAL_LINES} lines — the FULL text is published):"
-printf '%s\n' "$RELEASE_NOTES" | head -40
+printf '%s\n' "$RELEASE_NOTES" | head -40 || true
 if [[ "$TOTAL_LINES" -gt 40 ]]; then
     yellow "  … $((TOTAL_LINES - 40)) more line(s) NOT shown but WILL be published."
 fi
@@ -284,7 +293,7 @@ if ! gh release create "$TAG" \
     echo "    gh release upload ${TAG} ${APK_PREFIX}-${TAG}-*.apk --repo ${GH_REPO} --clobber"
     echo "    gh release edit ${TAG} --repo ${GH_REPO} --draft=false   # only if left as a draft"
     echo "To START OVER:"
-    echo "    gh release delete ${TAG} --repo ${GH_REPO} --yes"
+    echo "    gh release delete ${TAG} --repo ${GH_REPO} --yes --cleanup-tag"
     echo "    git tag -d ${TAG} && git push origin :refs/tags/${TAG}"
     exit 1
 fi

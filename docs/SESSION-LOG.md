@@ -1626,10 +1626,17 @@ to 3.47.9 and re-verify all gates on it.
   (`RELEASE_NOTES_FILE=` / `RELEASE_NOTES_ASK=1` to override).
   `--dry-run` does everything except tag/push/release.
 - **Evidence:** `./release.sh --dry-run` on the tooling branch: preflight
-  → gates green → notes preview from RELEASE-NOTES.md → 3 APKs (flutter
-  decimal sizes 16.8 / 19.4 / 20.9 MB — `du -h` rounding varies per
-  rebuild, quote flutter's figures) → exit without push; dry-run APKs
-  deleted; `git tag -l` and `gh release list` verified still empty.
+  → gates green → notes preview from RELEASE-NOTES.md → 3 APKs → exit
+  without push; dry-run APKs deleted; `git tag -l` and `gh release list`
+  verified still empty. Literal figures (round-2 review asked which run
+  each came from): BOTH dry-runs printed flutter's
+  `✓ Built … (16.8MB)/(19.4MB)/(20.9MB)` (armeabi-v7a/arm64-v8a/x86_64,
+  decimal MB); the script's `du -h` lines printed (display order
+  arm64/armeabi/x86_64) `18M/16M/20M` on the branch run and
+  `19M/16M/20M` on the scratch clone run — APK bytes drift between builds
+  (embedded build id), so `du` rounding legitimately differs across
+  rebuilds while flutter's decimal figures held at 16.8/19.4/20.9 MB both
+  times.
 - AGENTS status block: signing candidate marked decided.
 - **Review round 1 (two parallel reviewers, own worktrees, obtainium +
   flutter-deployment indexed for grounding):** R1 (correctness/release-
@@ -1659,3 +1666,24 @@ to 3.47.9 and re-verify all gates on it.
   refused; full `--dry-run` in a scratch clone (main == origin of a
   throwaway bare repo, cold gradle): gates green → 3 APKs (16.8/19.4/20.9
   MB) → 0 tags local and remote. Reviewer worktrees removed.
+- **Review round 2 (two parallel reviewers: fix-verification + docs-truth):**
+  mechanics reviewer **approve-with-nits** — all six round-1 majors
+  confirmed fixed by reproduction (silent-death old-vs-new in scratch,
+  sync guard vs throwaway bare origin, sed pin extracts `3.47.9`, recovery
+  text matches gh 2.103.3 help). Docs reviewer **request-changes** —
+  caught what round 1 missed: my claim that the script "prints the
+  keystore-stability warning every run" was FALSE (header comment only,
+  never printed) — accepted by making the claim true (real `yellow`
+  warning after the Signing banner); plus the RC-header-vs-provenance
+  contradiction promoted to a fix (the header now says the body describes
+  the audited RC build while the attachments are built here), du/flutter
+  size reconciliation reworded per above, gates.yml comment says "first
+  remote write" (fetch/ls-remote are read-only). Mechanics nits accepted:
+  CI-pin `sed` pipeline silent-death (pipefail) made to reach its own
+  fallback, published header no longer says "on Flutter unknown", preview
+  `head -40` SIGPIPE-guarded (only reachable via >64 KB
+  RELEASE_NOTES_FILE), `--cleanup-tag` in START OVER recovery, `$#`
+  checked (a `--dry-run --typo` combo previously slipped through).
+  `APK_FILES` array suggestion declined (word-splitting is self-limiting
+  here — a spaces-version also corrupts the tag — and word-splitting is
+  the model script's bash-3.2 idiom).
