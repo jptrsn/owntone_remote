@@ -181,19 +181,24 @@ the app.
 | `docs/API.md` | Touching the network layer | Endpoint reference, live examples, WS protocol |
 | `docs/retune-capture/CAPTURE-PROTOCOL.md` | Capture intent only | Walk procedure, static pass, output format |
 
-## Environment (verified 2026-10-08; host drift noted 2026-11-13)
+## Environment (host+CI aligned on 3.47.9, 2026-11-14)
 
-- macOS Apple Silicon. `/opt/homebrew/bin/{flutter,dart}` — brew has since
-  drifted the host to **Flutter 3.47.9 / Dart 3.13.7**. CI pins **3.41.7**
-  (`.github/workflows/gates.yml`) and the **pinned formatter is the gate**:
-  three test files (connection_controller_adversarial, ws_client_adversarial,
-  ws_client_adversarial_wire) sit byte-identical to main and show "Changed"
-  under the host formatter — **do not reformat them** (PR #4 blocker: doing
-  so was `26ddef4` and reddened the gates job; PR #4 review found it).
-  The same drift poisons `android/gradle.properties`: a host build
-  re-adds the migrator's `builtInKotlin`/`newDsl` flags and the pinned
-  3.41.7 CI then fails `flutter build apk` ("What went wrong: 25.0.5") —
-  keep that file at main's bytes and ignore the re-dirty after host builds.
+- macOS Apple Silicon. **Flutter 3.47.9 / Dart 3.13.7** at
+  `/opt/homebrew/bin/{flutter,dart}` (brew upgraded the host in Nov 2026;
+  the previous pin-era facts below are marked where they predate it).
+  **CI pins the same version** (`.github/workflows/gates.yml`) — user
+  decision 2026-11-14 ("a good version to use"). History worth knowing
+  before "tidying": while CI pinned 3.41.7 against the drifted host,
+  the two formatters fought (`26ddef4` reddened the gates reformatting
+  three files the pinned formatter wanted as-is) and the Flutter
+  migrator's `builtInKotlin`/`newDsl` flags in `android/gradle.properties`
+  broke the pinned CI's APK build. With both sides on 3.47.9 the
+  formatter agrees and the migrator flags are the tool's own accepted
+  output — they are committed. Expect `analysis_options.yaml` to be
+  re-written by `flutter analyze` on every run (commit that churn);
+  `gradle.properties` should now STAY clean (the migrator is idempotent
+  once the flags are present) — if it re-dirties, verify it is the
+  tool's own flag text before committing it.
 - `adb` at `/opt/homebrew/bin/adb`.
   git 2.50.1, git identity configured globally.
 - Android SDK at `~/Library/Android/sdk`. `ANDROID_HOME` is **not** set in
@@ -264,8 +269,9 @@ For any UI work on a running debug build:
    (auto) or the `connection` tool with the ws URI; `workspace_root` = repo.
 2. Inspect: `widget.get_tree` (`projectOnly: true`, `maxDepth: 8`) — exact
    widget types, sizes, positions, `lib/*.dart:line` mapping.
-3. Prove geometry facts with `evaluate_expression` — **caveats on Flutter
-   3.41.7:** single-line IIFE only; string returns truncate at **128 chars**
+3. Prove geometry facts with `evaluate_expression` — **caveats observed on
+   the old 3.41.7 pin (pre-2026-11-14): re-verify on 3.47.9 before
+   trusting** — single-line IIFE only; string returns truncate at **128 chars**
    with no marker (print long output and read `console_logs`);
    `WidgetsBinding.instance.renderView.size` (there is no `rootRenderBox`);
    framework types don't resolve in the synthetic scope — walk via
