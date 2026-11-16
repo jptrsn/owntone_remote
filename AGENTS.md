@@ -58,8 +58,23 @@ iTunes-specific features.
     3.47.9 — **DONE, merged `3100817` (PR #5)**; Stacked-PR lesson
     (PR #6): merging the base PR with --delete-branch auto-closes the
     stacked PR — retarget it to `main` BEFORE merging the base, or open
-    a successor PR against main carrying the review record; real-hardware checks 1–3; signing for
-    anything beyond debug-signed sideload). Device decision (user
+    a successor PR against main carrying the review record; signing for
+    anything beyond debug-signed sideload). **`device-verification`
+    unit 004 DONE 2026-11-16** (stock-Android-17 **real-hardware pass
+    on the Pixel 6**: FGS + notification + websocket survived 10 min
+    backgrounded **screen-off (`mWakefulness=Dozing`; deviceidle held
+    ACTIVE — battery-Doze IDLE not engaged in 10 min on USB)**
+    (`isForeground=true`, same pid, 0 crashes — the per-uid firewall
+    does not starve an app with an active mediaPlayback FGS; the
+    backgrounded media-key re-check was BLOCKED-HARNESS — shell
+    injection inert); cold-start auto-reconnect
+    socket-verified; volume rocker on real hardware server-verified
+    ±5×5 + backgrounded-inert. The old "real-hardware checks 1–3"
+    candidate is adjudicated: real carrier call **accepted-by-emulation**
+    (user 2026-11-16 — device SIM has no voice service), GrapheneOS
+    per-app-Network + battery checks **declined** (flash wipes THE test
+    device); all three stay documented-untested in RELEASE-NOTES, never
+    silently dropped). Device decision (user
   2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
   and deletes it when finished** — never start or reuse an existing AVD;
   other sessions own the running emulators. Device decision (user
@@ -134,7 +149,7 @@ unexpectedly.
   each verification unit itself** (unit 001's copy was deleted after the pass);
   never an existing AVD (user 2026-10-26) | _resolve by serial at boot:
   `getprop ro.boot.qemu.avd_name`_ |
-| Real device — **THE test device** (user decision 2026-11-14; volume-key routing, on-device verification) | Pixel 6 (oriole, Android 16, **no SIM** — cannot receive calls) | `25071FDF600953` (connected 2026-10-10) |
+| Real device — **THE test device** (user decision 2026-11-14; volume-key routing, on-device verification) | Pixel 6 (oriole, **Android 17 / SDK 37 as of dv-004 2026-11-16** — OTA'd from 16; **SIM loaded (Videotron) but voice OUT_OF_SERVICE / emergency-only — cannot receive calls**, so real carrier call stays untested/accepted-by-emulation) | `25071FDF600953` (connected 2026-10-10) |
 | Release pass (dv-003) | per-unit disposable AVD (user decision
   2026-11-13 — replaces the Pixel 10/GrapheneOS daily-driver plan; real-
   hardware-only checks documented as untested, see the unit file) |

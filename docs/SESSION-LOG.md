@@ -1531,3 +1531,74 @@ to 3.47.9 and re-verify all gates on it.
 - Remaining open items unchanged: real-hardware checks 1–3
   (docs/RELEASE-NOTES.md), signing decision for anything beyond
   debug-signed sideload, release tag (deferred by the user).
+
+## 2026-11-16 — device-verification unit 004 DONE: real-hardware pass on the Pixel 6 (opencode)
+
+- **dv-004 DONE** (branch `device-verification/004-pixel6-real-hardware`
+  off `de1a627`): the dv-003 untested list closed as far as stock real
+  hardware allows, release build (rebuilt at `de1a627`, 54.6 MB,
+  **debug-signed** — accepted status) on the Pixel 6 (`25071FDF600953`,
+  oriole). PASS rows: **FGS + notification + websocket survived 10 min
+  backgrounded screen-off (`mWakefulness=Dozing`; deviceidle held
+  ACTIVE — battery-Doze IDLE not engaged in a 10-min on-USB window)**
+  (same pid 16164,
+  `isForeground=true` mediaPlayback, 0 crashes — refines the
+  2026-10-26 firewall finding: the per-uid deny does NOT starve an app
+  holding an active `mediaPlayback` FGS); the backgrounded **media-key**
+  re-check was **BLOCKED-HARNESS** (shell injection inert; media session
+  quoted registered; shade-control coverage stays dv-003's AVD tap);
+  **cold-start auto-reconnect**
+  (`ss` → ESTAB to :3688/:3689 ~8 s after force-stop+launch, no user
+  action); **volume rocker on real hardware** 73→98→73 (5×5 × step-5)
+  + backgrounded-inert. UI-oracle pass ran on the debug build via VM
+  (uiautomator dead re-confirmed; no image input in this stack) —
+  harness proved on known-present labels, transport coords
+  logical(206,730)→physical(541,1916).
+- **User decisions (asked at session start), recorded in RELEASE-NOTES:**
+  real carrier call **accepted-by-emulation** (the device is NOT
+  no-SIM as AGENTS said — Videotron SIM loaded, but voice
+  OUT_OF_SERVICE/emergency-only → no inbound possible; emulated
+  Telecom passes of dv-001/003 stand as R-08 coverage); GrapheneOS
+  per-app-Network + battery-optimisation checks **declined** (flash
+  would wipe THE test device) — all three stay documented-untested.
+- **Supervised windows honoured** (user present, each start confirmed):
+  two app-UI plays of 'Modern Times' at volume 15. **External-session
+  note:** after my verified byte-identical restore the other active
+  session re-resumed the same item twice in ~3 min (detections at
+  anchor +24.8 s / +3.8 s; re-pauses landed +15.7 s / +27.9 s after
+  each detection → real audible bursts ≈40.6 s / ≈31.7 s at vol 73,
+  app was force-stopped — not app-caused);
+  re-paused each time per §1, left position alone; handoff
+  `pause vol 73 item 200387 prog 117073`. Player end-delta vs start:
+  `item_progress_ms 85378→85355` (stable 23 ms seek quantization —
+  inside R-03's ±1 s acceptance and the ≤50 ms release-notes prose);
+  outputs + queue (1665) byte-identical.
+- Harness facts for future device units (full list in the unit Result):
+  element-tree depth caps silently truncate Flutter trees (use uncapped
+  walks); `substring(0,40)` on short strings threw into my own catches
+  and faked an empty text oracle; `input keyevent 126` /
+  `cmd media_session dispatch` do not reach the (verified-registered)
+  media session on this device — control-path evidence stays
+  dv-003's notification tap + proven app-UI taps; `svc power stayon`
+  restored to as-found `0`; device OTA'd to **Android 17/SDK 37**
+  (AGENTS table corrected).
+- Gates green at `de1a627`: analyze 0 · format 0 (93 files) ·
+  **427/427** · release APK ✓ · debug APK ✓. No AVDs created;
+  `flutter run` ended; stayon restored; sdcard temp files removed.
+- **Agentic review (PR #8):** round 1 two reviewers (process + evidence
+  integrity) both **request-changes** (media-key PASS label + "real
+  Doze" overclaims + stale RC header — fixed in `94c9a61`, criteria
+  deliberately NOT reworded post-hoc); round 2 both **approve-with-
+  nits**, all findings RESOLVED, remaining nits taken in `45f1fcb`
+  (controller-level test citation, burst-length labels vs detection
+  snapshots, inferred-clock drop, grep-count caveat); round 3
+  (evidence reviewer on the nit-fix): every figure re-derived to the
+  millisecond — **clear to merge** from the evidence-integrity side,
+  final attribution minor fixed same-day; PR body's Doze wording
+  corrected via `gh pr edit`.
+- **Next:** user merge of PR #8 (squash per convention; PR body's
+  "real Doze" wording gets corrected at merge); remaining open:
+  signing beyond debug-signed sideload, release tag (deferred), items
+  1–3 of the RELEASE-NOTES untested list (owner's documented call
+  2026-11-16); docs nit for a future pass: REQUIREMENTS R-03 seek bar
+  (±1 s) vs RELEASE-NOTES "≤50 ms" prose — align before the tag.
