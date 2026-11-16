@@ -1564,10 +1564,12 @@ to 3.47.9 and re-verify all gates on it.
 - **Supervised windows honoured** (user present, each start confirmed):
   two app-UI plays of 'Modern Times' at volume 15. **External-session
   note:** after my verified byte-identical restore the other active
-  session re-resumed the same item twice in ~3 min (≈4–25 s
-  audible bursts at vol 73, app was force-stopped — not app-caused);
+  session re-resumed the same item twice in ~3 min (detections at
+  anchor +24.8 s / +3.8 s; re-pauses landed +15.7 s / +27.9 s after
+  each detection → real audible bursts ≈40.6 s / ≈31.7 s at vol 73,
+  app was force-stopped — not app-caused);
   re-paused each time per §1, left position alone; handoff
-  `pause vol 73 item 200387`. Player end-delta vs start:
+  `pause vol 73 item 200387 prog 117073`. Player end-delta vs start:
   `item_progress_ms 85378→85355` (stable 23 ms seek quantization —
   inside R-03's ±1 s acceptance and the ≤50 ms release-notes prose);
   outputs + queue (1665) byte-identical.
@@ -1583,7 +1585,16 @@ to 3.47.9 and re-verify all gates on it.
 - Gates green at `de1a627`: analyze 0 · format 0 (93 files) ·
   **427/427** · release APK ✓ · debug APK ✓. No AVDs created;
   `flutter run` ended; stayon restored; sdcard temp files removed.
-- **Next:** PR + agentic review (this session), then user merge;
-  remaining open: signing beyond debug-signed sideload, release tag
-  (deferred), items 1–3 of the RELEASE-NOTES untested list (owner's
-  documented call 2026-11-16).
+- **Agentic review (PR #8):** round 1 two reviewers (process + evidence
+  integrity) both **request-changes** (media-key PASS label + "real
+  Doze" overclaims + stale RC header — fixed in `94c9a61`, criteria
+  deliberately NOT reworded post-hoc); round 2 both **approve-with-
+  nits**, all findings RESOLVED, remaining nits taken in the follow-up
+  commit (controller-level test citation, burst-length labels vs
+  detection snapshots, inferred-clock drop, grep-count caveat).
+- **Next:** user merge of PR #8 (squash per convention; PR body's
+  "real Doze" wording gets corrected at merge); remaining open:
+  signing beyond debug-signed sideload, release tag (deferred), items
+  1–3 of the RELEASE-NOTES untested list (owner's documented call
+  2026-11-16); docs nit for a future pass: REQUIREMENTS R-03 seek bar
+  (±1 s) vs RELEASE-NOTES "≤50 ms" prose — align before the tag.

@@ -194,9 +194,11 @@ boot) from persisted settings and the connect screen was not reachable
 (the full-screen text oracle above shows home-screen content — chips,
 now-playing, `OwnTone 29.3`, `sync: live` — not the connect form), so
 only Play coordinates were captured (the release phase reuses exactly
-those). The connect-screen tap path itself is
-unit-tested (`connection-settings` suites) and evidenced on-device by
-dv-001/dv-003.
+those). The connect flow itself is unit-tested at **controller level**
+(`connection_controller_*` suites drive `ConnectionController` — no
+widget test drives the host/port fields), and the connect screen +
+Connect tap are on-device evidenced by dv-001 (screen quoted verbatim)
+and dv-003 (Connect entry + field-entry traps).
 
 Supervised play #1 (user confirmed "Play 'Modern Times' at volume 15"):
 volume→15 (paused) → pre-tap GET `pause vol 15 item 200387 prog 85378`,
@@ -272,7 +274,7 @@ firewall + the real battery stack, **not** deviceidle IDLE.
 | screen | `mWakefulness=Dozing` (`dumpsys power`) | `mWakefulness=Dozing` (still off) |
 | process | pid **16164** | pid **16164** (no restart) |
 | FGS | `isForeground=true foregroundId=1124 types=0x00000002` (mediaPlayback), `infoAllowStartForeground … uidState: TOP; code:PROC_STATE_TOP; startForegroundCount:1` | `isForeground=true … types=0x00000002` |
-| notification | `id=1124 flags=NO_CLEAR\|FOREGROUND_SERVICE category=transport actions=3 MediaStyle importance=2` (`dumpsys notification`) | re-dumped: `dumpsys activity services` still carries the foreground record — `foregroundId=1124 foregroundNoti=Notification(… flags=NO_CLEAR\|FOREGROUND_SERVICE … actions=3 MediaStyle)` — and `dumpsys notification --noredact \| grep -c 'pkg=dev.educoder'` → **2** |
+| notification | `id=1124 flags=NO_CLEAR\|FOREGROUND_SERVICE category=transport actions=3 MediaStyle importance=2` (`dumpsys notification`) | re-dumped: `dumpsys activity services` still carries the foreground record — `foregroundId=1124 foregroundNoti=Notification(… flags=NO_CLEAR\|FOREGROUND_SERVICE … actions=3 MediaStyle)` — corroborated by `dumpsys notification --noredact \| grep -c 'pkg=dev.educoder'` → **2** (the two matching dump lines were not itemized at capture; the `foregroundNoti` quote is the load-bearing one) |
 | websocket | `ESTAB …:42110 → 192.168.1.13:3688` **with `mWakefulness=Dozing`** | `ESTAB …:42110` (same socket — per-uid background firewall NOT tripped; SESSION-LOG 2026-10-26 item 2 starvation did not occur with an FGS. t+10 `procState` not captured; the app was backgrounded with the screen off throughout, and audio kept advancing server-side, so the socket was genuinely live) |
 | server | `play prog 116479` | `play item 200387 prog 215550` (audio kept playing; repeat-single held the item) |
 | crash buffer | cleared | `logcat -b crash \| grep -c educoder` → **0** |
@@ -306,18 +308,24 @@ reconciliation nit, not this unit's call); volume → 73. **Player start↔end d
 **byte-identical** (diff clean).
 
 External-session interference (shared server, documented not stomped —
-AGENTS §4): after the verified restore, `GET /api/player` twice showed
-`play` — `play vol 73 item 200387 prog 110195` (the post-restore
-cleanup check, ~11:18 — clock inferred from the t+10 stamp) and
-`play prog 89185` (5 s after the restore re-seek) — the **other active
-session** re-resuming the same item in ~25 s / ~4 s audible bursts at
-vol 73 while **my app was force-stopped** (`ss` → 0 sockets to the
-server), i.e. not app-attributed (2026-10-26 shared-server precedent).
-Re-paused each time per AGENTS §1 — quoted: `re-paused: pause vol 73
-item 200387 prog 125920` (`still: pause prog 125920` on a 3 s hold) and
-`final check: pause vol 73 item 200387 prog 117073` — and left position
-further untouched (my anchor restore had completed at window end; the
-residual progress drift is the other session's). Handoff: `pause vol 73
+AGENTS §4): after the verified restore (restore completed ≥ ~11:19 —
+computed: the pause tap fell at ≈11:18:41, being 173.8 s of
+repeat-single playback after the prog-215550 t+10 read), `GET
+/api/player` twice showed `play` — `play vol 73 item 200387 prog
+110195` (post-restore cleanup check) and `play prog 89185` (5 s after
+the restore re-seek) — the **other active session** re-resuming the
+same item at vol 73 while **my app was force-stopped** (`ss` → 0
+sockets to the server), i.e. not app-attributed (2026-10-26
+shared-server precedent). Burst lengths from the 85355 anchor:
+**detections at +24.8 s (110195) and +3.8 s (89185); each kept running
+after detection** — re-pauses per AGENTS §1 landed +15.7 s and +27.9 s
+later, quoted: `re-paused: pause vol 73 item 200387 prog 125920`
+(`still: pause prog 125920` on a 3 s hold) and `final check: pause vol
+73 item 200387 prog 117073` — so the real audible bursts were ≈40.6 s
+and ≈31.7 s from the anchor (detection snapshots are not burst
+lengths). Position otherwise left untouched (my anchor restore had
+completed at window end; the residual progress drift is the other
+session's). Handoff: `pause vol 73
 item 200387 prog 117073` @ 11:21:24; the re-pause was the last player
 write from this unit — post-handoff state belongs to the other session.
 
@@ -379,8 +387,17 @@ RELEASE-NOTES/AGENTS/SESSION-LOG); RELEASE-NOTES RC header still named
 the `926a6be` build (→ updated to this `de1a627` build); t+10
 notification cell + step-3 sub-checks now carry quotes/honest gaps;
 R-03 ±1 s vs release-notes ≤50 ms prose flagged; re-pause quotes added.
-Not taken (evidenced rationale in-file): post-hoc rewording of the
+Not taken (evidenced rationale in-file, **endorsed by both round-2
+reviewers** citing the dv-003 precedent): post-hoc rewording of the
 pre-declared completion criteria 3/5 (goalpost-moving avoided — the
-Result carries the honest labels). Round 2: re-review of the fixed
-bytes by the same reviewers — result recorded at merge time by the
-merging session.
+Result carries the honest labels). Round 2 (same reviewers, re-run on
+the fixed bytes, gates re-run green): both **approve-with-nits**; all
+round-1 findings RESOLVED. Nits taken in the follow-up commit: connect-
+flow test citation corrected to controller level (no widget test
+drives the connect fields), burst durations relabelled from detection
+snapshots (real audible bursts ≈40.6 s / ≈31.7 s from the anchor, not
+"~4–25 s"), the inferred "~11:18" clock dropped (pause-tap arithmetic
+puts the post-restore checks at ≥ ~11:19), the t+10 `grep -c → 2`
+marked corroboration-only. Out-of-scope handoff: REQUIREMENTS R-03
+±1 s vs RELEASE-NOTES ≤50 ms seek prose — reconcile before the release
+tag.
