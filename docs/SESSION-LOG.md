@@ -1687,3 +1687,13 @@ to 3.47.9 and re-verify all gates on it.
   `APK_FILES` array suggestion declined (word-splitting is self-limiting
   here — a spaces-version also corrupts the tag — and word-splitting is
   the model script's bash-3.2 idiom).
+- **Review round 3 (single evidence reviewer, PR #8 convention — re-derive,
+  don't read):** **CLEAR-TO-MERGE**, no blockers/majors. Independently
+  reproduced: gates (0 / 0-of-93 / 427), 0 tags + 0 releases local and
+  remote, sed pin → `3.47.9`, `.gitignore:16` refutation, all twelve
+  claimed script features at line level, both fix commits' diffs vs the
+  round-2 record — including the keystore warning observed *printed*
+  (yellow ANSI) in the reviewer's own dry-run, and two more full
+  scratch-clone dry-runs matching the recorded APK figures exactly. Two
+  accepted nits left as-is (pin-fallback literal, `APK_FILES`
+  word-splitting — author decline reasoned and recorded).
