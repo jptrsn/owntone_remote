@@ -8,10 +8,12 @@ minSdk 26, targetSdk 36. Verified against OwnTone **29.3**
 
 ## What works
 
-Verified on-device (Android 16/36 AVDs; full R-ID + reconnect passes by
-device-verification units 001–002, release-build pass by unit 003, and
-per-feature device passes in the cited `remote-app` units — see
-`.ai-dlc/device-verification/units/` and `.ai-dlc/remote-app/units/`).
+Verified on-device (Android 16/36 AVDs plus a stock-Android-17 real
+device — a Pixel 6; full R-ID + reconnect passes by device-verification
+units 001–002, release-build pass by unit 003, real-hardware pass by
+unit 004, and per-feature device passes in the cited `remote-app` units
+— see `.ai-dlc/device-verification/units/` and
+`.ai-dlc/remote-app/units/`).
 The silent-drop row was proven on-device in unit 009 (debug build; the
 release build runs the identical dart:io `pingInterval` code path):
 
@@ -106,10 +108,11 @@ battery behaviour is recorded at the device gate — see below.)
   it never changes server volume from behind, at the cost of not
   acting as an in-pocket media rocker (R-06 design decision).
 - **No-GMS verified statically, not on a GMS-less OS.** The app has
-  zero Google/Play dependencies (Gradle + resolved pubspec), but the
-  emulator images used for verification ship `com.google.android.gms`;
-  crash-free operation on a true no-GMS ROM (GrapheneOS, CalyxOS) is
-  on the untested list below.
+  zero Google/Play dependencies (Gradle + resolved pubspec), but every
+  verification device so far — emulator images and the stock Pixel 6
+  (dv-004) — ships `com.google.android.gms`; crash-free operation on a
+  true no-GMS ROM (GrapheneOS, CalyxOS) is on the untested list below
+  (its verification flash was declined by the owner on 2026-11-16).
 - **Process death** while paused is not spontaneously recovered: the
   audio service is `START_NOT_STICKY`, so the notification re-appears
   when you next open the app (which auto-reconnects).
@@ -130,19 +133,45 @@ same pid, zero crashes, notification controls still working), the
 server-verified volume rocker, and cold-start auto-reconnect. Full
 evidence: `.ai-dlc/device-verification/units/003-release-pass-disposable-avd.md`.
 
+`device-verification/004` passed on 2026-11-16 on **real hardware** —
+a Pixel 6 (`oriole`) running stock Android 17, release build (rebuilt
+on `de1a627`, debug-signed): **FGS + notification survived 10 min
+backgrounded with the screen off under the real battery manager** —
+the device entered real Doze, `isForeground=true` and the same pid
+held, and the **websocket stayed established through the Doze window**
+(the device's per-uid background firewall does not starve an app with
+an active `mediaPlayback` FGS); **cold-start auto-reconnect** (app
+sockets to the server's websocket port within ~8 s of launch with no
+user action); the **volume rocker on real hardware** (±5 presses,
+server-verified step-by-step, inert while backgrounded). Full evidence:
+`.ai-dlc/device-verification/units/004-pixel6-real-hardware.md`.
+
 Explicitly **untested on real hardware** (documented, not silently
-dropped; all emulator-approximated or statically covered):
+dropped; all emulator-approximated or statically covered). Project-owner
+decisions of 2026-11-16 (dv-004) are recorded against each item:
 
 1. A **real carrier call** (the RIL/Telecom edge cases a simulated
    `gsm call` can't model — the app's `TelephonyCallback` path itself
-   was exercised end-to-end).
+   was exercised end-to-end on the emulator's Telecom layer, in both
+   the debug and release passes). The test device carries a SIM but
+   has **no voice service** (emergency-only registration), so a real
+   inbound call cannot reach it; the owner accepted the emulated
+   coverage rather than provisioning a line. This item therefore
+   **stands as accepted-by-emulation** — still untested against a real
+   carrier, re-open it if a callable device becomes available.
 2. **GrapheneOS per-app Network permission** behaviour (the setup steps
    above are documentation, not a GrapheneOS-verified procedure).
+   **Declined 2026-11-16**: verifying it requires flashing GrapheneOS,
+   which wipes the only real test device; the owner opted to keep this
+   documented-only.
 3. **GrapheneOS battery-optimisation** specifics (FGS mediaPlayback is
-   an AOSP-standard type; GrapheneOS's stricter enforcement was not
-   exercised).
+   an AOSP-standard type — its survival through real Doze on stock
+   Android 17 was verified in dv-004; GrapheneOS's stricter enforcement
+   was not exercised). **Declined 2026-11-16** (same flash decision).
+   The same decision keeps **crash-free operation on a true no-GMS
+   ROM** untested (the stock test device ships GMS).
 
 The original release gate — a supervised pass on a Pixel 10 daily
 driver under GrapheneOS — was retired by the project owner on
-2026-11-13 in favour of the disposable-AVD pass above; real-hardware
-items 1–3 stay open as a user-side check whenever convenient.
+2026-11-13 in favour of the disposable-AVD pass above; items 1–3 above
+are the owner's documented call of 2026-11-16, not dropped.
