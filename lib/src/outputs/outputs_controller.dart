@@ -92,18 +92,38 @@ class OutputsController extends ChangeNotifier {
     unawaited(_refresh());
   }
 
+  /// Single-flight + coalesced trailing refetch (unit 012 — the
+  /// unit-011 shape applied to the Outputs slice; see
+  /// `queue_controller.dart` for the canonical warning). Do not
+  /// collapse into a bare `api.getOutputs()`.
+  bool _refreshing = false;
+  bool _pendingRefresh = false;
+
   Future<void> _refresh() async {
-    final api = _conn.api;
-    if (api == null) return;
-    try {
-      _outputs = await api.getOutputs();
-      _hasLoaded = true;
-      _syncError = null;
-    } catch (e) {
-      _logger.e('outputs refetch failed', error: e);
-      _syncError = 'Sync failed — showing last known state.';
+    if (_refreshing) {
+      _pendingRefresh = true;
+      return;
     }
-    if (!_disposed) notifyListeners();
+    _refreshing = true;
+    try {
+      do {
+        _pendingRefresh = false;
+        final api = _conn.api;
+        if (api == null) break;
+        try {
+          _outputs = await api.getOutputs();
+          _hasLoaded = true;
+          _syncError = null;
+        } catch (e) {
+          _logger.e('outputs refetch failed', error: e);
+          _syncError = 'Sync failed — showing last known state.';
+        }
+        if (_disposed) break;
+        notifyListeners();
+      } while (_pendingRefresh);
+    } finally {
+      _refreshing = false;
+    }
   }
 
   // -- user actions (R-09, unit 004) -----------------------------------------
@@ -171,6 +191,9 @@ class OutputsController extends ChangeNotifier {
       if (!_disposed) notifyListeners();
       return false;
     }
+    // Demand the trailing fetch so a resolved action always re-reads
+    // post-commit state (unit-011 lesson — see queue_controller).
+    _pendingRefresh = true;
     await _refresh();
     return true;
   }

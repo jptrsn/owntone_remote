@@ -470,7 +470,20 @@ void main() {
         channels.last.serverSend('{"notify":["queue"]}');
       });
       await waitUntil(tester, () => arrivals >= 1, 'event 1 fetch arrival');
+      // Delivery-confirmed gate (unit 012, PR #4 re-review nit): a
+      // probe listener on the SAME stream the controller listens to,
+      // registered AFTER it — broadcast dispatch runs listeners in
+      // registration order, so probe==4 proves the controller's handler
+      // (and its guard check) already saw all four burst events; a
+      // stalled delivery becomes an honest red at the gate below
+      // instead of silently sparing a skipping impl. No mid-test
+      // cancel (from the fake zone it hangs the next runAsync —
+      // observed); the conn is disposed in tearDown.
+      var probe = 0;
       await tester.runAsync(() async {
+        conn.events.listen((e) {
+          if (e.contains('queue')) probe++;
+        });
         fx.items.insert(
           0,
           Fixture.track(200004, 0, 'Burst Track', 1204, 320000),
@@ -511,6 +524,15 @@ void main() {
         reason:
             'per-event refreshes must be single-flight: $maxInFlight '
             'concurrent GET /api/queue observed (unit 011)',
+      );
+      expect(
+        probe,
+        4,
+        reason:
+            'all four burst events must have been HANDLED by the '
+            'controller before the outcome was judged — a stalled '
+            'delivery would otherwise spare a skipping impl (unit 012 '
+            'delivery gate)',
       );
     });
   });

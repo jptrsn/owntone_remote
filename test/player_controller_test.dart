@@ -201,4 +201,241 @@ void main() {
       expect(adapter.requests, hasLength(before));
     });
   });
+
+  // Unit 012 (unit-011's unguarded-`_refresh` candidate, Player side):
+  // R-04 "transport state reflects the server" + R-02 (D2 event → refetch)
+  // require per-event `GET /api/player` refreshes to be serialized — one
+  // in flight, coalesced trailing refetch, and a superseded response can
+  // never overwrite a newer slice. Zone note (from unit 011): these are
+  // plain `test`s, so Completers/responses tick on the real event loop —
+  // the gates here are polling flags driven by real time.
+  group('R-04 refresh serialization (unit 012)', () {
+    late ScriptedAdapter adapter;
+    late List<FakeWsChannel> channels;
+    late ConnectionController conn;
+    late PlayerController player;
+
+    var serverVolume = 75;
+    var inFlight = 0;
+    var maxInFlight = 0;
+    var playerArrivals = 0;
+    var holdFirst = false;
+    var holdArrival = 0;
+    var releaseA = false;
+
+    Future<Response<dynamic>> respond(RequestOptions o) async {
+      switch (o.path) {
+        case '/api/config':
+          return jsonResponse(o, _configJson);
+        case '/api/queue':
+          return jsonResponse(o, _queueJson);
+        case '/api/player/volume':
+          final v = o.queryParameters['volume'];
+          if (v != null) serverVolume = int.parse('$v');
+          return jsonResponse(o, <String, dynamic>{});
+        case '/api/player':
+          inFlight++;
+          playerArrivals++;
+          if (inFlight > maxInFlight) maxInFlight = inFlight;
+          final vol = serverVolume; // snapshot at REQUEST time
+          // Hold ONLY the first arrival — so a concurrent (unguarded)
+          // impl's later fetches answer promptly and deterministically
+          // clobber instead of also hanging. Real-timer polling is
+          // safe in a plain test (the unit-011 fake-clock trap does
+          // not apply here).
+          if (holdFirst && playerArrivals == holdArrival) {
+            final deadline = DateTime.now().add(const Duration(seconds: 2));
+            while (!releaseA && DateTime.now().isBefore(deadline)) {
+              await Future<void>.delayed(const Duration(milliseconds: 5));
+            }
+          }
+          inFlight--;
+          return jsonResponse(o, playerJson(volume: vol));
+        default:
+          return jsonResponse(o, <String, dynamic>{});
+      }
+    }
+
+    Future<void> holdFetch() async {
+      // Arm on the NEXT arrival (the initial load already consumed a
+      // count — arming on a fixed index would never hold).
+      holdArrival = playerArrivals + 1;
+      holdFirst = true;
+      releaseA = false;
+    }
+
+    Future<void> releaseFetch() async {
+      releaseA = true;
+      holdFirst = false;
+    }
+
+    setUp(() async {
+      serverVolume = 75;
+      inFlight = 0;
+      maxInFlight = 0;
+      playerArrivals = 0;
+      holdFirst = false;
+      releaseA = false;
+      adapter = ScriptedAdapter(responder: respond);
+      channels = [];
+      conn = ConnectionController(
+        dioFactory: (options) => Dio(options)..httpClientAdapter = adapter,
+        wsFactory: (uri, subscriptions, backoff) => WsClient(
+          uri: uri,
+          subscriptions: subscriptions,
+          backoff: Backoff(
+            initial: const Duration(milliseconds: 5),
+            maximum: const Duration(milliseconds: 20),
+          ),
+          channelFactory: (u) {
+            final c = FakeWsChannel();
+            channels.add(c);
+            return c;
+          },
+        ),
+      );
+      player = PlayerController(connection: conn);
+      await player.init();
+      await conn.connectTo(_cfg);
+      await pump();
+    });
+
+    tearDown(() {
+      releaseA = true; // never leave a held fetch after a test
+      player.dispose();
+      conn.dispose();
+    });
+
+    test('a superseded player fetch answering late must not clobber the '
+        'newer slice (stale-write race)', () async {
+      // The next volume event's fetch holds, answering from a
+      // request-time snapshot of volume.
+      await holdFetch();
+      // Event → fetch A starts (holds) holding volume 75.
+      channels.single.serverSend('{"notify":["volume"]}');
+      await pump(20);
+      // Server volume changes while A is in flight; a second event
+      // arrives on the same flight → after A lands the trailing fetch
+      // must bring the new value.
+      serverVolume = 42;
+      channels.single.serverSend('{"notify":["volume"]}');
+      await pump(20);
+      await releaseFetch();
+      await pump(60); // let the release propagate + trailing chain land
+      expect(
+        player.player!.volume,
+        42,
+        reason:
+            'the stale response from the superseded fetch overwrote '
+            'the newer slice (unit 012: per-event refreshes must be '
+            'serialized)',
+      );
+    });
+
+    test('a burst of volume events keeps at most one GET in flight and '
+        'the mid-burst change still lands (trailing refetch)', () async {
+      await holdFetch();
+      // Event 1 → fetch A starts against volume 75.
+      channels.single.serverSend('{"notify":["volume"]}');
+      await pump(20);
+      expect(playerArrivals, greaterThanOrEqualTo(1));
+      // The mid-burst change lands only AFTER A's request has arrived;
+      // four more events pile on that same flight.
+      serverVolume = 42;
+      final probeStart = playerArrivals;
+      for (var i = 0; i < 4; i++) {
+        channels.single.serverSend('{"notify":["volume"]}');
+        await pump(10);
+      }
+      expect(
+        playerArrivals,
+        probeStart,
+        reason:
+            'burst events must coalesce, not start new flights while A '
+            'is in flight (single-flight, unit 012)',
+      );
+      await releaseFetch();
+      await pump(60);
+      expect(
+        playerArrivals,
+        probeStart + 1,
+        reason:
+            'A plus EXACTLY one coalesced trailing refetch — more GETs '
+            'mean per-event fetches slipped through the guard, none '
+            'means the trailing refetch was lost (unit 012)',
+      );
+      expect(
+        maxInFlight,
+        1,
+        reason:
+            'per-event refreshes must be single-flight: $maxInFlight '
+            'concurrent GET /api/player observed (unit 012)',
+      );
+      expect(
+        player.player!.volume,
+        42,
+        reason:
+            'the mid-burst change must be present after settle '
+            '(R-04: transport state reflects the server)',
+      );
+    });
+
+    test('a resolved action with a fetch in flight re-reads post-commit '
+        'state (action-demand contract)', () async {
+      // Event → fetch A starts and holds, its response answering from the
+      // PRE-action volume 75 (request-time snapshot).
+      await holdFetch();
+      channels.single.serverSend('{"notify":["volume"]}');
+      await pump(20);
+      final preAction = playerArrivals;
+      // The action's PUT commits volume 42 to the fake server while A is
+      // still in flight. A's in-flight chain has already asked the
+      // responder, so its response can only ever carry 75 — the only way
+      // the slice can end at 42 is a re-read AFTER the commit: the
+      // action must demand one (coalescing its confirming read onto A's
+      // pre-commit answer is the unit-011 round-1 bug shape this pins —
+      // red under a coalesce-without-demand regression, like M2 reds it
+      // under trailing removal; see unit Result M3 notes).
+      final action = player.setVolume(42);
+      // Delivery-confirmed precondition (the queue_screen_test pattern,
+      // PR #6 round-2 nit): wait until the PUT actually reached the fake
+      // server, so the confirming call provably hits the guard while A
+      // is held — not an assumed 20 ms.
+      const putLine = 'PUT /api/player/volume?volume=42';
+      var waited = 0;
+      while (!adapter.requests.contains(putLine) && waited < 100) {
+        await pump(10);
+        waited += 10;
+      }
+      expect(
+        adapter.requests,
+        contains(putLine),
+        reason:
+            'the action PUT must commit before the release (delivery-'
+            'confirmed precondition — otherwise the confirming fetch '
+            'may take the guard itself and spare a coalesce-without-'
+            'demand regression)',
+      );
+      await pump(10); // let the confirming call reach the guard
+      await releaseFetch(); // A answers with the stale pre-commit 75
+      await action;
+      await pump(60);
+      expect(
+        player.player!.volume,
+        42,
+        reason:
+            'the action resolved against a pre-commit fetch — the slice '
+            'is stale (unit 012 criterion 1c: a resolved action must '
+            're-read post-commit state)',
+      );
+      expect(
+        playerArrivals,
+        preAction + 1,
+        reason:
+            'A plus EXACTLY one post-commit trailing chain (the action '
+            'demanded a re-read; none means it coalesced onto the '
+            'pre-commit fetch)',
+      );
+    });
+  });
 }
