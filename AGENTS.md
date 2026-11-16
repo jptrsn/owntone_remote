@@ -62,9 +62,12 @@ iTunes-specific features.
     anything beyond debug-signed sideload). **`device-verification`
     unit 004 DONE 2026-11-16** (stock-Android-17 **real-hardware pass
     on the Pixel 6**: FGS + notification + websocket survived 10 min
-    backgrounded **screen-off under real Doze** (`isForeground=true`,
-    same pid, 0 crashes — the per-uid firewall does not starve an app
-    with an active mediaPlayback FGS); cold-start auto-reconnect
+    backgrounded **screen-off (`mWakefulness=Dozing`; deviceidle held
+    ACTIVE — battery-Doze IDLE not engaged in 10 min on USB)**
+    (`isForeground=true`, same pid, 0 crashes — the per-uid firewall
+    does not starve an app with an active mediaPlayback FGS; the
+    backgrounded media-key re-check was BLOCKED-HARNESS — shell
+    injection inert); cold-start auto-reconnect
     socket-verified; volume rocker on real hardware server-verified
     ±5×5 + backgrounded-inert. The old "real-hardware checks 1–3"
     candidate is adjudicated: real carrier call **accepted-by-emulation**

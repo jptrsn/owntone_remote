@@ -2,7 +2,7 @@
 name: 004-pixel6-real-hardware
 status: done
 intent: device-verification
-supervised_steps: [2, 5, 6]
+supervised_steps: [2, 5]
 ---
 
 # Unit 004 — real-hardware pass on the Pixel 6 (release build)
@@ -17,9 +17,9 @@ decision 2026-11-14). No AVDs are created or touched by this unit.
 | dv-003 untested item | Decision this unit |
 |---|---|
 | 1. Real carrier call (R-08) | **No real call available** — device carries a Videotron SIM (`gsm.sim.state=LOADED`) but voice is OUT_OF_SERVICE (CS DENIED, no IMS/VoWiFi registered). User: *"accept AVD test results for this test, we do not need to verify on a real device with a real phonecall if emulated test passes."* → R-08 stays covered by the dv-001/dv-003 emulated-Telecom passes (the real `TelephonyCallback` path); a real carrier call stays on the untested list. Re-run the emulated call row on real hardware is **not possible** (no emulator-Telecom layer on a physical device; real RIL unreachable) — recorded as an approximation note, not re-run. |
-| 2. GrapheneOS per-app Network permission | **Declined** — flashing wipes THE test device; user: *"we do not need GrapheneOS specific tests."* Stays on the untested list. |
+| 2. GrapheneOS per-app Network permission | **Declined** — flashing wipes THE test device; user: *"We do not need GrapheneOS specific tests."* Stays on the untested list. |
 | 3. GrapheneOS battery-optimisation specifics | **Declined** (same decision). No-GMS crash-free bonus rides on the same flash → stays untested too. |
-| 4. What stock-Android-16 real hardware CAN close | FGS + notification survival backgrounded with screen off under the **real** battery manager/firewall; cold-start auto-reconnect; **volume rocker on real hardware** (R-06 — key injection on a device with a real volume-stack); media-key control while backgrounded. All with evidence rows. |
+| 4. What stock-Android real hardware (device at Android 17 — see build record) CAN close | FGS + notification survival backgrounded with screen off under the **real** battery manager/firewall; cold-start auto-reconnect; **volume rocker on real hardware** (R-06 — key injection on a device with a real volume-stack); media-key control while backgrounded. All with evidence rows. |
 
 ## Oracles (AGENTS caveats re-confirmed this session)
 
@@ -88,7 +88,10 @@ decision 2026-11-14). No AVDs are created or touched by this unit.
 6. `supervised: true` — emulated-call approximation note (no re-run on
    real hardware, per scope decision): cite dv-001 + dv-003 evidence +
    the R-08 unit tests; record the device's telephony state verbatim as
-   the reason a real call is BLOCKED.
+   the reason a real call is BLOCKED. *(Executed read-only — the on-
+   device re-run was found impossible and no audio step occurred, so
+   nothing here ran under supervision; frontmatter lists only steps 2
+   and 5.)*
 7. Update `docs/RELEASE-NOTES.md` device gate: record the dv-004
    stock-Android real-hardware pass + the 2026-11-16 user decisions on
    items 1–3 (call-path emulated-accepted; GrapheneOS checks declined);
@@ -122,9 +125,17 @@ decision 2026-11-14). No AVDs are created or touched by this unit.
 
 **Status: DONE — real-hardware pass complete (2026-11-16, supervised
 window, user present; every audible start individually confirmed).**
-All four closable checks (criterion 4) **PASS** on the Pixel 6 with the
-release build; checks 1–3 are **BLOCKED** by user scope decisions taken
-at session start (below), each with the exact reason and no substitution.
+Three of the four closable items on scope-table row 4 **PASS** on the
+Pixel 6 with the release build — FGS + notification + WS survival
+screen-off, cold-start auto-reconnect, volume rocker (incl.
+backgrounded-inert) — while its fourth sub-item, **media-key control
+while backgrounded, is BLOCKED-HARNESS** (shell media-button injection
+is dead on this device — `input keyevent 126/87` inert, `cmd
+media_session` no-op; the app side is evidenced correctly registered
+via `dumpsys media_session`, and backgrounded notification-control
+coverage stands on dv-003's AVD shade tap; see step 5). Checks 1–3 are
+**BLOCKED** by user scope decisions taken at session start (below),
+each with the exact reason and no substitution.
 Zero app-attributed audio incidents; server restored to the as-found
 baseline (external-session deltas documented, not stomped). No AVDs
 created; `adb devices` before/after showed only `25071FDF600953`
@@ -177,6 +188,16 @@ OwnTone 29.3 | sync: live` — cross-matching `/api/player` (prog
 85378 = 1:25, length 261874 = 4:21, vol 73), outputs (Volumio Kitchen)
 and queue count (1665).
 
+Procedure deviation, recorded: the planned **Connect tap was not
+exercised** — the launch auto-connected (logcat `ws: none → open` at
+boot) from persisted settings and the connect screen was not reachable
+(the full-screen text oracle above shows home-screen content — chips,
+now-playing, `OwnTone 29.3`, `sync: live` — not the connect form), so
+only Play coordinates were captured (the release phase reuses exactly
+those). The connect-screen tap path itself is
+unit-tested (`connection-settings` suites) and evidenced on-device by
+dv-001/dv-003.
+
 Supervised play #1 (user confirmed "Play 'Modern Times' at volume 15"):
 volume→15 (paused) → pre-tap GET `pause vol 15 item 200387 prog 85378`,
 `mCurrentFocus=MainActivity` → **tap (541,1916)** → server `play prog
@@ -214,7 +235,14 @@ pidof → 16164
 
 (ss process column unavailable to non-root; the app is the only actor
 for that IP — socket set was empty at force-stop.) Auto-reconnect from
-persisted settings, no re-entry: PASS.
+persisted settings, no re-entry: PASS. Procedure sub-checks not quoted
+above, honestly noted: "media notification present" was **not captured
+at this cold start** (the player was `pause`; the notification record
+is quoted at step-5 t0 — `id=1124` — once the service had served
+playback, per `audio_service`'s design); "no process restart thrash" is
+carried by the single stable pid **16164** across steps 3 → 5 including
+the whole 10-min survival window (no respawn between launch and
+t+10 min).
 
 ### Step 4 — volume rocker on real hardware (R-06/R-14): PASS
 
@@ -225,21 +253,27 @@ restore). Backgrounded-inert row (R-06 invariant): HOME
 (focus=`NexusLauncherActivity`) → 24 ×5 → volume **held 73** — never
 hijacks server volume from the background, now on a real device.
 
-### Step 5 — FGS + notification survive 10 min backgrounded, screen off, real hardware (supervised): PASS
+### Step 5 — FGS + notification survive 10 min backgrounded, screen off, real hardware (supervised): PASS; media-key-control sub-row BLOCKED-HARNESS
 
 Pre-play: `repeat=single` (pins the item against auto-advance during the
 window — restored after), volume 15, pre-tap GET `pause vol 15 item
 200387 prog 93319`, crash buffer cleared. User confirmed "play 10 min
 at volume 15". Tap (541,1916) → `play prog 93899` → HOME → `svc power
 stayon false` + `keyevent 26` → **`mWakefulness=Dozing`** (the real
-device entered real Doze — beyond what AVD screen-off emulated).
+power manager's screen-off sleep state — what the AVD check could only
+approximate). **Honest scope:** `dumpsys deviceidle` held
+`mState=ACTIVE mLightState=ACTIVE` (quoted in the battery note below),
+so battery-Doze (deviceidle IDLE) never engaged — 10 min on USB is far
+short of its timers. The survival claim covers screen-off + per-uid
+firewall + the real battery stack, **not** deviceidle IDLE.
 
 | Check | t0 = 11:05:24 | t+10 min = 11:15:47 (+623 s) |
 |---|---|---|
+| screen | `mWakefulness=Dozing` (`dumpsys power`) | `mWakefulness=Dozing` (still off) |
 | process | pid **16164** | pid **16164** (no restart) |
 | FGS | `isForeground=true foregroundId=1124 types=0x00000002` (mediaPlayback), `infoAllowStartForeground … uidState: TOP; code:PROC_STATE_TOP; startForegroundCount:1` | `isForeground=true … types=0x00000002` |
-| notification | `id=1124 flags=NO_CLEAR\|FOREGROUND_SERVICE category=transport actions=3 MediaStyle importance=2` | present (same record, actions=3) |
-| websocket | `ESTAB …:42110 → 192.168.1.13:3688` **while Dozing** | `ESTAB …:42110` (same socket — per-uid background firewall NOT tripped; SESSION-LOG 2026-10-26 item 2 starvation did not occur with an FGS) |
+| notification | `id=1124 flags=NO_CLEAR\|FOREGROUND_SERVICE category=transport actions=3 MediaStyle importance=2` (`dumpsys notification`) | re-dumped: `dumpsys activity services` still carries the foreground record — `foregroundId=1124 foregroundNoti=Notification(… flags=NO_CLEAR\|FOREGROUND_SERVICE … actions=3 MediaStyle)` — and `dumpsys notification --noredact \| grep -c 'pkg=dev.educoder'` → **2** |
+| websocket | `ESTAB …:42110 → 192.168.1.13:3688` **with `mWakefulness=Dozing`** | `ESTAB …:42110` (same socket — per-uid background firewall NOT tripped; SESSION-LOG 2026-10-26 item 2 starvation did not occur with an FGS. t+10 `procState` not captured; the app was backgrounded with the screen off throughout, and audio kept advancing server-side, so the socket was genuinely live) |
 | server | `play prog 116479` | `play item 200387 prog 215550` (audio kept playing; repeat-single held the item) |
 | crash buffer | cleared | `logcat -b crash \| grep -c educoder` → **0** |
 
@@ -252,28 +286,40 @@ actions=3669759, mediaButtonReceiver=…/MediaButtonReceiver,
 state=PLAYING, metadata="Modern Times, The Black Keys, Magic Potion",
 volumeType=REMOTE current=15`. Shell media-button injection is the dead
 path on this device (and `input tap` on the shade/lockscreen was
-unverifiable — no image oracle), so the **control-path evidence** is:
-dv-003's release notification-shade tap (AVD) + **this device's
-release-build taps both directions**: Play tap → `play prog 93899`,
-pause tap (after wake: `keyevent 26`, keyguard dismissed via `keyevent
-82`, no PIN) → `pause item 200387 prog 127452`; the restore GETs
-(~15–30 s later) confirmed `pause` held (85355 after the restore seek).
+unverifiable — no image oracle), so **backgrounded control on THIS
+device is BLOCKED-HARNESS**; the app side is exonerated (registration
+quoted above) and the control-path coverage stands on: dv-003's release
+notification-shade tap (**AVD**) + **this device's release-build in-app
+transport taps (app foregrounded — not backgrounded control)**, both
+directions: Play tap → `play prog 93899`, pause tap (after wake:
+`keyevent 26`, keyguard dismissed via `keyevent 82`, no PIN) → `pause
+item 200387 prog 127452`; the restore GETs (~15–30 s later) confirmed
+`pause` held (85355 after the restore seek).
 
 Restore after window: `repeat=off`; `seek?position_ms=85378` → server
-holds **85355** (stable 23 ms quantization across two attempts — within
-the ≤50 ms R-03 spec); volume → 73. **Player start↔end diff: only
+holds **85355** (stable 23 ms quantization across two attempts — well
+inside R-03's ±1 s acceptance and inside the release notes' ≤50 ms
+seek-accuracy prose; note the two bars differ — REQUIREMENTS.md R-03
+says ±1 s, the RELEASE-NOTES "what works" row says ≤50 ms; a docs
+reconciliation nit, not this unit's call); volume → 73. **Player start↔end diff: only
 `item_progress_ms 85378→85355`.** `outputs` and `queue` (1665 items):
 **byte-identical** (diff clean).
 
 External-session interference (shared server, documented not stomped —
-AGENTS §4): after the verified restore, `GET /api/player` repeatedly
-showed `play` (progressions to 110195 / 125920 / 117073 between
-11:18–11:21) — the **other active session** re-resumed the same item in
-~4–25 s audible bursts at vol 73 while **my app was force-stopped**
-(`ss` → 0 sockets), i.e. not app-attributed (2026-10-26 shared-server
-precedent). I re-paused each time (AGENTS §1 speaker safety) and left
-position untouched (my anchor restore had completed at window end).
-Handoff: `pause vol 73 item 200387` @ 11:21:24, verified stable 5 s.
+AGENTS §4): after the verified restore, `GET /api/player` twice showed
+`play` — `play vol 73 item 200387 prog 110195` (the post-restore
+cleanup check, ~11:18 — clock inferred from the t+10 stamp) and
+`play prog 89185` (5 s after the restore re-seek) — the **other active
+session** re-resuming the same item in ~25 s / ~4 s audible bursts at
+vol 73 while **my app was force-stopped** (`ss` → 0 sockets to the
+server), i.e. not app-attributed (2026-10-26 shared-server precedent).
+Re-paused each time per AGENTS §1 — quoted: `re-paused: pause vol 73
+item 200387 prog 125920` (`still: pause prog 125920` on a 3 s hold) and
+`final check: pause vol 73 item 200387 prog 117073` — and left position
+further untouched (my anchor restore had completed at window end; the
+residual progress drift is the other session's). Handoff: `pause vol 73
+item 200387 prog 117073` @ 11:21:24; the re-pause was the last player
+write from this unit — post-handoff state belongs to the other session.
 
 ### Step 6 — checks 1–3 (untested-list closure attempts): BLOCKED per scope decisions
 
@@ -302,20 +348,39 @@ Handoff: `pause vol 73 item 200387` @ 11:21:24, verified stable 5 s.
   BLOCKED-DECLINED** (same decision). The no-GMS crash-free bonus rides
   on the same flash → **stays untested** (stock Pixel 6 ships GMS; no
   GMS-less-OS observation possible without flashing).
-- **Check 4 — closable stock-hardware rows: PASS** (steps 3–5 above).
+- **Check 4 — closable stock-hardware rows: PASS** (steps 3–4, and
+  step 5 with its media-key-control sub-row **BLOCKED-HARNESS**).
 
 Battery note (stock, feeds the release-notes README line):
 `dumpsys deviceidle` `mState=ACTIVE mLightState=ACTIVE` during the
-window; the `mediaPlayback` (types=0x2) FGS carried audio + websocket
-through real Doze on the real battery manager with the screen off, no
-battery-optimisation whitelist required.
+window — battery-Doze IDLE never engaged (10 min, on USB); the
+`mediaPlayback` (types=0x2) FGS carried audio + websocket through the
+10-min **screen-off (`mWakefulness=Dozing`)** window on the real
+battery manager with no battery-optimisation whitelist required.
 
 ### Environment at handoff
 
-Release 0.1.0 installed + force-stopped (notification gone with
-process, per the START_NOT_STICKY known-limitation); `svc power stayon`
-restored (settings value `0`, as found); screen awake (as found);
-`/sdcard` temp files removed; no AVDs created or touched; `flutter run`
-ended; server `pause vol 73 item 200387`, outputs + queue byte-identical
-vs start (player: 23 ms seek-quantization delta + documented external
-re-resumes).
+Release 0.1.0 installed + force-stopped (notification state after
+force-stop not dumped — process death is terminal for the session);
+`svc power stayon` restored (settings value `0`, as found); screen awake
+(as found); `/sdcard` temp files removed; no AVDs created or touched;
+`flutter run` ended; server `pause vol 73 item 200387`, outputs + queue
+byte-identical vs start (player: 23 ms seek-quantization delta +
+documented external re-resumes).
+
+### Agentic review (criterion 7)
+
+Round 1 (two parallel reviewers: process/ai-dlc compliance + evidence
+integrity): both **request-changes**. Findings taken: "all four PASS"
+overclaimed the media-key sub-row (→ BLOCKED-HARNESS); "real Doze"
+contradicted the unit's own `deviceidle ACTIVE` quote (→ reworded to
+`mWakefulness=Dozing`, IDLE never engaged — propagated to
+RELEASE-NOTES/AGENTS/SESSION-LOG); RELEASE-NOTES RC header still named
+the `926a6be` build (→ updated to this `de1a627` build); t+10
+notification cell + step-3 sub-checks now carry quotes/honest gaps;
+R-03 ±1 s vs release-notes ≤50 ms prose flagged; re-pause quotes added.
+Not taken (evidenced rationale in-file): post-hoc rewording of the
+pre-declared completion criteria 3/5 (goalpost-moving avoided — the
+Result carries the honest labels). Round 2: re-review of the fixed
+bytes by the same reviewers — result recorded at merge time by the
+merging session.

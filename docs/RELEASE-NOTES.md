@@ -1,8 +1,11 @@
 # Release notes — OwnTone Remote 0.1.0
 
-Release candidate: `app-release.apk` 54.6 MB, built from `926a6be`
-(`flutter build apk --release`, gates green: analyze 0 issues ·
-format 0 changed · 421/421 tests). Package `dev.educoder.owntone_remote`,
+Release candidate: `app-release.apk` 54.6 MB (54,626,682 B), rebuilt
+from `de1a627` (`flutter build apk --release`, gates green: analyze 0
+issues · format 0 changed · 427/427 tests; **debug-signed** — see Known
+limitations). The dv-003 emulator pass (2026-11-13) ran the earlier
+`926a6be` build (421/421 era); dv-004 (2026-11-16) ran this build.
+Package `dev.educoder.owntone_remote`,
 minSdk 26, targetSdk 36. Verified against OwnTone **29.3**
 (JSON API `:3689`, websocket `:3688`).
 
@@ -32,7 +35,10 @@ release build runs the identical dart:io `pingInterval` code path):
   from the caching layer at either fetch site (`R-03`).
 - **Transport & controls** — play/pause/next/previous, media-session
   (lock screen) and notification actions, all working with the app
-  backgrounded (`R-04`).
+  backgrounded (`R-04`; the backgrounded shade-tap is evidenced on
+  dv-003's AVD — on the dv-004 Pixel 6 the shell media-key injection
+  path is inert, so backgrounded control was not re-verifiable there,
+  see the device gate below).
 - **Notification** — one persistent `mediaPlayback` foreground-service
   notification with the current track and Play/Next/Previous actions;
   updates from websocket events; survives backgrounding (`R-07`).
@@ -93,8 +99,12 @@ playback), so it is exempt from background-start limits while playing.
 If you want the now-playing notification and websocket sync to survive
 indefinitely with the screen off, set the app to "Don't optimize" in
 Settings → Apps → OwnTone Remote → Battery; it is not required for
-normal remote use. (Observed on Android 16 AVDs; the GrapheneOS-specific
-battery behaviour is recorded at the device gate — see below.)
+normal remote use. (Observed on Android 16 AVDs, and on the stock
+Android 17 Pixel 6 in dv-004: the `mediaPlayback` FGS carried audio +
+websocket through a 10-min screen-off window with **no** battery-
+optimisation exemption required; battery-Doze IDLE does not engage in a
+10-min on-USB window. The GrapheneOS-specific battery behaviour is
+recorded at the device gate — see below.)
 
 ## Known limitations
 
@@ -137,13 +147,19 @@ evidence: `.ai-dlc/device-verification/units/003-release-pass-disposable-avd.md`
 a Pixel 6 (`oriole`) running stock Android 17, release build (rebuilt
 on `de1a627`, debug-signed): **FGS + notification survived 10 min
 backgrounded with the screen off under the real battery manager** —
-the device entered real Doze, `isForeground=true` and the same pid
-held, and the **websocket stayed established through the Doze window**
+the device held `mWakefulness=Dozing` (screen-off sleep; deviceidle
+stayed `mState=ACTIVE` — battery-Doze IDLE is not reached in a 10-min
+on-USB window), `isForeground=true` and the same pid held, 0 crashes,
+and the **websocket stayed established through the screen-off window**
 (the device's per-uid background firewall does not starve an app with
 an active `mediaPlayback` FGS); **cold-start auto-reconnect** (app
 sockets to the server's websocket port within ~8 s of launch with no
-user action); the **volume rocker on real hardware** (±5 presses,
-server-verified step-by-step, inert while backgrounded). Full evidence:
+user action); the **volume rocker on real hardware** (server-verified
+per press-batch — 5 presses = ±25 at the default step 5 — inert while
+backgrounded). Backgrounded **media-key** control was not re-verifiable
+on the device (shell media-button injection is inert there — the app's
+media session is quoted registered; the shade-control tap remains
+evidenced on dv-003's AVD). Full evidence:
 `.ai-dlc/device-verification/units/004-pixel6-real-hardware.md`.
 
 Explicitly **untested on real hardware** (documented, not silently
@@ -165,9 +181,11 @@ decisions of 2026-11-16 (dv-004) are recorded against each item:
    which wipes the only real test device; the owner opted to keep this
    documented-only.
 3. **GrapheneOS battery-optimisation** specifics (FGS mediaPlayback is
-   an AOSP-standard type — its survival through real Doze on stock
-   Android 17 was verified in dv-004; GrapheneOS's stricter enforcement
-   was not exercised). **Declined 2026-11-16** (same flash decision).
+   an AOSP-standard type — its survival through a 10-min screen-off
+   window on stock Android 17 was verified in dv-004; battery-Doze
+   IDLE itself was not engaged there either, and GrapheneOS's stricter
+   enforcement was not exercised). **Declined 2026-11-16** (same flash
+   decision).
    The same decision keeps **crash-free operation on a true no-GMS
    ROM** untested (the stock test device ships GMS).
 

@@ -1539,10 +1539,15 @@ to 3.47.9 and re-verify all gates on it.
   hardware allows, release build (rebuilt at `de1a627`, 54.6 MB,
   **debug-signed** — accepted status) on the Pixel 6 (`25071FDF600953`,
   oriole). PASS rows: **FGS + notification + websocket survived 10 min
-  backgrounded screen-off under real Doze** (same pid 16164,
+  backgrounded screen-off (`mWakefulness=Dozing`; deviceidle held
+  ACTIVE — battery-Doze IDLE not engaged in a 10-min on-USB window)**
+  (same pid 16164,
   `isForeground=true` mediaPlayback, 0 crashes — refines the
   2026-10-26 firewall finding: the per-uid deny does NOT starve an app
-  holding an active `mediaPlayback` FGS); **cold-start auto-reconnect**
+  holding an active `mediaPlayback` FGS); the backgrounded **media-key**
+  re-check was **BLOCKED-HARNESS** (shell injection inert; media session
+  quoted registered; shade-control coverage stays dv-003's AVD tap);
+  **cold-start auto-reconnect**
   (`ss` → ESTAB to :3688/:3689 ~8 s after force-stop+launch, no user
   action); **volume rocker on real hardware** 73→98→73 (5×5 × step-5)
   + backgrounded-inert. UI-oracle pass ran on the debug build via VM
@@ -1559,12 +1564,13 @@ to 3.47.9 and re-verify all gates on it.
 - **Supervised windows honoured** (user present, each start confirmed):
   two app-UI plays of 'Modern Times' at volume 15. **External-session
   note:** after my verified byte-identical restore the other active
-  session re-resumed the same item three times in ~3 min (≈4–25 s
+  session re-resumed the same item twice in ~3 min (≈4–25 s
   audible bursts at vol 73, app was force-stopped — not app-caused);
   re-paused each time per §1, left position alone; handoff
   `pause vol 73 item 200387`. Player end-delta vs start:
-  `item_progress_ms 85378→85355` (stable 23 ms seek quantization,
-  ≤50 ms spec); outputs + queue (1665) byte-identical.
+  `item_progress_ms 85378→85355` (stable 23 ms seek quantization —
+  inside R-03's ±1 s acceptance and the ≤50 ms release-notes prose);
+  outputs + queue (1665) byte-identical.
 - Harness facts for future device units (full list in the unit Result):
   element-tree depth caps silently truncate Flutter trees (use uncapped
   walks); `substring(0,40)` on short strings threw into my own catches
