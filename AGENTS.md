@@ -47,7 +47,7 @@ iTunes-specific features.
    real-carrier-call + GrapheneOS-specific checks are a documented-
     untested list in `docs/RELEASE-NOTES.md`). Release APK 54.6 MB @
     `926a6be`; server restored byte-identical; **all intent units
-    (remote-app 001–012, dv 001–003) are DONE — PR #4 squash-merged
+    (remote-app 001–012, dv 001–004) are DONE — PR #4 squash-merged
     `85923ed` 2026-11-14; no pending work in the plan** (candidates:
     unit 012 (`_refresh` hardening in Player/OutputsController +
     test-2 delivery-gate nit) — **DONE, merged `2232dd4` (PR #7) 2026-11-16
@@ -74,7 +74,11 @@ iTunes-specific features.
     (user 2026-11-16 — device SIM has no voice service), GrapheneOS
     per-app-Network + battery checks **declined** (flash wipes THE test
     device); all three stay documented-untested in RELEASE-NOTES, never
-    silently dropped). Device decision (user
+    silently dropped. PR #8 squash-merged `e718c10` 2026-11-16 after a
+    3-round agentic review (R1 request-changes → R2 approve-with-nits →
+    R3 clear-to-merge with every figure re-derived; unit 012's
+    PR-body-carrying-lesson applied — review record lives in the unit
+    file)). Device decision (user
   2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
   and deletes it when finished** — never start or reuse an existing AVD;
   other sessions own the running emulators. Device decision (user

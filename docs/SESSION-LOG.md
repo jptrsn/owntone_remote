@@ -1596,8 +1596,9 @@ to 3.47.9 and re-verify all gates on it.
   millisecond — **clear to merge** from the evidence-integrity side,
   final attribution minor fixed same-day; PR body's Doze wording
   corrected via `gh pr edit`.
-- **Next:** user merge of PR #8 (squash per convention; PR body's
-  "real Doze" wording gets corrected at merge); remaining open:
+- **PR #8 MERGED (squash `e718c10`), user-authorized 2026-11-16;**
+  branch deleted both sides; local main synced. dv-004 is DONE on main.
+- **Next:** remaining open:
   signing beyond debug-signed sideload, release tag (deferred), items
   1–3 of the RELEASE-NOTES untested list (owner's documented call
   2026-11-16); docs nit for a future pass: REQUIREMENTS R-03 seek bar
