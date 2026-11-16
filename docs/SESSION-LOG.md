@@ -1516,3 +1516,18 @@ to 3.47.9 and re-verify all gates on it.
   1c precondition via the adapter's PUT line) taken, full-M4 re-verified
   red on the hardened tests. Suite 427/427, analyze 0, format 0. PR #6
   clear for merge (user call); retarget to main after PR #5 merges.
+
+## 2026-11-16 — PR #5 merged (`3100817`); PR #6 auto-closed at base-merge → successor PR #7 merged (`2232dd4`): unit 012 DONE on main (opencode)
+
+- User authorized both merges. PR #5 (CI pin 3.47.9) squash-merged as
+  `3100817`. Merging it with `--delete-branch` deleted the stacked base
+  `ci/flutter-3.47.9`, which **auto-closed PR #6** before the retarget —
+  the step-1 reversal trap from the review skill, caught live. Recovery:
+  opened PR #7 from the same (already-reviewed, byte-identical) head
+  branch against `main`, linked the #6 review record, CI gates green
+  (7m47s), squash-merged as `2232dd4`. AGENTS status block now records
+  remote-app 001–012 + dv 001–003 all DONE; lesson written there:
+  retarget the stacked PR to `main` BEFORE merging the base PR.
+- Remaining open items unchanged: real-hardware checks 1–3
+  (docs/RELEASE-NOTES.md), signing decision for anything beyond
+  debug-signed sideload, release tag (deferred by the user).

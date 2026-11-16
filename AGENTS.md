@@ -47,12 +47,18 @@ iTunes-specific features.
    real-carrier-call + GrapheneOS-specific checks are a documented-
     untested list in `docs/RELEASE-NOTES.md`). Release APK 54.6 MB @
     `926a6be`; server restored byte-identical; **all intent units
-    (remote-app 001–011, dv 001–003) are DONE — PR #4 squash-merged
+    (remote-app 001–012, dv 001–003) are DONE — PR #4 squash-merged
     `85923ed` 2026-11-14; no pending work in the plan** (candidates:
-    same-shape `_refresh` hardening in Player/OutputsController +
-    test-2 delivery-gate nit — **approved 2026-11-14, building as
-    unit 012**; CI pin bump to the host's Flutter 3.47.9 — **approved
-    2026-11-14, in flight**; real-hardware checks 1–3; signing for
+    unit 012 (`_refresh` hardening in Player/OutputsController +
+    test-2 delivery-gate nit) — **DONE, merged `2232dd4` (PR #7) 2026-11-16
+    after a full agentic-review pass** (round 1 request-changes →
+    criterion-1c tests + Result corrections → round 2 approve, M2/M3/M4
+    kill-checks reproduced; Player/Outputs now carry the unit-011
+    single-flight + trailing shape); CI pin bump to the host's Flutter
+    3.47.9 — **DONE, merged `3100817` (PR #5)**; Stacked-PR lesson
+    (PR #6): merging the base PR with --delete-branch auto-closes the
+    stacked PR — retarget it to `main` BEFORE merging the base, or open
+    a successor PR against main carrying the review record; real-hardware checks 1–3; signing for
     anything beyond debug-signed sideload). Device decision (user
   2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
   and deletes it when finished** — never start or reuse an existing AVD;
