@@ -1626,7 +1626,36 @@ to 3.47.9 and re-verify all gates on it.
   (`RELEASE_NOTES_FILE=` / `RELEASE_NOTES_ASK=1` to override).
   `--dry-run` does everything except tag/push/release.
 - **Evidence:** `./release.sh --dry-run` on the tooling branch: preflight
-  → gates green → notes preview from RELEASE-NOTES.md → 3 APKs
-  (18M/16M/20M) → exit without push; dry-run APKs deleted; `git tag -l`
-  and `gh release list` verified still empty.
+  → gates green → notes preview from RELEASE-NOTES.md → 3 APKs (flutter
+  decimal sizes 16.8 / 19.4 / 20.9 MB — `du -h` rounding varies per
+  rebuild, quote flutter's figures) → exit without push; dry-run APKs
+  deleted; `git tag -l` and `gh release list` verified still empty.
 - AGENTS status block: signing candidate marked decided.
+- **Review round 1 (two parallel reviewers, own worktrees, obtainium +
+  flutter-deployment indexed for grounding):** R1 (correctness/release-
+  safety) request-changes, R2 (design/docs) approve-with-nits; four
+  overlapping majors, all accepted (`0908b74`): (1) both flagged the drift
+  warning citing a CI gate-on-tag that `gates.yml` never had (triggers: PR
+  + main only) — added `tags: ['v*']` so the claim is true; (2) no guard
+  that the cut is from `main` at `origin/main` (ungated branch tags could
+  ship) — added; (3/4) the notes *default path* was the unsafe path —
+  `docs/RELEASE-NOTES.md` is version-pinned and its opening describes a
+  54.6 MB fat APK @ `de1a627` while three per-ABI APKs get uploaded: added
+  a version-mention guard (`RELEASE_NOTES_FORCE=1` overrides) + generated
+  provenance header + honest "40 of N — the rest IS published" preview.
+  Minors accepted: silent deaths under `set -e` (version-parse guard was
+  dead code; `flutter --version` failure hard-killed the soft warning;
+  `ls-remote` fail-open), non-atomic `gh release create` recovery
+  commands on failure, clean-tree re-check before tagging, unknown-arg
+  death (a `--dryrun` typo reached the publish path), CI pin derived from
+  gates.yml, Obtainium footer ABI-filter hint (wiki: the arch filter is
+  opt-in and filename-based; three APKs without it = manual pick per
+  update). **Refuted with evidence:** dry-run APK residue cannot dirty the
+  tree — `*.apk` is gitignored (`.gitignore:16`); the original dirty-tree
+  stop was the untracked script file itself.
+- **Re-verify after fixes:** `bash -n`; micro-tests (quoted-YAML version
+  parse, missing-version guard, `ls-remote` failure path, stale-notes
+  guard); guards exercised for real — unknown arg → usage, off-main →
+  refused; full `--dry-run` in a scratch clone (main == origin of a
+  throwaway bare repo, cold gradle): gates green → 3 APKs (16.8/19.4/20.9
+  MB) → 0 tags local and remote. Reviewer worktrees removed.

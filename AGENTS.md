@@ -63,7 +63,10 @@ iTunes-specific features.
     Obtainium, debug-signed accepted for that channel; `release.sh` (the
     tooling PR carrying this line) gates + builds per-ABI APKs + tags +
     publishes via `gh release`, notes defaulting to
-    `docs/RELEASE-NOTES.md`**). **`device-verification`
+    `docs/RELEASE-NOTES.md` (version-guarded + provenance header); it
+    only cuts from `main` at `origin/main`, and `gates.yml` gained
+    `tags: ['v*']` so the tag push itself re-runs the gates as the
+    artifact's CI cross-check**). **`device-verification`
     unit 004 DONE 2026-11-16** (stock-Android-17 **real-hardware pass
     on the Pixel 6**: FGS + notification + websocket survived 10 min
     backgrounded **screen-off (`mWakefulness=Dozing`; deviceidle held
