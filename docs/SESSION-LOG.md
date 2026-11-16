@@ -1589,9 +1589,13 @@ to 3.47.9 and re-verify all gates on it.
   integrity) both **request-changes** (media-key PASS label + "real
   Doze" overclaims + stale RC header — fixed in `94c9a61`, criteria
   deliberately NOT reworded post-hoc); round 2 both **approve-with-
-  nits**, all findings RESOLVED, remaining nits taken in the follow-up
-  commit (controller-level test citation, burst-length labels vs
-  detection snapshots, inferred-clock drop, grep-count caveat).
+  nits**, all findings RESOLVED, remaining nits taken in `45f1fcb`
+  (controller-level test citation, burst-length labels vs detection
+  snapshots, inferred-clock drop, grep-count caveat); round 3
+  (evidence reviewer on the nit-fix): every figure re-derived to the
+  millisecond — **clear to merge** from the evidence-integrity side,
+  final attribution minor fixed same-day; PR body's Doze wording
+  corrected via `gh pr edit`.
 - **Next:** user merge of PR #8 (squash per convention; PR body's
   "real Doze" wording gets corrected at merge); remaining open:
   signing beyond debug-signed sideload, release tag (deferred), items

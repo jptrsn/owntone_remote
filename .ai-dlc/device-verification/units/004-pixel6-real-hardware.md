@@ -387,8 +387,9 @@ RELEASE-NOTES/AGENTS/SESSION-LOG); RELEASE-NOTES RC header still named
 the `926a6be` build (→ updated to this `de1a627` build); t+10
 notification cell + step-3 sub-checks now carry quotes/honest gaps;
 R-03 ±1 s vs release-notes ≤50 ms prose flagged; re-pause quotes added.
-Not taken (evidenced rationale in-file, **endorsed by both round-2
-reviewers** citing the dv-003 precedent): post-hoc rewording of the
+Not taken (evidenced rationale in-file, endorsed by both round-2
+reviewers — the dv-003 precedent cited by the process reviewer):
+post-hoc rewording of the
 pre-declared completion criteria 3/5 (goalpost-moving avoided — the
 Result carries the honest labels). Round 2 (same reviewers, re-run on
 the fixed bytes, gates re-run green): both **approve-with-nits**; all
@@ -400,4 +401,11 @@ snapshots (real audible bursts ≈40.6 s / ≈31.7 s from the anchor, not
 puts the post-restore checks at ≥ ~11:19), the t+10 `grep -c → 2`
 marked corroboration-only. Out-of-scope handoff: REQUIREMENTS R-03
 ±1 s vs RELEASE-NOTES ≤50 ms seek prose — reconcile before the release
-tag.
+tag. Round 3 (evidence reviewer, nit-fix diff `94c9a61..45f1fcb`,
+gates green): all round-1/2 items **RESOLVED** with independently
+recomputed arithmetic (every burst figure reproduces to the
+millisecond; the ≈11:18:41 pause-tap derivation re-derived exactly) —
+**clear to merge** from the evidence-integrity side; its final minor
+(this record's dv-003-citation attribution) fixed in the same commit.
+The PR body's "real Doze" wording was corrected via `gh pr edit` after
+round 2.
