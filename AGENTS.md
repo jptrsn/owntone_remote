@@ -96,7 +96,17 @@ iTunes-specific features.
     `test/glyph_hygiene_test.dart` bans the glyph family. 2-round agentic
     review (R1 approve-with-nits → tautological assertion + a11y flag
     fixed; R2 mutation-verified both new assertions → mergeable). Squash
-    `c86b278`). Device decision (user
+    `c86b278`). **2026-11-17: v0.1.0 released**
+    (first GitHub release + Obtainium channel, tag `v0.1.0` @ `29edc22`,
+    `release.sh` published 3 per-ABI debug-signed APKs, tag CI cross-check
+    green); **GitFlow adopted** (PR #13 `f3aea52` — protected main,
+    develop integration, gated release candidates; this file's § Branching
+    & CI is authoritative); **rating double-tap fixed** (PR #12
+    `a1f8371` — OwnTone commits ratings asynchronously (PUT 2xx before
+    the DB commit; track GET stale 0.1–1.6 s, curl-measured), the single
+    confirm-GET read stale and rolled the optimistic stars back; fix =
+    write-shadow + confirm polling in RatingController, 2 review rounds,
+    435/435). Device decision (user
   2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
   and deletes it when finished** — never start or reuse an existing AVD;
   other sessions own the running emulators. Device decision (user
