@@ -583,10 +583,18 @@ class _ModeToggle extends StatelessWidget {
       return IconButton.filledTonal(
         onPressed: onPressed,
         color: Theme.of(context).colorScheme.primary,
+        // The active state is colour-only on the glyph (shuffle's icon is
+        // constant); isSelected makes _SelectableIconButton emit
+        // Semantics(selected:) so a11y announces the toggle state.
+        isSelected: true,
         icon: Icon(data),
       );
     }
-    return IconButton.outlined(onPressed: onPressed, icon: Icon(data));
+    return IconButton.outlined(
+      onPressed: onPressed,
+      isSelected: false,
+      icon: Icon(data),
+    );
   }
 }
 

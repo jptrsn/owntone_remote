@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show Tristate;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -743,9 +744,9 @@ void main() {
       final button = tester.widget<IconButton>(buttonFinder);
       expect(button.color, isNotNull);
       // filledTonal paints its container through the button's own Material
-      // (nearest ancestor of the icon); the outlined variant's Material is
-      // transparent (color null). Scaffold's Material is further out, so
-      // .first isolates the button's.
+      // (nearest ancestor of the icon). Assert the actual fill — every M3
+      // variant renders a Material with a non-null color (outlined's is
+      // Colors.transparent), so isNotNull would be tautological.
       final buttonMaterial = tester.widget<Material>(
         find
             .ancestor(
@@ -754,11 +755,27 @@ void main() {
             )
             .first,
       );
+      final expectedFill = Theme.of(
+        tester.element(find.byIcon(Icons.shuffle)),
+      ).colorScheme.secondaryContainer;
       expect(
         buttonMaterial.color,
-        isNotNull,
-        reason: 'active toggle renders filledTonal (container paints)',
+        expectedFill,
+        reason: 'active toggle renders filledTonal (secondaryContainer)',
       );
+      // The glyph no longer changes with shuffle — the state must still
+      // reach accessibility: isSelected → Semantics(selected:).
+      final semantics = tester.ensureSemantics();
+      final data = tester.getSemantics(
+        find
+            .ancestor(
+              of: find.byIcon(Icons.shuffle),
+              matching: find.byType(IconButton),
+            )
+            .first,
+      );
+      expect(data.flagsCollection.isSelected, Tristate.isTrue);
+      semantics.dispose();
     });
 
     testWidgets('server-side consume → tinted hourglass button', (
