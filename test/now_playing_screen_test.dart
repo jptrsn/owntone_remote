@@ -717,8 +717,52 @@ void main() {
           reason: 'active state tints via the button',
         );
         expect(find.byIcon(Icons.repeat_one), findsNothing);
+        // Inactive side of _ModeToggle: isSelected: false must reach
+        // semantics too (green-under-mutation check for that line).
+        final semantics = tester.ensureSemantics();
+        final inactive = tester.getSemantics(
+          find
+              .ancestor(
+                of: find.byIcon(Icons.shuffle),
+                matching: find.byType(IconButton),
+              )
+              .first,
+        );
+        expect(inactive.flagsCollection.isSelected, Tristate.isFalse);
+        semantics.dispose();
       },
     );
+
+    testWidgets('server-side repeat single → repeat_one glyph + fill', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester);
+      await tester.runAsync(realPump);
+      await tester.pump();
+
+      fx.repeat = 'single';
+      channels.last.serverSend('{"notify":["options"]}');
+      await tester.runAsync(realPump);
+      await tester.pump();
+
+      expect(player.player!.repeat, Repeat.single);
+      // The activeIcon branch (R-05): single loops the current track —
+      // repeat_one glyph AND the active filledTonal fill.
+      expect(find.byIcon(Icons.repeat_one), findsOneWidget);
+      final buttonMaterial = tester.widget<Material>(
+        find
+            .ancestor(
+              of: find.byIcon(Icons.repeat_one),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      final expectedFill = Theme.of(
+        tester.element(find.byIcon(Icons.repeat_one)),
+      ).colorScheme.secondaryContainer;
+      expect(buttonMaterial.color, expectedFill);
+    });
 
     testWidgets('server-side shuffle → active affordance on the button', (
       tester,

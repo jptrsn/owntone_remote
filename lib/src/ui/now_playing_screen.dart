@@ -578,7 +578,7 @@ class _ModeToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final data = (active && activeIcon != null) ? activeIcon! : icon;
+    final effectiveIcon = (active && activeIcon != null) ? activeIcon! : icon;
     if (active) {
       return IconButton.filledTonal(
         onPressed: onPressed,
@@ -587,13 +587,13 @@ class _ModeToggle extends StatelessWidget {
         // constant); isSelected makes _SelectableIconButton emit
         // Semantics(selected:) so a11y announces the toggle state.
         isSelected: true,
-        icon: Icon(data),
+        icon: Icon(effectiveIcon),
       );
     }
     return IconButton.outlined(
       onPressed: onPressed,
       isSelected: false,
-      icon: Icon(data),
+      icon: Icon(effectiveIcon),
     );
   }
 }
