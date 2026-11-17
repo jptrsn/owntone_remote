@@ -12,10 +12,14 @@
 #     jptrsn/owntone_remote
 #   - flutter, dart, git on PATH (host should match the CI pin in
 #     .github/workflows/gates.yml — the script warns on drift)
-#   - On main, at origin/main (release cuts must be of gated, merged code —
-#     the tag push itself also triggers the CI gates as a cross-check)
-#   - Clean git working tree
-#   - Version already bumped in pubspec.yaml
+#   - On main, at origin/main. Under GitFlow (AGENTS § Branching & CI) main
+#     receives only release/v* and hotfix/* merges whose PR carried the
+#     gates as a required check — the gates already ran on the release
+#     branch (RC) and on the PR; the tag push re-runs them as the
+#     published-artifact cross-check)
+#   - Version already bumped in pubspec.yaml — on the release/v* branch,
+#     together with docs/RELEASE-NOTES.md (both land on main via the
+#     release PR; after this script publishes, merge main back to develop)
 #
 # Usage:
 #   ./release.sh            # full gate + build + tag + publish

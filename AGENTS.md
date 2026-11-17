@@ -270,7 +270,9 @@ A unit is **done** only when ALL of:
    unit file's `## Result` section** (command + output, or device observation
    with timestamp). A clean build is not evidence of behaviour.
 2. Gates pass (run from repo root once `flutter create` has run; for the
-   capture/spec intents the gates are the unit's own DoD checklist):
+   capture/spec intents the gates are the unit's own DoD checklist). CI
+   runs these same gates on `develop` (every merge) and on every release
+   candidate (`release/**`, PR → `main`) — see § Branching & CI:
 
    ```sh
    flutter analyze                                  # 0 issues
@@ -285,6 +287,38 @@ A unit is **done** only when ALL of:
 5. A `docs/SESSION-LOG.md` entry is appended.
 6. Committed (see commit rules below).
 
+## Branching & CI (GitFlow, adopted 2026-11-17)
+
+- **`main`** — production. **Protected** (PRs required; required status
+  check `gates`; enforced for admins). Receives **only** `release/v*` and
+  `hotfix/*` merges. Nothing is pushed directly to main — **docs/record
+  commits go to `develop`**, not main. CI has **no push trigger on main**,
+  so push-triggered gates never fire there (an infra flake on a docs-only
+  push made a red `gates` run appear on main on 2026-11-17 — this is what
+  motivated this shape; a red run on the tagged commit from the `v*` tag
+  trigger is a release-quality signal, visible on that SHA but gating
+  nothing on main).
+- **`develop`** — integration. All feature/bugfix units branch off
+  `develop` and PR back to it (gates required — "no broken code sits in
+  develop"). The unit-commit and PR conventions below land here.
+- **`release/vX.Y.Z`** — cut from develop when a release is planned (first
+  check the previous release came back: `git merge-base --is-ancestor
+  origin/main origin/develop` — if false, the post-release back-merge was
+  skipped; do it before cutting). Do
+  the pubspec version bump + `docs/RELEASE-NOTES.md` **on the release
+  branch**; pushing it fires the gates (the release-candidate run), and
+  the PR `release/v* → main` carries the same required check —
+  **a failing RC blocks the release**. After merge: run `./release.sh`
+  from a synced main (tags + publishes), then **merge `main` back to
+  `develop`** so the bump and notes return.
+- **`hotfix/*`** — only if required (user call). Branch from main, fix,
+  PR → main (gates required), then merge main back to develop.
+- Branch naming: `feature/*`, `fix/*`, `release/v*`, `hotfix/*`.
+- Red CI with a network/runner signature (known: Gradle NDK zip-download
+  flake — gates.yml retries the network-touching steps once internally) →
+  re-run the job once; still red after the in-step retry = real failure,
+  fix it, don't re-run again.
+
 ## ai-dlc discipline
 
 - Work **one unit at a time**. Read the intent + the unit + the specific docs
@@ -297,6 +331,8 @@ A unit is **done** only when ALL of:
 - **Commit per completed unit** — this is how handoff works in this repo.
   Message format: `<intent>/<unit>: <why, not what>`.
   Example: `spike/001: rocker works backgrounded — mediaPlayback FGS survives pause state`
+- **Unit branches come off `develop` and PR back to `develop`** (GitFlow
+  section above); `main` only ever sees release/hotfix merges.
 - **Never push** unless explicitly asked.
 - If a unit is ballooning (>10 criteria, >3 major components, you keep
   forgetting where you were), split it: write the remainder as a new unit
