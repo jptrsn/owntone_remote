@@ -481,33 +481,33 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              IconButton.outlined(
-                icon: Icon(
-                  p.shuffle ? Icons.shuffle_on : Icons.shuffle,
-                  color: p.shuffle ? theme.colorScheme.primary : null,
-                ),
+              // No Icons.shuffle_on: the upstream MaterialIcons glyph
+              // shuffle_on_baseline (0xe5a2, and all four variants) begins
+              // with a ~470/512-unit rounded-rectangle contour that paints
+              // as a solid box under Flutter's nonzero fill — measured
+              // ink/bbox ratio 0.99 (vs 0.40 for Icons.shuffle). The active
+              // state is carried by the button (filledTonal container +
+              // primary icon color via IconButton.color, which — unlike a
+              // color on the child Icon — also honours the disabled state).
+              _ModeToggle(
+                active: p.shuffle,
+                icon: Icons.shuffle,
                 onPressed: enabled
                     ? () => widget.controller.setShuffle(!p.shuffle)
                     : null,
               ),
-              IconButton.outlined(
-                icon: Icon(
-                  switch (p.repeat) {
-                    Repeat.off => Icons.repeat,
-                    Repeat.all => Icons.repeat,
-                    Repeat.single => Icons.repeat_one,
-                  },
-                  color: p.repeat != Repeat.off
-                      ? theme.colorScheme.primary
-                      : null,
-                ),
+              _ModeToggle(
+                active: p.repeat != Repeat.off,
+                icon: Icons.repeat,
+                activeIcon: p.repeat == Repeat.single
+                    ? Icons.repeat_one
+                    : Icons.repeat,
                 onPressed: enabled ? widget.controller.cycleRepeat : null,
               ),
-              IconButton.outlined(
-                icon: Icon(
-                  p.consume ? Icons.hourglass_bottom : Icons.hourglass_empty,
-                  color: p.consume ? theme.colorScheme.primary : null,
-                ),
+              _ModeToggle(
+                active: p.consume,
+                icon: Icons.hourglass_empty,
+                activeIcon: Icons.hourglass_bottom,
                 onPressed: enabled
                     ? () => widget.controller.setConsume(!p.consume)
                     : null,
@@ -551,6 +551,49 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// On/off mode toggle in the transport row (shuffle / repeat / consume).
+///
+/// The selected state is expressed on the BUTTON (filledTonal container +
+/// primary icon color through IconButton.color), not on the child Icon:
+/// a color on the child Icon also wins the disabled-state IconTheme merge,
+/// so a disconnected (disabled) toggle would still render fully tinted.
+/// IconButton.color flows through the ButtonStyle's disabled foreground,
+/// which greys it correctly.
+class _ModeToggle extends StatelessWidget {
+  const _ModeToggle({
+    required this.active,
+    required this.icon,
+    required this.onPressed,
+    this.activeIcon,
+  });
+
+  final bool active;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final IconData? activeIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveIcon = (active && activeIcon != null) ? activeIcon! : icon;
+    if (active) {
+      return IconButton.filledTonal(
+        onPressed: onPressed,
+        color: Theme.of(context).colorScheme.primary,
+        // The active state is colour-only on the glyph (shuffle's icon is
+        // constant); isSelected makes _SelectableIconButton emit
+        // Semantics(selected:) so a11y announces the toggle state.
+        isSelected: true,
+        icon: Icon(effectiveIcon),
+      );
+    }
+    return IconButton.outlined(
+      onPressed: onPressed,
+      isSelected: false,
+      icon: Icon(effectiveIcon),
     );
   }
 }
