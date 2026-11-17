@@ -1773,3 +1773,34 @@ to 3.47.9 and re-verify all gates on it.
   prompt at release.sh:231 needs stdin (`echo y | ./release.sh` when
   run non-interactively).
 - Per-ABI APKs left in the repo root (gitignored) for local install.
+
+## 2026-11-17 — first rating tap appeared dead: PR #12 (async server commit) + GitFlow: PR #13 (opencode)
+
+- **User report:** rating the playing track needed a double-tap.
+  **Reproduced on the live server with curl** (probe track 2748, original
+  rating recorded/restored/verified 80 — not the playing track):
+  `PUT /api/library/tracks/{id}?rating=` returns 2xx (200 — not the doc'd
+  204) **before** the DB commit; the track GET then serves the pre-write
+  rating for 0.1–1.6 s. The app's single confirming GET landed in that
+  window and rolled the optimistic stars back; the second tap landed
+  outside it and stuck. `docs/API.md` now records the status + the async
+  window.
+- **Fix (PR #12, → develop):** `RatingController` write-shadow — a GET
+  disagreeing with the pending write never applies; a bounded poll
+  (10 × 300 ms) confirms and clears; unconfirmed budget holds the shadow
+  (reverting to still-stale server data would re-create the bug) until a
+  later matching GET / reconnect / re-key. Fake gains `lagCommit`; two
+  regression tests (mutation-checked). 431/431.
+- **CI red on main (same day) was the runner NDK zip flake** on a
+  docs-only commit — re-ran it. User decision 2026-11-17: **GitFlow**
+  (PR #13): protected `main` (release/hotfix merges only, required
+  `gates`, admin-enforced, **no push trigger**), `develop` integration
+  (gated PRs — record commits now live here), `release/v*` = the gated
+  release-candidate line (red RC blocks the release), `hotfix/*` only if
+  required; gates.yml retries its two network steps once internally.
+  `develop` created from `main`; both branches protected
+  (`contexts: [gates]`, dismiss-stale-reviews, 0 approvals — owner
+  merges after agentic review).
+- (First PRs under the new model: #12 rating fix, #13 pipeline — both
+  target develop; the v0.1.0 release happened under the previous
+  main-based flow earlier today.)
