@@ -1697,3 +1697,11 @@ to 3.47.9 and re-verify all gates on it.
   scratch-clone dry-runs matching the recorded APK figures exactly. Two
   accepted nits left as-is (pin-fallback literal, `APK_FILES`
   word-splitting — author decline reasoned and recorded).
+- **PR #9 MERGED (squash `33cfccd`), user-authorized 2026-11-16;** branch
+  deleted both sides, local main synced. The publish channel (GitHub
+  releases + Obtainium) is now toolled on main: `./release.sh` from a
+  synced main cuts the first real release once the pubspec version is the
+  user's call (0.1.0+1 → `v0.1.0` as-is). Plan candidates from the status
+  block are now all closed; the standing "release tag (deferred)" note in
+  the dv-004 entry's Next list is likewise closed — the tag is
+  `release.sh`'s job now.
