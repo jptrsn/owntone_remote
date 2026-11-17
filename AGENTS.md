@@ -292,13 +292,19 @@ A unit is **done** only when ALL of:
 - **`main`** — production. **Protected** (PRs required; required status
   check `gates`; enforced for admins). Receives **only** `release/v*` and
   `hotfix/*` merges. Nothing is pushed directly to main — **docs/record
-  commits go to `develop`**, not main. CI has **no push trigger on main**:
-  a red check must never "appear on main" (an infra flake on a docs-only
-  push did exactly that on 2026-11-17 and is what motivated this shape).
+  commits go to `develop`**, not main. CI has **no push trigger on main**,
+  so push-triggered gates never fire there (an infra flake on a docs-only
+  push made a red `gates` run appear on main on 2026-11-17 — this is what
+  motivated this shape; a red run on the tagged commit from the `v*` tag
+  trigger is a release-quality signal, visible on that SHA but gating
+  nothing on main).
 - **`develop`** — integration. All feature/bugfix units branch off
   `develop` and PR back to it (gates required — "no broken code sits in
   develop"). The unit-commit and PR conventions below land here.
-- **`release/vX.Y.Z`** — cut from develop when a release is planned. Do
+- **`release/vX.Y.Z`** — cut from develop when a release is planned (first
+  check the previous release came back: `git merge-base --is-ancestor
+  origin/main origin/develop` — if false, the post-release back-merge was
+  skipped; do it before cutting). Do
   the pubspec version bump + `docs/RELEASE-NOTES.md` **on the release
   branch**; pushing it fires the gates (the release-candidate run), and
   the PR `release/v* → main` carries the same required check —
