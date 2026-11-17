@@ -125,6 +125,11 @@ Future<void> _initAudio(PlayerController player, SettingsStore store) async {
       config: const AudioServiceConfig(
         androidStopForegroundOnPause: false,
         androidNotificationChannelName: 'OwnTone Remote',
+        // The default ('mipmap/ic_launcher') is a fully opaque legacy icon —
+        // Android flattens the small icon's alpha, so an opaque PNG becomes
+        // a tinted blob. The monochrome launcher layer is the intended
+        // white-on-transparent silhouette (tools/icon/render.sh).
+        androidNotificationIcon: 'drawable/ic_launcher_monochrome',
       ),
     );
     _audioHandler = handler;

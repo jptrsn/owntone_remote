@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 108 108"
+   width="512"
+   height="512"
+   version="1.1"
+   id="svg10"
+   sodipodi:docname="owntone_remote_icon.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview10"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.6911879"
+     inkscape:cx="256.92"
+     inkscape:cy="245.09399"
+     inkscape:window-width="1512"
+     inkscape:window-height="916"
+     inkscape:window-x="0"
+     inkscape:window-y="38"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg10" />
+  <defs
+     id="defs6">
+    <linearGradient
+       id="bgGrad"
+       x1="0"
+       y1="0"
+       x2="108"
+       y2="108"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(0,-0.84375)">
+      <stop
+         offset="0%"
+         stop-color="#1E293B"
+         id="stop1" />
+      <stop
+         offset="100%"
+         stop-color="#0F172A"
+         id="stop2" />
+    </linearGradient>
+    <linearGradient
+       id="accentGrad"
+       x1="34.5"
+       y1="36.5"
+       x2="73.5"
+       y2="75.5"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#38BDF8"
+         id="stop3" />
+      <stop
+         offset="100%"
+         stop-color="#0284C7"
+         id="stop4" />
+    </linearGradient>
+    <linearGradient
+       id="waveGrad"
+       x1="16.996425"
+       y1="71.544456"
+       x2="40.36651"
+       y2="48.174371"
+       gradientTransform="matrix(1.8827488,0,0,0.53113829,0,0.84375)"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#0284C7"
+         stop-opacity="0.25"
+         id="stop5" />
+      <stop
+         offset="100%"
+         stop-color="#38BDF8"
+         stop-opacity="0.9"
+         id="stop6" />
+    </linearGradient>
+  </defs>
+  <!-- Background Layer (Android Adaptive Icon 108x108dp standard) -->
+  <rect
+     width="108"
+     height="108"
+     fill="url(#bgGrad)"
+     id="rect6"
+     style="fill:url(#bgGrad)"
+     x="0"
+     y="-0.84375" />
+  <!-- Foreground Layer (Centered within the 66x66dp safe zone) -->
+  <g
+     id="foreground"
+     transform="translate(0,-0.84375)">
+    <!-- Subtle outer acoustic ring -->
+    <circle
+       cx="54"
+       cy="54.84375"
+       r="30"
+       fill="none"
+       stroke="#334155"
+       stroke-width="1.5"
+       stroke-dasharray="4, 4"
+       id="circle6" />
+    <!-- Broadcast / Multi-room signal waves -->
+    <path
+       d="m 33.5,37.34375 a 27,27 0 0 1 41,0"
+       fill="none"
+       stroke="url(#waveGrad)"
+       stroke-width="3"
+       stroke-linecap="round"
+       id="path6"
+       style="stroke:url(#waveGrad)" />
+    <path
+       d="m 37.780255,41.471634 a 20.928703,19.845459 0 0 1 32.43949,0"
+       fill="none"
+       stroke="#38bdf8"
+       stroke-width="3"
+       stroke-linecap="round"
+       id="path7" />
+    <!-- Central Remote Dial / Play Control -->
+    <circle
+       cx="54"
+       cy="56"
+       r="18"
+       fill="#1e293b"
+       stroke="url(#accentGrad)"
+       stroke-width="3"
+       id="circle7"
+       style="stroke:url(#accentGrad)" />
+    <!-- Play Triangle -->
+    <polygon
+       points="50.5,63 50.5,49 62.5,56 "
+       fill="#f8fafc"
+       id="polygon7" />
+    <!-- Bottom Multi-Room Node Dots -->
+  </g>
+</svg>
