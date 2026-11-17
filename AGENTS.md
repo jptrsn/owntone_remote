@@ -58,8 +58,15 @@ iTunes-specific features.
     3.47.9 — **DONE, merged `3100817` (PR #5)**; Stacked-PR lesson
     (PR #6): merging the base PR with --delete-branch auto-closes the
     stacked PR — retarget it to `main` BEFORE merging the base, or open
-    a successor PR against main carrying the review record; signing for
-    anything beyond debug-signed sideload). **`device-verification`
+    a successor PR against main carrying the review record; signing —
+    **decided 2026-11-16: publish via GitHub releases only, installed via
+    Obtainium, debug-signed accepted for that channel; `release.sh` (the
+    tooling PR carrying this line) gates + builds per-ABI APKs + tags +
+    publishes via `gh release`, notes defaulting to
+    `docs/RELEASE-NOTES.md` (version-guarded + provenance header); it
+    only cuts from `main` at `origin/main`, and `gates.yml` gained
+    `tags: ['v*']` so the tag push itself re-runs the gates as the
+    artifact's CI cross-check**). **`device-verification`
     unit 004 DONE 2026-11-16** (stock-Android-17 **real-hardware pass
     on the Pixel 6**: FGS + notification + websocket survived 10 min
     backgrounded **screen-off (`mWakefulness=Dozing`; deviceidle held

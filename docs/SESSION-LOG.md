@@ -1603,3 +1603,97 @@ to 3.47.9 and re-verify all gates on it.
   1–3 of the RELEASE-NOTES untested list (owner's documented call
   2026-11-16); docs nit for a future pass: REQUIREMENTS R-03 seek bar
   (±1 s) vs RELEASE-NOTES "≤50 ms" prose — align before the tag.
+
+## 2026-11-16 — publish channel decided (GitHub releases + Obtainium); `release.sh` tooling PR (opencode)
+
+- **Decision (user):** the app publishes **only via GitHub releases**,
+  installed via **Obtainium**. This closes the standing "signing beyond
+  debug-signed sideload" candidate — debug signing is accepted for this
+  channel (matches dv-003/dv-004 practice). Consequence worth remembering:
+  `~/.android/debug.keystore` must stay stable across release machines or
+  Obtainium updates break with a signature mismatch (`release.sh` prints
+  that warning every run).
+- **Tooling:** added `release.sh`, modeled on
+  `~/Documents/owntone_sync/release.sh`, adapted to this repo's gates:
+  requires a clean tree BEFORE *and after* the gates (flutter's
+  `analysis_options.yaml` churn would otherwise tag a commit that isn't
+  what was built), runs the three CI gates (analyze / format
+  --set-exit-if-changed / test --exclude-tags live) before building,
+  soft-warns on host-vs-CI Flutter drift, builds `--split-per-abi`
+  (arm64-v8a / armeabi-v7a / x86_64), annotated-tags `v<version>` from
+  `pubspec.yaml`, then `gh release create --verify-tag` with per-ABI APKs.
+  Release notes default to `docs/RELEASE-NOTES.md`
+  (`RELEASE_NOTES_FILE=` / `RELEASE_NOTES_ASK=1` to override).
+  `--dry-run` does everything except tag/push/release.
+- **Evidence:** `./release.sh --dry-run` on the tooling branch: preflight
+  → gates green → notes preview from RELEASE-NOTES.md → 3 APKs → exit
+  without push; dry-run APKs deleted; `git tag -l` and `gh release list`
+  verified still empty. Literal figures (round-2 review asked which run
+  each came from): BOTH dry-runs printed flutter's
+  `✓ Built … (16.8MB)/(19.4MB)/(20.9MB)` (armeabi-v7a/arm64-v8a/x86_64,
+  decimal MB); the script's `du -h` lines printed (display order
+  arm64/armeabi/x86_64) `18M/16M/20M` on the branch run and
+  `19M/16M/20M` on the scratch clone run — APK bytes drift between builds
+  (embedded build id), so `du` rounding legitimately differs across
+  rebuilds while flutter's decimal figures held at 16.8/19.4/20.9 MB both
+  times.
+- AGENTS status block: signing candidate marked decided.
+- **Review round 1 (two parallel reviewers, own worktrees, obtainium +
+  flutter-deployment indexed for grounding):** R1 (correctness/release-
+  safety) request-changes, R2 (design/docs) approve-with-nits; four
+  overlapping majors, all accepted (`0908b74`): (1) both flagged the drift
+  warning citing a CI gate-on-tag that `gates.yml` never had (triggers: PR
+  + main only) — added `tags: ['v*']` so the claim is true; (2) no guard
+  that the cut is from `main` at `origin/main` (ungated branch tags could
+  ship) — added; (3/4) the notes *default path* was the unsafe path —
+  `docs/RELEASE-NOTES.md` is version-pinned and its opening describes a
+  54.6 MB fat APK @ `de1a627` while three per-ABI APKs get uploaded: added
+  a version-mention guard (`RELEASE_NOTES_FORCE=1` overrides) + generated
+  provenance header + honest "40 of N — the rest IS published" preview.
+  Minors accepted: silent deaths under `set -e` (version-parse guard was
+  dead code; `flutter --version` failure hard-killed the soft warning;
+  `ls-remote` fail-open), non-atomic `gh release create` recovery
+  commands on failure, clean-tree re-check before tagging, unknown-arg
+  death (a `--dryrun` typo reached the publish path), CI pin derived from
+  gates.yml, Obtainium footer ABI-filter hint (wiki: the arch filter is
+  opt-in and filename-based; three APKs without it = manual pick per
+  update). **Refuted with evidence:** dry-run APK residue cannot dirty the
+  tree — `*.apk` is gitignored (`.gitignore:16`); the original dirty-tree
+  stop was the untracked script file itself.
+- **Re-verify after fixes:** `bash -n`; micro-tests (quoted-YAML version
+  parse, missing-version guard, `ls-remote` failure path, stale-notes
+  guard); guards exercised for real — unknown arg → usage, off-main →
+  refused; full `--dry-run` in a scratch clone (main == origin of a
+  throwaway bare repo, cold gradle): gates green → 3 APKs (16.8/19.4/20.9
+  MB) → 0 tags local and remote. Reviewer worktrees removed.
+- **Review round 2 (two parallel reviewers: fix-verification + docs-truth):**
+  mechanics reviewer **approve-with-nits** — all six round-1 majors
+  confirmed fixed by reproduction (silent-death old-vs-new in scratch,
+  sync guard vs throwaway bare origin, sed pin extracts `3.47.9`, recovery
+  text matches gh 2.103.3 help). Docs reviewer **request-changes** —
+  caught what round 1 missed: my claim that the script "prints the
+  keystore-stability warning every run" was FALSE (header comment only,
+  never printed) — accepted by making the claim true (real `yellow`
+  warning after the Signing banner); plus the RC-header-vs-provenance
+  contradiction promoted to a fix (the header now says the body describes
+  the audited RC build while the attachments are built here), du/flutter
+  size reconciliation reworded per above, gates.yml comment says "first
+  remote write" (fetch/ls-remote are read-only). Mechanics nits accepted:
+  CI-pin `sed` pipeline silent-death (pipefail) made to reach its own
+  fallback, published header no longer says "on Flutter unknown", preview
+  `head -40` SIGPIPE-guarded (only reachable via >64 KB
+  RELEASE_NOTES_FILE), `--cleanup-tag` in START OVER recovery, `$#`
+  checked (a `--dry-run --typo` combo previously slipped through).
+  `APK_FILES` array suggestion declined (word-splitting is self-limiting
+  here — a spaces-version also corrupts the tag — and word-splitting is
+  the model script's bash-3.2 idiom).
+- **Review round 3 (single evidence reviewer, PR #8 convention — re-derive,
+  don't read):** **CLEAR-TO-MERGE**, no blockers/majors. Independently
+  reproduced: gates (0 / 0-of-93 / 427), 0 tags + 0 releases local and
+  remote, sed pin → `3.47.9`, `.gitignore:16` refutation, all twelve
+  claimed script features at line level, both fix commits' diffs vs the
+  round-2 record — including the keystore warning observed *printed*
+  (yellow ANSI) in the reviewer's own dry-run, and two more full
+  scratch-clone dry-runs matching the recorded APK figures exactly. Two
+  accepted nits left as-is (pin-fallback literal, `APK_FILES`
+  word-splitting — author decline reasoned and recorded).
