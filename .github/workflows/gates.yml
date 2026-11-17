@@ -1,13 +1,28 @@
 name: gates
 
+# GitFlow gate placement (AGENTS § Branching):
+#   develop     — every integration (push + PR) keeps develop green; a red
+#                 develop blocks feature merges (required status check).
+#   release/**  — the RELEASE CANDIDATE line: the same gates run on push
+#                 (RC build) and on the release PR into main; failure there
+#                 BLOCKS the release (required status check on main).
+#   hotfix/**   — hotfixes are release-candidates too (they merge to main).
+#   main        — NO push trigger: main receives only gated release/hotfix
+#                 merges, so a red check can never "appear on main" (an
+#                 infra flake on a docs push did exactly that, 2026-11-17).
+#   tags v*     — release.sh pushes the annotated tag as its first remote
+#                 write (its fetch/ls-remote calls are read-only); without
+#                 this trigger the "CI cross-checks the tag" claim in
+#                 release.sh is false and a published artifact's toolchain
+#                 is never cross-checked (PR #9 review). A red tag run is a
+#                 release-quality signal — fix and re-tag, or re-run for a
+#                 proven infra flake; it does not gate anything on main.
+
 on:
   pull_request:
+    branches: [main, develop]
   push:
-    branches: [main]
-    # release.sh pushes the annotated tag as its first remote write (its
-    # fetch/ls-remote calls are read-only); without
-    # this trigger the "CI cross-checks the tag" claim in release.sh is false
-    # and a published artifact's toolchain is never cross-checked (PR #9 review).
+    branches: [develop, 'release/**', 'hotfix/**']
     tags: ['v*']
 
 jobs:
@@ -23,8 +38,15 @@ jobs:
         with:
           flutter-version: '3.47.9'
           channel: 'stable'
-      - run: flutter pub get
+      # One retry on the two network-touching steps: observed runner flake
+      # 2026-11-17 — "Error reading Zip content from a SeekableByteChannel"
+      # while Gradle fetched the NDK side-by-side package (a docs-only
+      # commit went red on main for it). A genuine failure fails BOTH
+      # attempts; only transient network corruption is absorbed.
+      - name: flutter pub get
+        run: flutter pub get || { echo "pub get failed — retrying once"; sleep 20; flutter pub get; }
       - run: flutter analyze
       - run: dart format --output=none --set-exit-if-changed .
       - run: flutter test --exclude-tags live
-      - run: flutter build apk --debug
+      - name: flutter build apk --debug
+        run: flutter build apk --debug || { echo "build failed — retrying once"; sleep 20; flutter build apk --debug; }
