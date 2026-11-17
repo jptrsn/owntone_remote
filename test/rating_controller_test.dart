@@ -25,6 +25,9 @@ class RatingServer {
 
   bool failPut = false;
 
+  /// One-shot: the next track GET answers 503 (transient-error paths).
+  bool failNextTrackGet = false;
+
   /// When set, the PUT resolves only after this completes (optimistic-
   /// window observation).
   Completer<void>? putGate;
@@ -78,6 +81,14 @@ class RatingServer {
         return jsonResponse(o, {'outputs': []});
     }
     if (p.startsWith('/api/library/tracks/') && o.method == 'GET') {
+      if (failNextTrackGet) {
+        failNextTrackGet = false;
+        throw DioException(
+          requestOptions: o,
+          type: DioExceptionType.badResponse,
+          response: Response(requestOptions: o, statusCode: 503),
+        );
+      }
       final id = int.parse(p.substring('/api/library/tracks/'.length));
       return jsonResponse(o, {
         'id': id,
@@ -346,6 +357,53 @@ void main() {
       fast.nowPlayingRating,
       40,
       reason: 'a fresh connection is a resync-from-reality point',
+    );
+  });
+
+  test('a WS flap without a phase edge still clears a stuck shadow via '
+      'refetchAll (PR #12 review R2 — the second reconnect clear is the '
+      'only escape on this path)', () async {
+    server.lagCommit = true;
+    final fast = fastRating(polls: 1, delay: Duration.zero);
+    await fast.init();
+    await pump();
+    await fast.setRating(42, 100);
+    server.commitRating(42, 40); // server settles elsewhere
+    expect(fast.nowPlayingRating, 100, reason: 'shadow holds, same socket');
+
+    channels.last.serverClose(); // flap: server drops the websocket
+    await pump();
+    await pump(300); // ws backoff reconnect (test backoff is ~5-20 ms)
+    expect(
+      fast.nowPlayingRating,
+      40,
+      reason: 'reconnect resyncs server truth via refetchAll',
+    );
+  });
+
+  test('a transient confirm-GET error keeps the poll window (PR #12 review '
+      'R2 — continue, not abandon)', () async {
+    server.lagCommit = true;
+    final fast = fastRating(polls: 40, delay: const Duration(milliseconds: 10));
+    await fast.init();
+    await pump();
+    server.failNextTrackGet = true; // first confirm poll 503s
+    final pending = fast.setRating(42, 20);
+    await pump(40);
+    expect(fast.nowPlayingRating, 20, reason: 'window alive past error');
+    server.commitRating(42, 20);
+    await pending;
+    expect(fast.nowPlayingRating, 20);
+    // Prove the poll (not the hold) produced that state — a loop that
+    // had ABANDONED on the 503 would leave the shadow masking a later
+    // external edit (mutation-checked: continue→return reddens this).
+    server.commitRating(42, 40);
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(
+      fast.nowPlayingRating,
+      40,
+      reason: 'poll continued past the error, matched, and cleared',
     );
   });
 

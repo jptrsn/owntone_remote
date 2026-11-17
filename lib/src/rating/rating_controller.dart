@@ -168,6 +168,9 @@ class RatingController extends ChangeNotifier {
       // stop/replay inside the window).
       if (trackId == _overrideTrackId && fetched != _overrideValue) {
         _logger.d('rating GET stale vs pending write — holding optimistic');
+        // Belt-and-braces: unreachable while every key-nulling site drops
+        // the shadow (null branch / rollback / reconnect) — do not delete
+        // either half without re-checking that invariant (PR #12 R2).
         if (_nowPlayingTrackId != trackId) {
           _nowPlayingTrackId = trackId;
           if (!_disposed) notifyListeners();
