@@ -1804,3 +1804,17 @@ to 3.47.9 and re-verify all gates on it.
 - (First PRs under the new model: #12 rating fix, #13 pipeline — both
   target develop; the v0.1.0 release happened under the previous
   main-based flow earlier today.)
+
+### Addendum (same session) — PRs #12 and #13 MERGED to develop
+
+- PR #12 (rating async-commit fix) squash `a1f8371`: 2-round agentic
+  review (R1 request-changes — guard could leave stars tap-dead after
+  stop/replay + false reconnect escape → fixed; R2 approve-with-nits,
+  independent re-mutation, two unpinned defensive lines pinned +
+  round-1 mutation claim corrected). 435/435.
+- PR #13 (GitFlow pipeline) squash `f3aea52`: 1-round agentic review
+  (approve-with-nits — every platform claim verified against the live
+  API; "appear on main" reworded for the tag-run nuance; globs aligned;
+  back-merge pre-flight added). `main`/`develop` protected: PRs only,
+  required `gates`, admin-enforced; push-triggered gates never fire on
+  main. First PRs through the new flow (this record commit is one).
