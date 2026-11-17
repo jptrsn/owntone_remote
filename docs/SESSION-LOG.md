@@ -1753,3 +1753,23 @@ to 3.47.9 and re-verify all gates on it.
   point — state was the other session's `stop` throughout).
 - **Next:** unchanged — first real release is the user's call (pubspec
   version + `./release.sh` from a synced main).
+
+## 2026-11-17 — **v0.1.0 RELEASED** — first GitHub release, Obtainium channel live (opencode)
+
+- `./release.sh` cut `v0.1.0` from main @ `29edc22` (gates green locally
+  AND on the tag push — the CI `tags: ['v*']` cross-check run completed
+  green after publish). Release:
+  https://github.com/jptrsn/owntone_remote/releases/tag/v0.1.0 — three
+  per-ABI release APKs (arm64-v8a 19.5 MB, armeabi-v7a 17.0 MB, x86_64
+  21.0 MB), debug-signed, provenance header + docs/RELEASE-NOTES.md body.
+- Notes provenance paragraph rewritten pre-cut (it still described
+  dv-004's `de1a627` build; v0.1.0 additionally carries PR #10 icon +
+  PR #11 shuffle fix, both debug-build-verified — stated in the notes).
+- Obtainium: add `https://github.com/jptrsn/owntone_remote`, enable
+  "filter APKs by CPU architecture". Keystore: this machine's
+  `~/.android/debug.keystore` (2025-01-05) is the signing identity —
+  keep it (rotation = users uninstall/reinstall).
+- Dry-run first per the script's design; the one gotcha: the proceed
+  prompt at release.sh:231 needs stdin (`echo y | ./release.sh` when
+  run non-interactively).
+- Per-ABI APKs left in the repo root (gitignored) for local install.
