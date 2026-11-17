@@ -297,7 +297,6 @@ void main() {
       Icons.skip_next,
       Icons.skip_previous,
       Icons.shuffle,
-      Icons.shuffle_on,
       Icons.repeat,
       Icons.repeat_one,
       Icons.hourglass_bottom,
@@ -691,23 +690,38 @@ void main() {
   });
 
   group('WS options events update the UI without a manual refresh (R-05)', () {
-    testWidgets('server-side repeat → tinted repeat icon', (tester) async {
-      await tester.runAsync(wireUp);
-      await pumpScreen(tester);
-      await tester.runAsync(realPump);
-      await tester.pump();
+    testWidgets(
+      'server-side repeat → tinted repeat button (parent-tint pattern)',
+      (tester) async {
+        await tester.runAsync(wireUp);
+        await pumpScreen(tester);
+        await tester.runAsync(realPump);
+        await tester.pump();
 
-      fx.repeat = 'all';
-      channels.last.serverSend('{"notify":["options"]}');
-      await tester.runAsync(realPump);
-      await tester.pump();
+        fx.repeat = 'all';
+        channels.last.serverSend('{"notify":["options"]}');
+        await tester.runAsync(realPump);
+        await tester.pump();
 
-      expect(player.player!.repeat, Repeat.all);
-      final icon = tester.widget<Icon>(find.byIcon(Icons.repeat));
-      expect(icon.color, isNotNull, reason: 'active state is tinted');
-    });
+        expect(player.player!.repeat, Repeat.all);
+        final button = tester.widget<IconButton>(
+          find.ancestor(
+            of: find.byIcon(Icons.repeat),
+            matching: find.byType(IconButton),
+          ),
+        );
+        expect(
+          button.color,
+          isNotNull,
+          reason: 'active state tints via the button',
+        );
+        expect(find.byIcon(Icons.repeat_one), findsNothing);
+      },
+    );
 
-    testWidgets('server-side shuffle → shuffle_on icon', (tester) async {
+    testWidgets('server-side shuffle → active affordance on the button', (
+      tester,
+    ) async {
       await tester.runAsync(wireUp);
       await pumpScreen(tester);
       await tester.runAsync(realPump);
@@ -719,10 +733,37 @@ void main() {
       await tester.pump();
 
       expect(player.player!.shuffle, isTrue);
-      expect(find.byIcon(Icons.shuffle_on), findsOneWidget);
+      // No shuffle_on glyph (solid-box upstream bug) — the shuffle glyph is
+      // constant and the ACTIVE state rides on the button instead.
+      expect(find.byIcon(Icons.shuffle), findsOneWidget);
+      final buttonFinder = find.ancestor(
+        of: find.byIcon(Icons.shuffle),
+        matching: find.byType(IconButton),
+      );
+      final button = tester.widget<IconButton>(buttonFinder);
+      expect(button.color, isNotNull);
+      // filledTonal paints its container through the button's own Material
+      // (nearest ancestor of the icon); the outlined variant's Material is
+      // transparent (color null). Scaffold's Material is further out, so
+      // .first isolates the button's.
+      final buttonMaterial = tester.widget<Material>(
+        find
+            .ancestor(
+              of: find.byIcon(Icons.shuffle),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(
+        buttonMaterial.color,
+        isNotNull,
+        reason: 'active toggle renders filledTonal (container paints)',
+      );
     });
 
-    testWidgets('server-side consume → tinted hourglass', (tester) async {
+    testWidgets('server-side consume → tinted hourglass button', (
+      tester,
+    ) async {
       await tester.runAsync(wireUp);
       await pumpScreen(tester);
       await tester.runAsync(realPump);
@@ -734,8 +775,13 @@ void main() {
       await tester.pump();
 
       expect(player.player!.consume, isTrue);
-      final icon = tester.widget<Icon>(find.byIcon(Icons.hourglass_bottom));
-      expect(icon.color, isNotNull);
+      final button = tester.widget<IconButton>(
+        find.ancestor(
+          of: find.byIcon(Icons.hourglass_bottom),
+          matching: find.byType(IconButton),
+        ),
+      );
+      expect(button.color, isNotNull);
     });
   });
 
