@@ -1,11 +1,15 @@
 # Release notes — OwnTone Remote 0.1.0
 
-Release candidate: `app-release.apk` 54.6 MB (54,626,682 B), rebuilt
-from `de1a627` (`flutter build apk --release`, gates green: analyze 0
-issues · format 0 changed · 427/427 tests; **debug-signed** — see Known
-limitations). The dv-003 emulator pass (2026-11-13) ran the earlier
-`926a6be` build (421/421 era); dv-004 (2026-11-16) ran this build.
-Package `dev.educoder.owntone_remote`,
+Release: built from tag `v0.1.0` by `release.sh` (gates green on this
+commit: analyze 0 issues · format 0 changed · 429/429 tests;
+**debug-signed** — see Known limitations; a generated provenance header
+with the build commit and artifact sizes is published above these notes).
+The device-verification release builds (dv-003 on `926a6be`, dv-004 on
+`de1a627`) predate two merged changes: the launcher/web icon (PR #10 —
+user-eyeballed on a debug build) and the shuffle-toggle fix (PR #11 —
+measured on-device before/after). Both are UI-only, verified on debug
+builds; the release binary at this tag was not itself re-run on a
+device. Package `dev.educoder.owntone_remote`,
 minSdk 26, targetSdk 36. Verified against OwnTone **29.3**
 (JSON API `:3689`, websocket `:3688`).
 
