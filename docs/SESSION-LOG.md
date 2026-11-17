@@ -1705,3 +1705,22 @@ to 3.47.9 and re-verify all gates on it.
   block are now all closed; the standing "release tag (deferred)" note in
   the dv-004 entry's Next list is likewise closed — the tag is
   `release.sh`'s job now.
+
+## 2026-11-16/17 — publish tooling + real app icon: PR #9 (`33cfccd`) and PR #10 (`36ca222`) MERGED (opencode)
+
+- **PR #9 `release.sh`** (GitHub releases + Obtainium channel): 3-round
+  agentic review (R1 request-changes → fixes `0908b74` → R2 approve /
+  request-changes on a false docs claim → made true in `19135fd` → R3
+  evidence pass clear-to-merge with every figure re-derived). Review
+  record in the PR body + the session log above.
+- **PR #10 real app icon** (user's SVG → adaptive launcher bg/fg/
+  monochrome + web icons, `adaptive_icon_foreground_inset: 0`,
+  audio_service `androidNotificationIcon` → `drawable/ic_launcher_
+  monochrome`): reviewed by measurement (no image oracle — gradient-stop
+  corner pixels, safe-zone bbox, aapt2 resource check) + gates; user
+  eyeballed the debug build on `RemoteDev_API_36` (emulator-5554) and
+  approved/merged. Icon sources + render.sh live in `tools/icon/`.
+- AVD `RemoteDev_API_36` left running with the merged debug build
+  installed for the user's inspection (server untouched, no playback).
+- **Next:** first real release is the user's call: set the pubspec
+  version, `./release.sh` from a synced main.
