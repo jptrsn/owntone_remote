@@ -29,6 +29,16 @@ class RatingServer {
   /// window observation).
   Completer<void>? putGate;
 
+  /// When true, a successful rating PUT does NOT commit `ratings` —
+  /// `GET /api/library/tracks/{id}` keeps serving the pre-write value
+  /// until [commitRating] applies it. Models the OwnTone 29.3 async rating
+  /// commit measured 2026-11-17 (GET served the stale rating for 0.1–1.6 s
+  /// AFTER the PUT returned 2xx).
+  bool lagCommit = false;
+
+  /// Apply a deferred PUT (pairs with [lagCommit]).
+  void commitRating(int id, int value) => ratings[id] = value;
+
   /// Every `PUT /api/library/tracks/{id}?rating=` line seen.
   final List<String> puts = [];
 
@@ -100,7 +110,7 @@ class RatingServer {
     final p = o.path;
     final id = int.parse(p.substring('/api/library/tracks/'.length));
     final q = o.queryParameters.map((k, v) => MapEntry(k, v.toString()));
-    ratings[id] = int.parse(q['rating']!);
+    if (!lagCommit) ratings[id] = int.parse(q['rating']!);
     return Response(requestOptions: o, statusCode: 204);
   }
 }
@@ -189,6 +199,93 @@ void main() {
     server.putGate!.complete();
     await pending;
     expect(rating.nowPlayingRating, 20);
+  });
+
+  RatingController fastRating({required int polls, required Duration delay}) {
+    // Replace the suite's default controller with a fast-polling one (the
+    // production budget is ~3 s; these tests observe the window, not the
+    // real timers). tearDown disposes whatever `rating` points at.
+    rating.dispose();
+    rating = RatingController(
+      connection: conn,
+      player: player,
+      confirmPolls: polls,
+      confirmPollDelay: delay,
+    );
+    return rating;
+  }
+
+  test('async server commit: the FIRST tap sticks — stale GETs and a database '
+      'event inside the commit window cannot roll the optimistic stars back '
+      '(R-12; OwnTone 29.3 async rating commit measured 2026-11-17)', () async {
+    // Repro of the user report: PUT 2xx returns before the server's
+    // commit; GET keeps serving the pre-write rating for 0.1–1.6 s
+    // (curl-sampled). Pre-fix the single confirm-GET read stale and the
+    // stars snapped back — the user had to tap twice.
+    server.lagCommit = true;
+    final fast = fastRating(polls: 2, delay: Duration.zero);
+    await fast.init();
+    await pump();
+    expect(fast.nowPlayingRating, 60, reason: 'baseline loaded');
+
+    final ok = await fast.setRating(42, 100);
+    expect(ok, isTrue);
+    expect(server.ratings[42], 60, reason: 'fake server has NOT committed');
+    expect(
+      fast.nowPlayingRating,
+      100,
+      reason: 'optimistic survives the exhausted confirm polls',
+    );
+
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(
+      fast.nowPlayingRating,
+      100,
+      reason: 'a ws-driven refetch landing on stale data holds the shadow',
+    );
+
+    server.commitRating(42, 100); // the async commit finally lands
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(fast.nowPlayingRating, 100);
+
+    server.commitRating(42, 40); // external edit AFTER confirmation…
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(
+      fast.nowPlayingRating,
+      40,
+      reason: 'the confirming GET cleared the shadow — external edits apply',
+    );
+  });
+
+  test('async server commit: the confirm poll reconciles mid-window without '
+      'any ws event (R-12)', () async {
+    server.lagCommit = true;
+    final fast = fastRating(polls: 30, delay: const Duration(milliseconds: 10));
+    await fast.init();
+    await pump();
+
+    final pending = fast.setRating(42, 20);
+    await pump(40); // a few stale polls run
+    expect(
+      fast.nowPlayingRating,
+      20,
+      reason: 'optimistic through the stale window',
+    );
+    server.commitRating(42, 20); // commit lands while the budget runs
+    await pending;
+    expect(fast.nowPlayingRating, 20);
+
+    server.commitRating(42, 40);
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(
+      fast.nowPlayingRating,
+      40,
+      reason: 'the matching poll cleared the shadow',
+    );
   });
 
   test(

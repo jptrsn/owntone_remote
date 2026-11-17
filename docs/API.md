@@ -110,7 +110,7 @@ Add response: `{version, count, items[]}`.
 | GET | `/api/library/albums[?offset&limit]` | `paging` of albums |
 | GET | `/api/library/albums/{id}/tracks[?offset&limit]` | `paging` of tracks |
 | GET | `/api/library/tracks/{id}` | single track (has `rating`) |
-| PUT | `/api/library/tracks/{id}?rating=0-100` | 204 (R-12; supervised). Also `usermark`, `play_count`, `skip_count`, … |
+| PUT | `/api/library/tracks/{id}?rating=0-100` | 200 observed (docs say 204) (R-12; supervised). **Commit is async:** `GET /api/library/tracks/{id}` can serve the PRE-write rating for 0.1–1.6 s after the PUT returns (curl-sampled 2026-11-17) — clients must not single-GET-confirm. Also `usermark`, `play_count`, `skip_count`, … |
 | PUT | `/api/library/tracks` | body `{"tracks":[{"id":1,"rating":100},…]}` batch |
 | GET | `/api/library/genres` | `paging` of `{name}` (browse-info) |
 | GET | `/api/library/count` | tracks/artists/albums/db_playtime (+`expression`) |
