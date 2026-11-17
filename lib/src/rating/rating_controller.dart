@@ -51,8 +51,10 @@ class RatingController extends ChangeNotifier {
 
   /// The pending user write the UI is holding optimistic (server value is
   /// shadowed for this track until a GET confirms it equals [_overrideValue]
-  /// — or a newer write, an item change, or a reconnect replaces it). See
-  /// [_confirmRating] for why it is NOT abandoned when the polls run out.
+  /// — or a newer write, an item change, or a reconnect replaces it; "the
+  /// shadow" throughout this file and the PR narrative == this `_override*`
+  /// pair). See [_confirmRating] for why it is NOT abandoned when the polls
+  /// run out.
   int? _overrideTrackId;
   int? _overrideValue;
   int _confirmGen = 0;
@@ -90,7 +92,11 @@ class RatingController extends ChangeNotifier {
     _lastPhase = _conn.phase;
     _conn.addListener(_onConnectionChanged);
     _eventsSub = _conn.events.listen(_onWsEvents);
-    _refetchSub = _conn.refetchAll.listen((_) => unawaited(_refreshRating()));
+    _refetchSub = _conn.refetchAll.listen((_) {
+      _overrideTrackId = null;
+      _overrideValue = null;
+      unawaited(_refreshRating());
+    });
     _player.addListener(_onPlayerChanged);
     if (_conn.isConnected) unawaited(_refreshRating());
   }
@@ -101,6 +107,13 @@ class RatingController extends ChangeNotifier {
     _lastPhase = phase;
     if (phase == ConnectionPhase.connected &&
         prev != ConnectionPhase.connected) {
+      // A new connection is a resync-from-reality point: drop any stuck
+      // shadow so the following GET can carry server truth (review PR
+      // #12 R1: without this, the ws event after reconnect was the very
+      // non-matching GET the guard refuses — the "reconnect clears it"
+      // claim would have been false).
+      _overrideTrackId = null;
+      _overrideValue = null;
       unawaited(_refreshRating());
     }
   }
@@ -133,6 +146,11 @@ class RatingController extends ChangeNotifier {
     if (trackId == null) {
       _nowPlayingTrackId = null;
       _nowPlayingRating = null;
+      // Nothing is current — a pending shadow (stop during the commit
+      // window) must not survive to shadow the SAME track's next play:
+      // the server value may have settled to something else entirely.
+      _overrideTrackId = null;
+      _overrideValue = null;
       if (!_disposed) notifyListeners();
       return;
     }
@@ -144,10 +162,16 @@ class RatingController extends ChangeNotifier {
       // async-commit window measured on OwnTone 29.3): a GET still serving
       // the PRE-write value must not roll the optimistic stars back — not
       // from the confirm poll, not from a `database` ws event landing in
-      // the same window. Only a GET that MATCHES the write ends the shadow
-      // (in _confirmRating, or here for a late ws-driven confirmation).
+      // the same window. Only the VALUE is shadowed; the track-id KEY is
+      // server truth and must land (review PR #12 R1: skipping the key
+      // here left the stars unrendered — and so un-tappable — after
+      // stop/replay inside the window).
       if (trackId == _overrideTrackId && fetched != _overrideValue) {
         _logger.d('rating GET stale vs pending write — holding optimistic');
+        if (_nowPlayingTrackId != trackId) {
+          _nowPlayingTrackId = trackId;
+          if (!_disposed) notifyListeners();
+        }
         return;
       }
       // Server truth lands: a GET that MATCHES the pending write (e.g. the
@@ -239,6 +263,10 @@ class RatingController extends ChangeNotifier {
         if (gen != _confirmGen || _disposed) return;
         if (_player.nowPlaying?.trackId != trackId) return;
         if ((track.rating ?? 0) == value) {
+          // Two-taps: only the CURRENT shadow may be confirmed — a stale
+          // loop's match landing after a newer tap's optimistic set must
+          // not re-apply the older value (flicker guard, PR #12 R1 nit).
+          if (_overrideTrackId != trackId || _overrideValue != value) return;
           _overrideTrackId = null;
           _overrideValue = null;
           _nowPlayingTrackId = trackId;
@@ -248,7 +276,10 @@ class RatingController extends ChangeNotifier {
         }
       } catch (e) {
         _logger.e('rating confirm poll failed', error: e);
-        return; // _refreshRating paths carry the shadow guard meanwhile
+        // Keep polling within budget — one transient GET error must not
+        // abandon the confirm window (_refresh/ws paths carry the guard
+        // meanwhile regardless).
+        continue;
       }
     }
     _logger.d(

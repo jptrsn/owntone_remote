@@ -274,6 +274,11 @@ void main() {
       20,
       reason: 'optimistic through the stale window',
     );
+    // …and a ws-driven refetch landing in the same window is refused by
+    // the _refreshRating guard (this also pins the guard in this test).
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(fast.nowPlayingRating, 20, reason: 'stale ws event held');
     server.commitRating(42, 20); // commit lands while the budget runs
     await pending;
     expect(fast.nowPlayingRating, 20);
@@ -288,6 +293,62 @@ void main() {
     );
   });
 
+  test('stop inside the unconfirmed window then replay: the stars re-key and '
+      'stay tappable (PR #12 review R1 — the guard shadows the VALUE, never '
+      'the track-id key)', () async {
+    server.lagCommit = true;
+    final fast = fastRating(polls: 1, delay: Duration.zero);
+    await fast.init();
+    await pump();
+    await fast.setRating(42, 100);
+    expect(fast.nowPlayingRating, 100, reason: 'shadow held');
+
+    server.state = 'stop';
+    await player.refreshState();
+    await pump();
+    expect(fast.nowPlayingTrackId, isNull);
+
+    server.state = 'pause'; // the same track replays
+    await player.refreshState();
+    await pump();
+    expect(
+      fast.nowPlayingTrackId,
+      42,
+      reason: 'the row renders again (a null key hides the stars entirely)',
+    );
+    expect(
+      fast.nowPlayingRating,
+      60,
+      reason: 'stop dropped the shadow; server (uncommitted) value shows',
+    );
+  });
+
+  test('a reconnect resyncs server truth over a stuck shadow, even when it '
+      'diverges from the user write (PR #12 review R1 — the escape list '
+      'claimed reconnect; now it is true)', () async {
+    server.lagCommit = true;
+    final fast = fastRating(polls: 1, delay: Duration.zero);
+    await fast.init();
+    await pump();
+    await fast.setRating(42, 100);
+    server.commitRating(42, 40); // server settles on a DIFFERENT value
+    expect(
+      fast.nowPlayingRating,
+      100,
+      reason: 'same connection: the guard holds (documented trade)',
+    );
+
+    conn.disconnect();
+    await pump();
+    await conn.connectTo(_cfg);
+    await pump(150);
+    expect(
+      fast.nowPlayingRating,
+      40,
+      reason: 'a fresh connection is a resync-from-reality point',
+    );
+  });
+
   test(
     'failed setRating: rollback + typed error + seq (optimistic-rollback)',
     () async {
@@ -298,6 +359,18 @@ void main() {
       expect(rating.actionError, contains('Rating failed'));
       expect(rating.actionError, contains('HTTP 500'));
       expect(rating.actionErrorSeq, 1);
+      // Pin the rollback's shadow-release (PR #12 R1 mutation-check): a
+      // failed write left shadowing the track would mask every later
+      // external edit of it.
+      server.failPut = false;
+      server.commitRating(42, 30);
+      channels.last.serverSend('{"notify":["database"]}');
+      await pump();
+      expect(
+        rating.nowPlayingRating,
+        30,
+        reason: 'rollback released the shadow completely',
+      );
     },
   );
 
