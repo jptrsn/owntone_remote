@@ -85,7 +85,18 @@ iTunes-specific features.
     3-round agentic review (R1 request-changes → R2 approve-with-nits →
     R3 clear-to-merge with every figure re-derived; unit 012's
     PR-body-carrying-lesson applied — review record lives in the unit
-    file)). Device decision (user
+    file)). **`remote-app` follow-up PR #11 DONE 2026-11-17** (shuffle
+    toggle rendered a solid primary box — root cause was NOT the
+    child-Icon colour pattern: `Icons.shuffle_on` 0xe5a2 is a broken
+    upstream glyph, first subpath a 470×470 rounded rect that nonzero-fill
+    paints solid, ink/bbox 0.99 vs 0.40, md5-verified against the official
+    artifact; all 38 `Icons.*` in use audited — only shuffle_on broken.
+    Fix = `_ModeToggle`: active state on the button (`filledTonal` +
+    `IconButton.color`, which also honours disabled) +
+    `test/glyph_hygiene_test.dart` bans the glyph family. 2-round agentic
+    review (R1 approve-with-nits → tautological assertion + a11y flag
+    fixed; R2 mutation-verified both new assertions → mergeable). Squash
+    `c86b278`). Device decision (user
   2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
   and deletes it when finished** — never start or reuse an existing AVD;
   other sessions own the running emulators. Device decision (user

@@ -1724,3 +1724,32 @@ to 3.47.9 and re-verify all gates on it.
   installed for the user's inspection (server untouched, no playback).
 - **Next:** first real release is the user's call: set the pubspec
   version, `./release.sh` from a synced main.
+
+## 2026-11-17 — shuffle toggle solid box: PR #11 (`c86b278`) MERGED (opencode)
+
+- **User report:** enabling shuffle rendered a solid primary box, the
+  button otherwise unchanged; hypothesis offered was colour-on-child-Icon.
+- **Root cause (measured, hypothesis disproven with the user's fix-instinct
+  kept):** `Icons.shuffle_on` (0xe5a2) is a broken upstream glyph — first
+  subpath a 470×470-unit rounded rect that nonzero-fill paints solid
+  (ink/bbox 0.9911 vs 0.4039 for `Icons.shuffle`, PIL on the cache OTF;
+  fontTools T2: shuffle_on = shuffle's 3 subpaths + the rect; all four
+  variants nsub=4; cache `cmp`-byte-identical to the official
+  `3012db47…` fonts.zip, md5 `e7069dfd…`). On-device before: shuffle-on
+  region 3178/3249 px = 99.6 % solid primary; after: `#E9DEF8`
+  secondaryContainer + 500 glyph-stroke px. Audit of all 38 `Icons.*` in
+  use: only shuffle_on broken (stop/remove/dns legitimately solid).
+- **Fix:** `_ModeToggle` — active state on the BUTTON (`filledTonal` +
+  `IconButton.color`, which unlike a child-Icon colour honours disabled),
+  shuffle glyph constant, `isSelected` for `Semantics(selected:)` (the
+  row already carries text labels); `test/glyph_hygiene_test.dart` fails
+  the suite if the glyph family reappears in `lib/`.
+- **Review:** 2-round agentic (R1 approve-with-nits — tautological
+  `isNotNull` fill assertion + a11y regression found → both fixed; R2
+  mutation-verified both new assertions fail under the intended mutations,
+  every committed figure re-derived, no behavioural drift). Review records
+  in the PR comments. 427→429 tests; gates green; debug APK reinstalled on
+  `RemoteDev_API_36` (server restored shuffle=false; no playback at any
+  point — state was the other session's `stop` throughout).
+- **Next:** unchanged — first real release is the user's call (pubspec
+  version + `./release.sh` from a synced main).
