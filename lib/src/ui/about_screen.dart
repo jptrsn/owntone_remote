@@ -87,6 +87,13 @@ class _AboutScreenState extends State<AboutScreen> {
               style: theme.textTheme.bodySmall,
             ),
           ),
+          Center(
+            child: Text(
+              'Licensed under the GNU GPL v3.0 ($kAppLicense)',
+              key: const ValueKey('about-license'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
           const SizedBox(height: 24),
           if (_loading)
             const Center(child: CircularProgressIndicator())
@@ -130,6 +137,22 @@ class _AboutScreenState extends State<AboutScreen> {
                 ),
               ],
             ),
+          const SizedBox(height: 8),
+          // Attribution obligation for the open-source dependencies (GPL
+          // distribution courtesy, not strictly required by GPL but the
+          // norm for Flutter apps). Static — visible even while offline.
+          ListTile(
+            key: const ValueKey('about-third-party-licenses'),
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.article_outlined),
+            title: const Text('Open-source licenses'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showLicensePage(
+              context: context,
+              applicationName: kAppName,
+              applicationVersion: kAppVersion,
+            ),
+          ),
         ],
       ),
     );

@@ -1919,3 +1919,62 @@ Repro-harness facts worth keeping (cost real time):
   shared-server user activity (user confirmed). The app's traffic was
   GET-only throughout (only PUT: the documented pause). Server left as
   the user's session had it (`pause`, their volume/outputs).
+
+## 2026-11-18 — publication readiness: GPL-3.0, identity, signing, escrow (opencode)
+
+Publication audit → two units, PRs #16 (identity/license/docs) and #17
+(signing/hardening), both → `develop`. Decisions (user): **GPL-3.0-only**
+(the repo had gone PUBLIC unlicensed — all-rights-reserved by default);
+README rewritten for humans ("Status: planning complete. Build not
+started." was six weeks stale; AI-session onboarding lives only in
+AGENTS.md); **dedicated release keystore** replaces debug-signing for
+releases (v0.1.0 was debug-signed — first keyed release requires a
+one-time uninstall/reinstall, say so in its release notes).
+
+Signing: `android/owntone-release.keystore` + `keystore.properties`
+(PKCS12 — key password == store password; a differing keyPassword is
+silently ignored), both gitignored; gradle falls back to debug signing
+only when absent (CI/fresh clones). **Escrow = private repo
+`jptrsn/owntone_remote-private`** (content checksum-verified at upload) —
+GitHub secrets were considered and REJECTED as backup: write-only, can
+never be read back (`tools/keystore/README.md` (PR #17) carries the restore
+procedure + rotation policy; `checksum.sha256` is the public anchor;
+`verify.sh <apk>` proves cert identity). `release.sh` (PR #17)
+now refuses to publish without the keystore, on checksum mismatch, on
+cert mismatch, on a non-climbing versionCode, and uploads SHA256SUMS. Verified e2e
+against a local bare mirror (guards refuse the right things; dry-run
+completes signed; real remote untouched).
+
+Incidents (recorded, both zero-impact, both harness-side — suspect the
+harness before the subject):
+1. Disposable-AVD creation used an invalid `-quickboot` flag → emulator
+   exited → adb enumeration (`awk NR==2`) picked the **Pixel 6** and the
+   debug APK installed there. App never launched, no server calls (the
+   `play` state at the time was the user's own session). Enumerate only
+   after confirming the emulator attached + verify by
+   `getprop ro.boot.qemu.avd_name`.
+2. `git remote set-url` inside a `git worktree` silently re-pointed the
+   WHOLE repo's origin (remotes are shared across worktrees) → push
+   failed against the deleted local mirror; restored
+   `git@github.com:jptrsn/owntone_remote.git`. Worktree experiments must
+   use a *clone*, never a worktree, when they touch remotes.
+Security incident (same session, self-inflicted, remediated within
+minutes): `git add -A` on this branch staged
+`android/keystore.properties` — the signing ignore rules lived only on
+the signing PR's tree, so this branch's .gitignore had no pattern for
+it. The password file sat in the PUBLIC repo (PR #16 head) for ~1
+minute before purge + force-with-lease — purge is cosmetic
+containment only: GitHub retains every force-replaced PR head version
+as a fetchable object, so rotation, not history rewriting, is the real
+containment. The key had never signed a
+published artifact, so rotation was free — and free rotation is exactly
+why it was done without asking: new keypair + password, new public
+anchor (PR #17), escrow overwritten, cert re-verified on a fresh
+release build. The ignore block now lands on BOTH PR trees (whichever
+merges first arms develop). Lesson: check `git status` line by line
+before `git add -A` on branches whose .gitignore predates another
+branch's rules.
+
+Also caught by the tooling itself: the release dry-run went red until
+`kAppVersion` was bumped with pubspec — unit 008's drift guard earning
+its keep; AGENTS release step now names it.

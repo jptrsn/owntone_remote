@@ -87,6 +87,16 @@ void main() {
       final pubspec = File('pubspec.yaml').readAsStringSync();
       expect(pubspec, contains('version: $kAppVersion'));
     });
+
+    test('android app_name mirrors kAppName (launcher label drift guard)', () {
+      // Same convention as the pubspec guard above: the Android chrome
+      // (launcher/Settings/permission dialogs) reads strings.xml, the UI
+      // reads kAppName — they must not drift.
+      final strings = File(
+        'android/app/src/main/res/values/strings.xml',
+      ).readAsStringSync();
+      expect(strings, contains('>$kAppName<'));
+    });
   });
 
   group('R-14 server info (GET /api/config)', () {
@@ -159,6 +169,44 @@ void main() {
       await tester.tap(find.text('Retry'));
       await tester.pumpAndSettle();
       expect(find.text('OwnTone 29.3'), findsOneWidget);
+    });
+  });
+
+  group('license & third-party attribution (publication)', () {
+    testWidgets('GPL notice renders; the Open-source licenses row opens '
+        'LicensePage with dependency attributions', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.runAsync(connect);
+      await pumpAbout(tester);
+      expect(find.byKey(const ValueKey('about-license')), findsOneWidget);
+      expect(find.textContaining('GPL v3.0'), findsOneWidget);
+      expect(find.textContaining(kAppLicense), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('about-third-party-licenses')),
+      );
+      await tester.pumpAndSettle();
+      // LicensePage opened with its header. Dependency CONTENT is a
+      // build-time bundle artifact (LicenseRegistry is empty under
+      // flutter test — probed), so the page-open + header is all the
+      // widget test can honestly assert; the framework guarantees the
+      // list contents at build time.
+      expect(find.text('Licenses'), findsOneWidget);
+      expect(find.text(kAppName), findsOneWidget);
+      expect(find.text(kAppVersion), findsOneWidget);
+    });
+
+    testWidgets('attribution rows are static — visible in the offline '
+        'error state too', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      conn = ConnectionController(); // idle — api is null
+      await pumpAbout(tester);
+      expect(find.byKey(const ValueKey('about-error')), findsOneWidget);
+      expect(find.byKey(const ValueKey('about-license')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('about-third-party-licenses')),
+        findsOneWidget,
+      );
     });
   });
 

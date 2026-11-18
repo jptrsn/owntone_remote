@@ -22,6 +22,12 @@ android/app/release
 # Logs
 *.log
 
+# Signing material — NEVER commit (private escrow + restore: tools/keystore/README.md)
+android/owntone-release.keystore
+android/keystore.properties
+*.keystore
+keystore.properties
+
 # ReTune capture: decoded APK artifacts are regenerable (see tools/retune/README.md)
 tools/retune/decoded/
 
