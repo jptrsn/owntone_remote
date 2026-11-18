@@ -355,6 +355,16 @@ A unit is **done** only when ALL of:
 
 ## ai-dlc discipline
 
+- **Unattended overnight runs**: `.ai-dlc/overnight/pipeline.md` is the
+  authoritative process; the user authorized merge-to-develop unattended
+  **only** for the units in its Run configuration (issues #19–#26, decision
+  2026-11-18). Runs start as the `overnight` agent
+  (`.opencode/agent/overnight.md`) whose permission blocks pre-answer every
+  prompt the run may raise and hard-deny repo creation, the `question` tool,
+  and any path outside the repo + `/tmp`. **Scratch for any run lives ONLY
+  under `/tmp` (subfolders included) or the working tree** — no `/var/folders`
+  or `~` scratch. A permission prompt appearing mid-run = the config drifted:
+  hard blocker, fix the config, never click through.
 - Work **one unit at a time**. Read the intent + the unit + the specific docs
   the unit names. Do not load the whole repo into context.
 - **Backpressure:** never skip a gate, never mark a unit done with failing

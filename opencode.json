@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "general": {
+      "permission": {
+        "bash": {
+          "*": "allow",
+          "gh repo create*": "deny",
+          "gh repo fork*": "deny",
+          "gh api*POST*user/repos*": "deny",
+          "gh api*POST*orgs*repos*": "deny",
+          "git remote add*": "deny"
+        },
+        "edit": "allow",
+        "question": "deny",
+        "external_directory": {
+          "/tmp/**": "allow",
+          "*": "deny"
+        }
+      }
+    }
+  }
+}
