@@ -19,7 +19,8 @@ PROPS=android/keystore.properties
 }
 
 expected=$(awk '{print $1}' tools/keystore/checksum.sha256)
-actual=$(shasum -a 256 "$KS" | awk '{print $1}')
+if command -v shasum >/dev/null 2>&1; then actual=$(shasum -a 256 "$KS" | awk '{print $1}')
+else actual=$(sha256sum "$KS" | awk '{print $1}'); fi
 if [[ "$expected" != "$actual" ]]; then
     echo "FAIL: keystore checksum mismatch"
     echo "  expected $expected"
@@ -38,11 +39,16 @@ if [[ $# -ge 1 ]]; then
     [[ -n "${APKSIGNER:-}" ]] || { echo "FAIL: apksigner not found (set APKSIGNER=)"; exit 1; }
 
     apk_cert=$("$APKSIGNER" verify --print-certs "$apk" 2>/dev/null | awk '/certificate SHA-256 digest/{print $NF}' | tr 'A-Z' 'a-z')
-    sp=$(grep '^storePassword=' "$PROPS" | cut -d= -f2-)
+    sp=$(grep '^storePassword=' "$PROPS" | cut -d= -f2-) \
+        || { echo "FAIL: storePassword= missing from $PROPS"; exit 1; }
+    # -storepass:env (not argv): command lines are world-readable via ps
+    # (GitHub secrets guidance); JDK 9+.
+    export OWNTONE_KS_PASS="$sp"
     # JDK 21 -v prints "        SHA256: <colon-hex>" (the dash-fingerprint
     # form is pre-17; grep both shapes).
-    ks_cert=$(keytool -list -v -keystore "$KS" -storepass "$sp" -alias owntone-remote 2>/dev/null \
+    ks_cert=$(keytool -list -v -keystore "$KS" -storepass:env OWNTONE_KS_PASS -alias owntone-remote 2>/dev/null \
         | awk '/SHA256/{print $NF; exit}' | tr -d ':' | tr 'A-Z' 'a-z')
+    unset OWNTONE_KS_PASS
 
     if [[ -z "$apk_cert" || -z "$ks_cert" ]]; then
         echo "FAIL: could not read certificates (apk=$apk_cert ks=$ks_cert)"

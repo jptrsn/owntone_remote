@@ -339,8 +339,11 @@ A unit is **done** only when ALL of:
   (keystore absent) exists for CI/fresh-clone builds only. The v0.1.0
   release predates this and was debug-signed: **the first release cut with
   the new key requires a one-time uninstall/reinstall — say so in its
-  release notes.** The project is GPL-3.0-only (LICENSE, added 2026-11-18;
-  the repo had gone public without one).
+  release notes.** The project is GPL-3.0-only (the LICENSE arrived with
+  PR #16, merged before this one; the repo had gone public without one).
+  **`pubspec`'s `+N` is Android versionCode: it must be strictly greater
+  than every release ever tagged — never reset it on a version bump**
+  (`release.sh` enforces this and the guards above).
 - Branch naming: `feature/*`, `fix/*`, `release/v*`, `hotfix/*`.
 - Red CI with a network/runner signature (known: Gradle NDK zip-download
   flake — gates.yml retries the network-touching steps once internally) →

@@ -41,7 +41,7 @@
 set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────────────────
-GH_REPO="jptrsn/owntone_remote"
+GH_REPO="${GH_REPO:-jptrsn/owntone_remote}"  # overridable for smoke-testing against a throwaway repo
 APK_PREFIX="owntone-remote"
 APP_NAME="OwnTone Remote"
 NOTES_DEFAULT="docs/RELEASE-NOTES.md"
@@ -156,7 +156,7 @@ fi
 # ── equal-or-lower versionCode; release.sh used to rely on the human) ──────
 CURRENT_BUILD=$(printf '%s' "$VERSION_FULL" | sed -e 's/.*+//')
 [[ "$CURRENT_BUILD" =~ ^[0-9]+$ ]] || die "Could not parse build number from '${VERSION_FULL}' (expected version: X.Y.Z+N)."
-LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+LAST_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
 if [[ -n "$LAST_TAG" ]]; then
     LAST_FULL=$(git show "${LAST_TAG}:pubspec.yaml" | grep '^version:' | head -1 | sed -e 's/version: *//' -e 's/"//g' -e "s/'//g")
     LAST_BUILD=$(printf '%s' "$LAST_FULL" | sed -e 's/.*+//')
@@ -238,7 +238,12 @@ fi
 SHORT_SHA=$(git rev-parse --short HEAD)
 FLUTTER_LABEL="$LOCAL_FLUTTER"
 if [[ "$FLUTTER_LABEL" == "unknown" ]]; then FLUTTER_LABEL="version not detected (see operator console drift warning)"; fi
-NOTES_HEADER="> Built from \`${SHORT_SHA}\` (main @ publish) with \`flutter build apk --release --split-per-abi\` on Flutter ${FLUTTER_LABEL}; debug-signed per the GitHub-release/Obtainium channel. The body below is the release doc as of publish — it describes the audited release-candidate build, while the attached per-ABI APKs are the artifacts built here."
+if [[ "$ALLOW_DEBUG_SIGN" == "1" ]]; then
+    SIGNING_LABEL="**debug-signed via the ALLOW_DEBUG_SIGN disaster-recovery override**"
+else
+    SIGNING_LABEL="signed with the release key (public anchor \`tools/keystore/checksum.sha256\`)"
+fi
+NOTES_HEADER="> Built from \`${SHORT_SHA}\` (main @ publish) with \`flutter build apk --release --split-per-abi\` on Flutter ${FLUTTER_LABEL}; ${SIGNING_LABEL}. The body below is the release doc as of publish — it describes the audited release-candidate build, while the attached per-ABI APKs are the artifacts built here."
 RELEASE_NOTES="${NOTES_HEADER}
 
 ${RELEASE_NOTES}"
@@ -308,7 +313,7 @@ echo
 
 if [[ "$DRY_RUN" == "1" ]]; then
     bold "Dry run complete. APKs left in place (gitignored); nothing was pushed."
-    echo "  (delete them with: rm -f ${APK_PREFIX}-${TAG}-*.apk)"
+    echo "  (delete them with: rm -f ${APK_PREFIX}-${TAG}-*.apk ${APK_PREFIX}-${TAG}-SHA256SUMS.txt)"
     exit 0
 fi
 

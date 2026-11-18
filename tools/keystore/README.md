@@ -36,6 +36,13 @@ chmod 600 android/owntone-release.keystore android/keystore.properties
 tools/keystore/verify.sh                    # must match the public checksum
 ```
 
+Honest risk note: the key and its **plaintext password file co-locate in
+that one private repo** — a GitHub account/token compromise is then
+outright key theft (no second factor). For a solo maintainer this trades
+availability against a low-probability threat; if that balance changes,
+`age`-encrypt `keystore.properties` in the escrow and keep the decryption
+passphrase offline (GitHub documents the same pattern for large secrets).
+
 If the escrow repo is also gone: the signing key is unrecoverable — the app
 ID survives but every future APK will have a new certificate, meaning all
 existing installs (Obtainium) must uninstall and reinstall. Rotate
