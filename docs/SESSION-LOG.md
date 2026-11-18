@@ -1856,9 +1856,33 @@ exception silently swallowed and skipped the offline downgrade). Tests:
 `test/connection_offline_recovery_test.dart` (2, cite R-01/R-02, use
 new `FakeWsChannel.handshakeHangs` black-hole mode +
 `FakeWsLivenessServer.holdHandshake` on the real transport);
-**mutation-checked in a fresh /tmp copy** (mechanisms disabled, same
-APIs → both tests time out; with them → green). 437/437, analyze 0,
-format clean, debug APK builds. Device (fixed build, instrumented run
+**mutation-checked in fresh /tmp copies** — each mechanism disabled
+individually makes **its own** test time out (the other stays green);
+with them all green. 437/437, analyze 0, format clean, debug APK
+builds.
+
+**Review round 1 (2 agentic reviewers, both request-changes)** — all
+findings fixed except one recorded as a follow-up candidate:
+`connectTimeout` and `offlineProbeInterval` params made **non-nullable**
+(a caller passing null re-wedges the default factory — the type now
+forbids the bug); the probe `try` narrowed to wrap ONLY
+`api.getConfig()` with `on Exception` (the earlier `on Object` wrapped
+the phase mutation too — an `Error` from a listener was re-labelled
+"server probe failed" and flapped the banner); offline probes made
+**single-flight with trailing** (unit-011 shape — a probe's worst-case
+budget exceeds the interval; overlap would make the phase
+last-completion-wins); the offline retry timer's stop-after-recovery
+asserted. Tests 3–5 added (TypeError-from-config must reach the zone,
+not the banner; the **production-default** connectTimeout pinned on the
+real transport — the injected-timeout test alone left the default
+unpinned; probe coalescing). New mutations verified red in /tmp copies
+(default→null, guard-removal, pre-fix catch shape, timer-cancel+guard).
+Candidate for a follow-up unit (reviewer-accepted): `connectTimeout`
+bounds the *wait*, not the *socket* — the package applies `pingInterval`
+**before** `.timeout()` (`io.dart:49-52`), so a handshake that succeeds
+after the timeout orphans a ping-kept-alive socket no `sink.close()` can
+reach; proper fix owns the connect (per-attempt `HttpClient` via
+`customClient`, force-closed while pending). 440/440. Device (fixed build, instrumented run
 then clean): blackout → `ws: open → reconnecting` → `server probe
 failed` → `connected → offline` (banner up, deterministic); Wi-Fi back
 → `offline → connected` in ~10 s (retry timer) while the WS was **still

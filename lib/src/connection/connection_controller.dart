@@ -93,7 +93,7 @@ class ConnectionController extends ChangeNotifier {
     WsFactory? wsFactory,
     Backoff? backoff,
     Logger? logger,
-    Duration? offlineProbeInterval = kOfflineProbeInterval,
+    Duration offlineProbeInterval = kOfflineProbeInterval,
   }) {
     _dioFactory = dioFactory ?? (options) => Dio(options);
     _wsFactory =
@@ -102,7 +102,7 @@ class ConnectionController extends ChangeNotifier {
             WsClient(uri: uri, subscriptions: subscriptions, backoff: b));
     _backoff = backoff ?? Backoff();
     _logger = logger ?? Logger(printer: PrettyPrinter(methodCount: 0));
-    _offlineProbeInterval = offlineProbeInterval ?? kOfflineProbeInterval;
+    _offlineProbeInterval = offlineProbeInterval;
   }
 
   late final DioFactory _dioFactory;
@@ -136,6 +136,8 @@ class ConnectionController extends ChangeNotifier {
   /// stream, stranding the banner forever (user bug 2026-11-17).
   late final Duration _offlineProbeInterval;
   Timer? _offlineProbe;
+  bool _probeInFlight = false;
+  bool _probeTrailing = false;
 
   /// Bumped by every [_teardownClient] (connectTo start/failure, disconnect,
   /// dispose). An async continuation — the REST probe — must belong to the
@@ -268,28 +270,53 @@ class ConnectionController extends ChangeNotifier {
   /// client has gone quiet (wedged handshake, 2026-11-17). A failed probe
   /// only downgrades a [ConnectionPhase.connected] state — and never after
   /// the WS reopened.
+  ///
+  /// Single-flight with a trailing run (unit 011's serialization shape): a
+  /// probe can outlive the interval (dio connect+receive budgets exceed it),
+  /// and overlapping probes would make the phase last-*completion*-wins and
+  /// flap the banner. A request that arrives while one is in flight sets the
+  /// trailing flag instead of racing.
   Future<void> _probeServer() async {
     final api = _api;
     if (api == null) return;
+    if (_probeInFlight) {
+      _probeTrailing = true;
+      return;
+    }
+    _probeInFlight = true;
     // Captured before the await: the probe is the reachability authority
     // only for the connection generation that scheduled it (see [_generation]).
     final generation = _generation;
     try {
-      await api.getConfig();
-      if (generation != _generation) return;
-      if (_wsPhase != WsPhase.open) {
-        _setPhase(ConnectionPhase.connected);
+      Object? probeError;
+      try {
+        await api.getConfig();
+      } on Exception catch (e) {
+        // `Exception`, not `Object`, and the try wraps ONLY the network call
+        // (review round 1, 2026-11-17): the widening from `DioException` is
+        // for probe failures — TimeoutException/SocketException arriving
+        // un-wrapped still mean "not confirmed reachable". An `Error` (or
+        // anything thrown by [_setPhase]'s listeners, which now sit outside
+        // this catch) is a client bug and must reach the zone uncaught, not
+        // be re-labelled "server probe failed" and flap the banner.
+        probeError = e;
       }
-    } on Object catch (e) {
-      // Broad on purpose (fix, 2026-11-17): this future is `unawaited`
-      // — a non-Dio exception escaping here would be *silently swallowed*
-      // by the zone, and it used to skip the offline downgrade entirely.
-      // Any probe failure means "not confirmed reachable": downgrade if
-      // connected; while offline the periodic timer simply tries again.
       if (generation != _generation) return;
-      if (_wsPhase != WsPhase.open && _phase == ConnectionPhase.connected) {
-        _logger.w('server probe failed ($e) — offline');
+      final error = probeError;
+      if (error == null) {
+        if (_wsPhase != WsPhase.open) {
+          _setPhase(ConnectionPhase.connected);
+        }
+      } else if (_wsPhase != WsPhase.open &&
+          _phase == ConnectionPhase.connected) {
+        _logger.w('server probe failed ($error) — offline');
         _setPhase(ConnectionPhase.offline);
+      }
+    } finally {
+      _probeInFlight = false;
+      if (_probeTrailing) {
+        _probeTrailing = false;
+        unawaited(_probeServer());
       }
     }
   }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:owntone_remote/src/api/backoff.dart';
@@ -124,7 +126,24 @@ void main() {
       // R-02: REST controls are live again even though the WS is still
       // stuck mid-handshake — the banner must not gate REST.
       expect(conn.wsPhase, isNot(WsPhase.open));
-      expect(conn.isConnected, isTrue);
+      expect(conn.isConnected, isTrue); // documented R-02 intent: REST live
+
+      // Timer cancellation (review round 1): the fake's hang also wedges
+      // the WS *chain* (fakes own their bounds — no connectTimeout there),
+      // so from here on ANY new /api/config request could only come from
+      // the offline retry timer. Leaving offline must cancel it (R-01: no
+      // probe storm behind a cleared banner).
+      final configReqsAtRecovery = adapter.requests
+          .where((r) => r.endsWith('/api/config'))
+          .length;
+      await pump(400); // ~8× the injected 50 ms interval
+      expect(
+        adapter.requests.where((r) => r.endsWith('/api/config')).length,
+        configReqsAtRecovery,
+        reason:
+            'offline retry timer must stop once the banner is cleared — '
+            'with the chain wedged, only the timer could still be probing',
+      );
     }, timeout: const Timeout(Duration(seconds: 10)));
   });
 
@@ -171,5 +190,219 @@ void main() {
         }
       }(), completes);
     }, timeout: const Timeout(Duration(seconds: 10)));
+
+    test('R-02: the PRODUCTION default (no injected connectTimeout) bounds '
+        'the handshake — deleting the default would re-wedge the chain '
+        '(review round 1: the injected-300 ms test alone leaves the default '
+        'unpinned)', () async {
+      final server = FakeWsLivenessServer()..holdHandshake = true;
+      final uri = await server.start();
+      addTearDown(server.stop);
+
+      // Deliberately NO connectTimeout argument: this exercises the
+      // constructor default on the default channel factory — the exact
+      // production path that wedged for the user.
+      final client = WsClient(
+        uri: uri,
+        subscriptions: const ['player'],
+        backoff: Backoff(
+          initial: const Duration(milliseconds: 10),
+          maximum: const Duration(milliseconds: 50),
+        ),
+      );
+      addTearDown(client.stop);
+      final statuses = <String>[];
+      client.status.listen(statuses.add);
+
+      final sw = Stopwatch()..start();
+      client.start();
+      await expectLater(() async {
+        while (!statuses.contains('reconnecting')) {
+          await pump(50);
+        }
+      }(), completes);
+      // Bounded by the production constant plus scheduling slack (pre-fix —
+      // default null — 'reconnecting' never arrives and this test times out).
+      expect(
+        sw.elapsed,
+        lessThan(kWsConnectTimeout + const Duration(seconds: 3)),
+        reason: 'default connectTimeout must bound the handshake',
+      );
+      final first = server.acceptTimes.length;
+      expect(first, greaterThanOrEqualTo(1));
+      await expectLater(() async {
+        while (server.acceptTimes.length <= first) {
+          await pump(20);
+        }
+      }(), completes);
+    }, timeout: const Timeout(Duration(seconds: 30)));
+  });
+
+  group('probe failure classification (R-01, review round 1)', () {
+    test('R-01: a non-network Exception from the probe call downgrades to '
+        'offline, but a client-side TypeError (bad config payload — our own '
+        'cast, outside dio\'s wrapping) must NOT be re-labelled '
+        '"server probe failed": it reaches the zone and the banner stays '
+        'connected', () async {
+      var malformed = false;
+      var wsDown = false;
+      final adapter = ScriptedAdapter(
+        responder: (o) {
+          if (o.path == '/api/config') {
+            if (malformed) {
+              // List payload → OwntoneApi.getConfig's `as Map<String,
+              // dynamic>` throws a raw TypeError outside fetch's
+              // DioException normalization.
+              return jsonResponse(o, <String>['not', 'a', 'map']);
+            }
+            return jsonResponse(o, _configJson);
+          }
+          return jsonResponse(o, <String, dynamic>{});
+        },
+      );
+      final channels = <FakeWsChannel>[];
+      late ConnectionController conn;
+      final zoneErrors = <Object>[];
+      await runZonedGuarded(() async {
+        conn = ConnectionController(
+          dioFactory: (options) => Dio(options)..httpClientAdapter = adapter,
+          offlineProbeInterval: const Duration(milliseconds: 50),
+          wsFactory: (uri, subscriptions, backoff) => WsClient(
+            uri: uri,
+            subscriptions: subscriptions,
+            backoff: Backoff(
+              initial: const Duration(milliseconds: 5),
+              maximum: const Duration(milliseconds: 20),
+            ),
+            channelFactory: (u) {
+              final c = FakeWsChannel();
+              channels.add(c);
+              if (wsDown) c.handshakeFails = true;
+              return c;
+            },
+          ),
+        );
+        addTearDown(conn.dispose);
+        await conn.connectTo(_goodConfig);
+        await pump();
+        expect(conn.phase, ConnectionPhase.connected);
+        expect(conn.wsPhase, WsPhase.open);
+
+        // WS down (chain keeps cycling → probes keep firing on events),
+        // then every config response becomes malformed.
+        wsDown = true;
+        channels.first.serverClose();
+        await pump(100);
+        expect(conn.wsPhase, isNot(WsPhase.open));
+        malformed = true;
+        await pump(300); // several probe cycles at 5–20 ms backoff cap
+      }, (e, _) => zoneErrors.add(e));
+      expect(
+        zoneErrors.where((e) => e is! TypeError),
+        isEmpty,
+        reason: 'no unrelated error may escape the guarded zone',
+      );
+
+      // The TypeError is a client bug: it must surface uncaught (pre-fix's
+      // `on Object` swallowed it into the offline downgrade) and must not
+      // flap the banner.
+      expect(
+        zoneErrors.whereType<TypeError>(),
+        isNotEmpty,
+        reason:
+            'client-side cast failure must reach the zone, not the '
+            'offline downgrade',
+      );
+      expect(
+        conn.phase,
+        ConnectionPhase.connected,
+        reason: 'a client bug must not be re-labelled server-unreachable',
+      );
+    }, timeout: const Timeout(Duration(seconds: 10)));
+  });
+
+  group('offline probe is single-flight (review round 1)', () {
+    test(
+      'probes triggered faster than one completes must not overlap '
+      '(last-completion-wins would flap the banner); attempts coalesce',
+      () async {
+        var serverDown = false;
+        var gating = false;
+        var released = false;
+        final gate = Completer<void>();
+        var inFlight = 0;
+        var inflightMax = 0;
+        var holdCount = 0;
+        final adapter = ScriptedAdapter(
+          responder: (o) async {
+            if (o.path == '/api/config') {
+              inFlight++;
+              if (inFlight > inflightMax) inflightMax = inFlight;
+              if (gating) holdCount++;
+              try {
+                if (gating && !released) await gate.future;
+                if (serverDown) throw networkError(o, 'connection refused');
+                return jsonResponse(o, _configJson);
+              } finally {
+                inFlight--;
+              }
+            }
+            return jsonResponse(o, <String, dynamic>{});
+          },
+        );
+        final channels = <FakeWsChannel>[];
+        final conn = ConnectionController(
+          dioFactory: (options) => Dio(options)..httpClientAdapter = adapter,
+          // Effectively-off timer: the chain's 'reconnecting' events (5–20 ms
+          // backoff) are the probe source under test.
+          offlineProbeInterval: const Duration(seconds: 10),
+          wsFactory: (uri, subscriptions, backoff) => WsClient(
+            uri: uri,
+            subscriptions: subscriptions,
+            backoff: Backoff(
+              initial: const Duration(milliseconds: 5),
+              maximum: const Duration(milliseconds: 20),
+            ),
+            channelFactory: (u) {
+              final c = FakeWsChannel();
+              channels.add(c);
+              c.handshakeFails = true;
+              return c;
+            },
+          ),
+        );
+        addTearDown(conn.dispose);
+        await conn.connectTo(_goodConfig);
+        await pump();
+        expect(conn.phase, ConnectionPhase.connected);
+        serverDown = true;
+        channels.first.serverClose();
+        await pump(200);
+        expect(conn.phase, ConnectionPhase.offline);
+
+        // Chain events now fire probes every ≤20 ms while one probe is held
+        // open ~300 ms — without single-flight each would overlap.
+        gating = true;
+        await pump(300);
+        // ~15 chain events fired during the 300 ms hold (≤20 ms backoff cap);
+        // they must all coalesce behind the one in-flight fetch — removing
+        // the single-flight guard makes holdCount/inflightMax jump to ~15.
+        expect(
+          holdCount,
+          1,
+          reason:
+              'attempts during a held probe must coalesce into exactly '
+              'one fetch',
+        );
+        expect(inflightMax, 1, reason: 'probes must never overlap');
+
+        released = true;
+        gate.complete();
+        serverDown = false;
+        await pump(300);
+        expect(conn.phase, ConnectionPhase.connected);
+      },
+      timeout: const Timeout(Duration(seconds: 10)),
+    );
   });
 }

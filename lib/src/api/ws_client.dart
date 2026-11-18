@@ -42,7 +42,7 @@ class WsClient {
     required List<String> subscriptions,
     Backoff? backoff,
     WebSocketChannel Function(Uri uri)? channelFactory,
-    Duration? connectTimeout = kWsConnectTimeout,
+    Duration connectTimeout = kWsConnectTimeout,
   }) : _uri = uri,
        _subscriptions = subscriptions,
        _backoff = backoff ?? Backoff() {
@@ -51,10 +51,12 @@ class WsClient {
     // subprotocol is mandatory: OwnTone's libwebsockets server accepts the
     // handshake without it but silently registers the client as
     // unsubscribed, so no events ever arrive.
-    // [connectTimeout] must reach the default factory: with null, a
-    // black-holed handshake never resolves and `_open` wedges forever
-    // (see [kWsConnectTimeout]) — an injected [channelFactory] owns its own
-    // bounds.
+    // [connectTimeout] must reach the default factory: with null the package
+    // never bounds the handshake, a black-holed connect never resolves and
+    // `_open` wedges forever (see [kWsConnectTimeout]) — hence the parameter
+    // is non-nullable; the production default is pinned by
+    // test/connection_offline_recovery_test.dart. An injected
+    // [channelFactory] owns its own bounds.
     _channelFactory =
         channelFactory ??
         (uri) => IOWebSocketChannel.connect(
