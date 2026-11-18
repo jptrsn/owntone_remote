@@ -7,7 +7,8 @@ never the Android debug key, never the machine's `~/.android/debug.keystore`.
 |---|---|
 | Keystore (local, gitignored) | `android/owntone-release.keystore` |
 | Passwords/config (local, gitignored) | `android/keystore.properties` |
-| **Escrow backup** (private repo) | <https://github.com/jptrsn/owntone_remote-private> — same two files + this restore doc |
+| **Backup** (Actions secrets on this repo) | `RELEASE_KEYSTORE_B64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_PASSWORD` |
+| Maintainer's own copy | off-machine, at the maintainer's discretion — **make one** |
 | Public integrity anchor | `tools/keystore/checksum.sha256` (this repo) |
 
 `release.sh` refuses to publish when the local material is missing or when
@@ -16,34 +17,47 @@ same check standalone). `android/app/build.gradle.kts` falls back to debug
 signing only when the material is absent — that fallback keeps CI and fresh
 clones building but can never publish, because of the `release.sh` checks.
 
-## Why a private repo and not GitHub secrets?
+## Backup policy (user decision, 2026-11-18)
 
-Repo **secrets are write-only**: they are injected into workflow runs but
-can never be read back (`gh secret list` shows names only). They are
-therefore unusable as a backup — if this machine dies, a secret cannot
-restore the signing key. A private sibling repo is restorable (`git clone`)
-while staying out of the public repo. If CI ever needs to sign, read the
-escrow repo from a workflow with a scoped fine-grained token rather than
-copying the keystore into a secret.
+The backup is **GitHub Actions secrets on this repo** — never a separate
+repository (agents are barred from creating repos; ask the user instead).
+Stored via:
+
+```sh
+base64 -i android/owntone-release.keystore | gh secret set RELEASE_KEYSTORE_B64
+awk -F= '/^storePassword/{print $2}' android/keystore.properties | gh secret set RELEASE_KEYSTORE_PASSWORD
+awk -F= '/^keyPassword/{print $2}'   android/keystore.properties | gh secret set RELEASE_KEY_PASSWORD
+```
+
+One documented property of secrets, stated once so it is never assumed
+away: they are **write-only** (`gh secret list` shows names, never values).
+That makes them usable by workflows and not readable back by anyone —
+including you, at a terminal. A workflow signs by writing them to disk:
+
+```yaml
+- run: |
+    echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > android/owntone-release.keystore
+    printf 'storeFile=owntone-release.keystore\nstorePassword=%s\nkeyAlias=owntone-remote\nkeyPassword=%s\n' \
+      "${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" "${{ secrets.RELEASE_KEY_PASSWORD }}" > android/keystore.properties
+    chmod 600 android/keystore.properties
+```
+
+**Therefore: keep your own off-machine copy of the two `android/` files.**
+The secrets let CI (or a future release workflow) sign without the local
+machine; they are not a `cp`-back restore path. Your own copy is.
 
 ## Restore (new machine / after loss)
 
+From your own off-machine copy:
+
 ```sh
-git clone https://github.com/jptrsn/owntone_remote-private
-cp owntone-remote-private/android/owntone-release.keystore android/
-cp owntone-remote-private/android/keystore.properties      android/
+cp <your-backup>/owntone-release.keystore android/
+cp <your-backup>/keystore.properties      android/
 chmod 600 android/owntone-release.keystore android/keystore.properties
 tools/keystore/verify.sh                    # must match the public checksum
 ```
 
-Honest risk note: the key and its **plaintext password file co-locate in
-that one private repo** — a GitHub account/token compromise is then
-outright key theft (no second factor). For a solo maintainer this trades
-availability against a low-probability threat; if that balance changes,
-`age`-encrypt `keystore.properties` in the escrow and keep the decryption
-passphrase offline (GitHub documents the same pattern for large secrets).
-
-If the escrow repo is also gone: the signing key is unrecoverable — the app
+If every copy is gone: the signing key is unrecoverable — the app
 ID survives but every future APK will have a new certificate, meaning all
 existing installs (Obtainium) must uninstall and reinstall. Rotate
 deliberately in that case and document it in the release notes.

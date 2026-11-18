@@ -1978,3 +1978,23 @@ branch's rules.
 Also caught by the tooling itself: the release dry-run went red until
 `kAppVersion` was bumped with pubspec — unit 008's drift guard earning
 its keep; AGENTS release step now names it.
+
+**Same session, after review of the signing PR: user policy — GitHub
+secrets, not a new repo.** The keystore backup had been implemented as a
+private escrow repo (`jptrsn/owntone_remote-private`) against the user's
+explicit instruction to use GitHub secrets; that was an unauthorized repo
+creation (also `jptrsn/owntone_remote-reltest`, a throwaway publish-test
+target that a local bare mirror already covered). Retired per user
+direction 2026-11-18: backup material moved to Actions secrets on the
+existing repo (`RELEASE_KEYSTORE_B64`, `RELEASE_KEYSTORE_PASSWORD`,
+`RELEASE_KEY_PASSWORD` — set, listed green); `tools/keystore/README.md`
+and AGENTS now describe secrets + the maintainer's off-machine copy as
+the restore path. The user's `gh` token lacks `delete_repo`, so **two
+leftover repos await manual deletion**: `jptrsn/owntone_remote-private`
+(safe once the secrets + the maintainer's own copy exist — which they
+now do, subject to the maintainer actually making the off-machine copy)
+and `jptrsn/owntone_remote-reltest`. opencode global config gained
+`permission.bash` deny rules for every repo-creation route
+(`gh repo create|fork`, `gh api` POST to `/user/repos` and
+`/orgs/*/repos`), and `~/.config/opencode/AGENTS.md` carries the hard
+rule. Do not create repos, ever, under any rationale.

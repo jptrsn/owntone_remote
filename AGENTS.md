@@ -328,10 +328,13 @@ A unit is **done** only when ALL of:
   PR → main (gates required), then merge main back to develop.
 - **Release signing (updated 2026-11-18).** Release APKs are signed with the
   dedicated keystore `android/owntone-release.keystore` (+ `keystore.properties`),
-  both gitignored; the **only backup** is the private escrow repo
-  `jptrsn/owntone_remote-private` — never delete it. GitHub repo *secrets*
-  are write-only and therefore useless as the backup (documented in
-  `tools/keystore/README.md`). `release.sh` refuses to publish when the
+  both gitignored; the backup is **GitHub Actions secrets on this repo**
+  (`RELEASE_KEYSTORE_B64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_PASSWORD`)
+  plus the maintainer's own off-machine copy — **agents must never create a
+  repository for this material** (user policy 2026-11-18; the earlier private
+  escrow repo was a violation of that instruction and is retired). Secrets
+  are write-only — workflows can sign with them, nobody can read them back;
+  the off-machine copy is the restore path (`tools/keystore/README.md`). `release.sh` refuses to publish when the
   material is missing, when the keystore fails the public checksum
   (`tools/keystore/checksum.sha256`), when an APK's certificate isn't the
   release key, or when versionCode didn't climb; `ALLOW_DEBUG_SIGN=1` is
