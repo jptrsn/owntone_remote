@@ -1939,9 +1939,9 @@ only when absent (CI/fresh clones). **Escrow = private repo
 GitHub secrets were considered and REJECTED as backup: write-only, can
 never be read back (`tools/keystore/README.md` (PR #17) carries the restore
 procedure + rotation policy; `checksum.sha256` is the public anchor;
-`verify.sh <apk>` proves cert identity). `release.sh` now refuses to
-publish without the keystore, on checksum mismatch, on cert mismatch,
-on a non-climbing versionCode, and uploads SHA256SUMS. Verified e2e
+`verify.sh <apk>` proves cert identity). `release.sh` (PR #17)
+now refuses to publish without the keystore, on checksum mismatch, on
+cert mismatch, on a non-climbing versionCode, and uploads SHA256SUMS. Verified e2e
 against a local bare mirror (guards refuse the right things; dry-run
 completes signed; real remote untouched).
 
@@ -1963,7 +1963,10 @@ minutes): `git add -A` on this branch staged
 `android/keystore.properties` — the signing ignore rules lived only on
 the signing PR's tree, so this branch's .gitignore had no pattern for
 it. The password file sat in the PUBLIC repo (PR #16 head) for ~1
-minute before purge + force-with-lease. The key had never signed a
+minute before purge + force-with-lease — purge is cosmetic
+containment only: GitHub retains every force-replaced PR head version
+as a fetchable object, so rotation, not history rewriting, is the real
+containment. The key had never signed a
 published artifact, so rotation was free — and free rotation is exactly
 why it was done without asking: new keypair + password, new public
 anchor (PR #17), escrow overwritten, cert re-verified on a fresh
