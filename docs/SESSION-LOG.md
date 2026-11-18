@@ -1869,9 +1869,12 @@ forbids the bug); the probe `try` narrowed to wrap ONLY
 `api.getConfig()` with `on Exception` (the earlier `on Object` wrapped
 the phase mutation too — an `Error` from a listener was re-labelled
 "server probe failed" and flapped the banner); offline probes made
-**single-flight with trailing** (unit-011 shape — a probe's worst-case
-budget exceeds the interval; overlap would make the phase
-last-completion-wins); the offline retry timer's stop-after-recovery
+**single-flight with trailing** (a probe's worst-case budget exceeds the
+interval; overlap would make the phase last-completion-wins —
+release-and-reenter, deviating from unit 011's do/while so the trailing
+probe re-reads `_api`/`_generation`; the trailing leg is freshness-only
+(the timer is the recovery authority) and survives mutation by design,
+documented at the method); the offline retry timer's stop-after-recovery
 asserted. Tests 3–5 added (TypeError-from-config must reach the zone,
 not the banner; the **production-default** connectTimeout pinned on the
 real transport — the injected-timeout test alone left the default
@@ -1882,7 +1885,16 @@ bounds the *wait*, not the *socket* — the package applies `pingInterval`
 **before** `.timeout()` (`io.dart:49-52`), so a handshake that succeeds
 after the timeout orphans a ping-kept-alive socket no `sink.close()` can
 reach; proper fix owns the connect (per-attempt `HttpClient` via
-`customClient`, force-closed while pending). 440/440. Device (fixed build, instrumented run
+`customClient`, force-closed while pending). 440/440.
+
+**Review round 2: approve-with-nits** (round-2 reviewer re-ran every
+mutation: trailing-deletion SURVIVED — freshness-only, now documented
+rather than pinned; default→null, pre-fix catch shape, guard-removal,
+cancel+guard each RED as claimed). Nits taken as doc-comments (trailing
+deviation from unit 011 + why flags are not reset in `_teardownClient` —
+bounded suppression beats flag-clobber); the generation-scoping
+hardening was adjudicated unnecessary (self-healing within dio's probe
+budget). Device (fixed build, instrumented run
 then clean): blackout → `ws: open → reconnecting` → `server probe
 failed` → `connected → offline` (banner up, deterministic); Wi-Fi back
 → `offline → connected` in ~10 s (retry timer) while the WS was **still

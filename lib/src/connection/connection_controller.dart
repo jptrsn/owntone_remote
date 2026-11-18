@@ -136,6 +136,13 @@ class ConnectionController extends ChangeNotifier {
   /// stream, stranding the banner forever (user bug 2026-11-17).
   late final Duration _offlineProbeInterval;
   Timer? _offlineProbe;
+
+  /// Single-flight state for [_probeServer]. Deliberately NOT reset by
+  /// [_teardownClient]: an old-generation probe still awaiting `getConfig()`
+  /// suppresses new probes until it resolves (bounded by dio's ≤15 s probe
+  /// budget, and `Dio.close` cancels pending calls) — clearing the flags
+  /// there would let the old probe's `finally` clobber the new generation's
+  /// flag, which is worse than bounded suppression (review round 2).
   bool _probeInFlight = false;
   bool _probeTrailing = false;
 
@@ -271,11 +278,18 @@ class ConnectionController extends ChangeNotifier {
   /// only downgrades a [ConnectionPhase.connected] state — and never after
   /// the WS reopened.
   ///
-  /// Single-flight with a trailing run (unit 011's serialization shape): a
-  /// probe can outlive the interval (dio connect+receive budgets exceed it),
-  /// and overlapping probes would make the phase last-*completion*-wins and
-  /// flap the banner. A request that arrives while one is in flight sets the
-  /// trailing flag instead of racing.
+  /// Single-flight with a trailing run: a probe can outlive the interval
+  /// (dio connect+receive budgets exceed it), and overlapping probes would
+  /// make the phase last-*completion*-wins and flap the banner (pinned by
+  /// test 5). Deviates from unit 011's do/while shape deliberately: the
+  /// flag is released in the `finally` and the trailing run re-enters, so
+  /// the trailing probe re-reads `_api`/`_generation` fresh. Unlike unit
+  /// 011 (where a lost trailing fetch stranded a stale queue — and its
+  /// trailing leg is pinned, `test/queue_screen_test.dart`), the trailing
+  /// leg here is freshness-only: the offline `Timer.periodic` is the
+  /// recovery authority, so no test pins the trailing run itself (verified
+  /// surviving mutation, round 2) — deleting it only delays freshness by
+  /// one backoff step, never recovery.
   Future<void> _probeServer() async {
     final api = _api;
     if (api == null) return;
