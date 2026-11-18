@@ -20,6 +20,18 @@ import 'backoff.dart';
 /// tests' wire budgets (`test/ws_client_liveness_test.dart`).
 const Duration kWsPingInterval = Duration(seconds: 10);
 
+/// Upper bound on a single handshake attempt (fix, 2026-11-17 background/
+/// Doze wedge). `IOWebSocketChannel.connect` documents that a null
+/// `connectTimeout` means "the connection process will never time-out"
+/// (lib/io.dart:31-32, web_socket_channel 3.0.3): against a peer whose SYNs
+/// are dropped — Android's per-uid firewall in deep Doze black-holes a
+/// backgrounded app's packets, no RST — the channel stays silent forever
+/// (no `ready`, no `onDone`/`onError`) and `WsClient._open` never schedules
+/// the next attempt, killing the whole reconnect chain. A bounded attempt
+/// turns that permanent wedge into one more backoff cycle (LAN handshakes
+/// are sub-second; 10 s is generous and matches the ping budget).
+const Duration kWsConnectTimeout = Duration(seconds: 10);
+
 /// OwnTone websocket (R-02): on connect (and after every reconnect) sends the
 /// `notify` subscription and re-emits event names as they arrive. Reconnects
 /// with exponential backoff. Events are invalidation signals only — the
@@ -30,6 +42,7 @@ class WsClient {
     required List<String> subscriptions,
     Backoff? backoff,
     WebSocketChannel Function(Uri uri)? channelFactory,
+    Duration connectTimeout = kWsConnectTimeout,
   }) : _uri = uri,
        _subscriptions = subscriptions,
        _backoff = backoff ?? Backoff() {
@@ -38,12 +51,19 @@ class WsClient {
     // subprotocol is mandatory: OwnTone's libwebsockets server accepts the
     // handshake without it but silently registers the client as
     // unsubscribed, so no events ever arrive.
+    // [connectTimeout] must reach the default factory: with null the package
+    // never bounds the handshake, a black-holed connect never resolves and
+    // `_open` wedges forever (see [kWsConnectTimeout]) — hence the parameter
+    // is non-nullable; the production default is pinned by
+    // test/connection_offline_recovery_test.dart. An injected
+    // [channelFactory] owns its own bounds.
     _channelFactory =
         channelFactory ??
         (uri) => IOWebSocketChannel.connect(
           uri,
           protocols: ['notify'],
           pingInterval: kWsPingInterval,
+          connectTimeout: connectTimeout,
         );
   }
 

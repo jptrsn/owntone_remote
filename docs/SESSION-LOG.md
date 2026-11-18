@@ -1818,3 +1818,104 @@ to 3.47.9 and re-verify all gates on it.
   back-merge pre-flight added). `main`/`develop` protected: PRs only,
   required `gates`, admin-enforced; push-triggered gates never fire on
   main. First PRs through the new flow (this record commit is one).
+
+## 2026-11-17 — background/Doze wedge: stuck "Server unreachable — retrying" (opencode)
+
+User bug: app left backgrounded for hours (server idle); reopen →
+"Server unreachable — retrying" banner forever while the server was
+provably up (`curl /api/config` fine). Reproduced on a per-unit
+disposable AVD (`OwnToneRepro_API_36`, created + deleted by this fix)
+and root-caused to **two unbounded waits on the WS path**:
+
+1. `WsClient` built `IOWebSocketChannel.connect` **without
+   `connectTimeout`** — the package documents (web_socket_channel 3.0.3
+   `lib/io.dart:31-32`) that null means "the connection process will
+   never time-out" (host-level probe: same-address connect with 2 s
+   timeout errors both `ready` and the stream at +2.0 s; without it,
+   `ready` still pending at +6 s with the stream silent). A black-holed
+   handshake (SYNs dropped, no RST — what a per-uid firewall does to a
+   backgrounded app) leaves `_open()` awaiting a stream that never
+   completes: no `ready`, no `onDone`/`onError`, and **no reconnect
+   timer was ever scheduled** — the whole chain stops dead (device
+   proof: pre-fix dwell = zero `:3688` SYNs in `ss`/`conntrack` for 6
+   min, silent peer accepted nothing, chain never re-attempted even
+   after the network was fully restored).
+2. While `offline`, the **only** transitions to `connected` rode the
+   WS status stream (`'open'`, or `'reconnecting'` → REST probe). Once
+   (1) silences that stream, nothing ever re-probes REST — the banner
+   says "retrying" while nothing retries.
+
+Fix (branch `fix/background-reconnect-wedge`): `kWsConnectTimeout`
+(10 s) flows into the default channel factory (bounded attempt →
+TimeoutException → existing `onError` → backoff, so one hang is just
+one more cycle); `kOfflineProbeInterval` (10 s) `Timer.periodic` armed
+on entering offline (`_setPhase`) — the banner's authority no longer
+depends on WS-client liveness; `_probeServer`'s catch broadened from
+`DioException` to `Object` (the future is `unawaited` — a foreign
+exception silently swallowed and skipped the offline downgrade). Tests:
+`test/connection_offline_recovery_test.dart` (2, cite R-01/R-02, use
+new `FakeWsChannel.handshakeHangs` black-hole mode +
+`FakeWsLivenessServer.holdHandshake` on the real transport);
+**mutation-checked in fresh /tmp copies** — each mechanism disabled
+individually makes **its own** test time out (the other stays green);
+with them all green. 437/437, analyze 0, format clean, debug APK
+builds.
+
+**Review round 1 (2 agentic reviewers, both request-changes)** — all
+findings fixed except one recorded as a follow-up candidate:
+`connectTimeout` and `offlineProbeInterval` params made **non-nullable**
+(a caller passing null re-wedges the default factory — the type now
+forbids the bug); the probe `try` narrowed to wrap ONLY
+`api.getConfig()` with `on Exception` (the earlier `on Object` wrapped
+the phase mutation too — an `Error` from a listener was re-labelled
+"server probe failed" and flapped the banner); offline probes made
+**single-flight with trailing** (a probe's worst-case budget exceeds the
+interval; overlap would make the phase last-completion-wins —
+release-and-reenter, deviating from unit 011's do/while so the trailing
+probe re-reads `_api`/`_generation`; the trailing leg is freshness-only
+(the timer is the recovery authority) and survives mutation by design,
+documented at the method); the offline retry timer's stop-after-recovery
+asserted. Tests 3–5 added (TypeError-from-config must reach the zone,
+not the banner; the **production-default** connectTimeout pinned on the
+real transport — the injected-timeout test alone left the default
+unpinned; probe coalescing). New mutations verified red in /tmp copies
+(default→null, guard-removal, pre-fix catch shape, timer-cancel+guard).
+Candidate for a follow-up unit (reviewer-accepted): `connectTimeout`
+bounds the *wait*, not the *socket* — the package applies `pingInterval`
+**before** `.timeout()` (`io.dart:49-52`), so a handshake that succeeds
+after the timeout orphans a ping-kept-alive socket no `sink.close()` can
+reach; proper fix owns the connect (per-attempt `HttpClient` via
+`customClient`, force-closed while pending). 440/440.
+
+**Review round 2: approve-with-nits** (round-2 reviewer re-ran every
+mutation: trailing-deletion SURVIVED — freshness-only, now documented
+rather than pinned; default→null, pre-fix catch shape, guard-removal,
+cancel+guard each RED as claimed). Nits taken as doc-comments (trailing
+deviation from unit 011 + why flags are not reset in `_teardownClient` —
+bounded suppression beats flag-clobber); the generation-scoping
+hardening was adjudicated unnecessary (self-healing within dio's probe
+budget). Device (fixed build, instrumented run
+then clean): blackout → `ws: open → reconnecting` → `server probe
+failed` → `connected → offline` (banner up, deterministic); Wi-Fi back
+→ `offline → connected` in ~10 s (retry timer) while the WS was **still
+hang-blocked**; hang lifted → `ws: reconnecting → open` + `WS
+reconnected — full refetch`. On-device backoff ladder (1→2→4→8→16→30 s)
+re-quoted from logcat.
+
+Repro-harness facts worth keeping (cost real time):
+- `adb root` **kills live `adb reverse` tunnels** (adbd restart) —
+  silent-proxy peers behind the tunnel then black-hole SYNs forever;
+  use `su 0 iptables …` and keep adbd non-root.
+- `dumpsys deviceidle force-idle` + screen-off does **not** starve a
+  mediaPlayback-FGS app's network on the AVD (dv-004 reconfirmed at
+  15 min) — impose black-holes directly (`svc wifi disable`, iptables).
+- Hand-added iptables OUTPUT rules intermittently **did not** drop the
+  app's traffic (keep-alive/netsim oddities — probes logged ok during
+  "blackout"); `conntrack -D` at rule flips + `ss`/`conntrack` + the
+  app's own `[connection:]` logcat lines were the trustworthy oracle.
+- `adb reverse` + a raw TCP proxy churned the live WS every ~10–11 s
+  (proxy-layer artifact — the churn was the instrument, not the app).
+- First-launch "app started playback" scare resolved **not** the app:
+  shared-server user activity (user confirmed). The app's traffic was
+  GET-only throughout (only PUT: the documented pause). Server left as
+  the user's session had it (`pause`, their volume/outputs).

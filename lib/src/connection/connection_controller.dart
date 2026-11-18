@@ -46,6 +46,15 @@ enum WsPhase {
   disabled,
 }
 
+/// How often the controller re-probes REST while [ConnectionPhase.offline]
+/// (fix, 2026-11-17 background/Doze wedge). While offline this timer — not
+/// the WS status stream — is the banner's authority: a wedged WS client
+/// (e.g. a black-holed handshake, see `kWsConnectTimeout` in ws_client.dart)
+/// must never strand the UI at "Server unreachable — retrying" while the
+/// server is actually reachable (R-01). The GET is trivial; 10 s matches the
+/// backoff cap so the two paths feel the same.
+const Duration kOfflineProbeInterval = Duration(seconds: 10);
+
 /// The full event set this app subscribes to (R-02, docs/API.md).
 const kWsSubscriptions = [
   'player',
@@ -84,6 +93,7 @@ class ConnectionController extends ChangeNotifier {
     WsFactory? wsFactory,
     Backoff? backoff,
     Logger? logger,
+    Duration offlineProbeInterval = kOfflineProbeInterval,
   }) {
     _dioFactory = dioFactory ?? (options) => Dio(options);
     _wsFactory =
@@ -92,6 +102,7 @@ class ConnectionController extends ChangeNotifier {
             WsClient(uri: uri, subscriptions: subscriptions, backoff: b));
     _backoff = backoff ?? Backoff();
     _logger = logger ?? Logger(printer: PrettyPrinter(methodCount: 0));
+    _offlineProbeInterval = offlineProbeInterval;
   }
 
   late final DioFactory _dioFactory;
@@ -116,6 +127,24 @@ class ConnectionController extends ChangeNotifier {
   StreamSubscription<String>? _wsStatusSub;
   StreamSubscription<List<String>>? _wsEventsSub;
   bool _firstWsOpen = true;
+
+  /// The safety-net probe while offline (see [kOfflineProbeInterval]):
+  /// armed by [_setPhase] on entering [ConnectionPhase.offline], cancelled
+  /// on leaving it (and in [_teardownClient]/[dispose]). Without it, the
+  /// only offline→connected transitions rode the WS status stream — and a
+  /// wedged `WsClient` (black-holed handshake) stops emitting on that
+  /// stream, stranding the banner forever (user bug 2026-11-17).
+  late final Duration _offlineProbeInterval;
+  Timer? _offlineProbe;
+
+  /// Single-flight state for [_probeServer]. Deliberately NOT reset by
+  /// [_teardownClient]: an old-generation probe still awaiting `getConfig()`
+  /// suppresses new probes until it resolves (bounded by dio's ≤15 s probe
+  /// budget, and `Dio.close` cancels pending calls) — clearing the flags
+  /// there would let the old probe's `finally` clobber the new generation's
+  /// flag, which is worse than bounded suppression (review round 2).
+  bool _probeInFlight = false;
+  bool _probeTrailing = false;
 
   /// Bumped by every [_teardownClient] (connectTo start/failure, disconnect,
   /// dispose). An async continuation — the REST probe — must belong to the
@@ -243,31 +272,73 @@ class ConnectionController extends ChangeNotifier {
   }
 
   /// While the WS is down, REST decides reachability (offline banner, R-01).
-  /// Runs once per reconnect attempt. A failed probe only downgrades a
-  /// [ConnectionPhase.connected] state — and never after the WS reopened.
+  /// Runs on every WS reconnect attempt **and** on the offline retry timer
+  /// (see [kOfflineProbeInterval]) — the timer is what recovers when the WS
+  /// client has gone quiet (wedged handshake, 2026-11-17). A failed probe
+  /// only downgrades a [ConnectionPhase.connected] state — and never after
+  /// the WS reopened.
+  ///
+  /// Single-flight with a trailing run: a probe can outlive the interval
+  /// (dio connect+receive budgets exceed it), and overlapping probes would
+  /// make the phase last-*completion*-wins and flap the banner (pinned by
+  /// test 5). Deviates from unit 011's do/while shape deliberately: the
+  /// flag is released in the `finally` and the trailing run re-enters, so
+  /// the trailing probe re-reads `_api`/`_generation` fresh. Unlike unit
+  /// 011 (where a lost trailing fetch stranded a stale queue — and its
+  /// trailing leg is pinned, `test/queue_screen_test.dart`), the trailing
+  /// leg here is freshness-only: the offline `Timer.periodic` is the
+  /// recovery authority, so no test pins the trailing run itself (verified
+  /// surviving mutation, round 2) — deleting it only delays freshness by
+  /// one backoff step, never recovery.
   Future<void> _probeServer() async {
     final api = _api;
     if (api == null) return;
+    if (_probeInFlight) {
+      _probeTrailing = true;
+      return;
+    }
+    _probeInFlight = true;
     // Captured before the await: the probe is the reachability authority
     // only for the connection generation that scheduled it (see [_generation]).
     final generation = _generation;
     try {
-      await api.getConfig();
-      if (generation != _generation) return;
-      if (_wsPhase != WsPhase.open) {
-        _setPhase(ConnectionPhase.connected);
+      Object? probeError;
+      try {
+        await api.getConfig();
+      } on Exception catch (e) {
+        // `Exception`, not `Object`, and the try wraps ONLY the network call
+        // (review round 1, 2026-11-17): the widening from `DioException` is
+        // for probe failures — TimeoutException/SocketException arriving
+        // un-wrapped still mean "not confirmed reachable". An `Error` (or
+        // anything thrown by [_setPhase]'s listeners, which now sit outside
+        // this catch) is a client bug and must reach the zone uncaught, not
+        // be re-labelled "server probe failed" and flap the banner.
+        probeError = e;
       }
-    } on DioException catch (e) {
       if (generation != _generation) return;
-      if (_wsPhase != WsPhase.open && _phase == ConnectionPhase.connected) {
-        _logger.w('server probe failed (${e.error ?? e.type}) — offline');
+      final error = probeError;
+      if (error == null) {
+        if (_wsPhase != WsPhase.open) {
+          _setPhase(ConnectionPhase.connected);
+        }
+      } else if (_wsPhase != WsPhase.open &&
+          _phase == ConnectionPhase.connected) {
+        _logger.w('server probe failed ($error) — offline');
         _setPhase(ConnectionPhase.offline);
+      }
+    } finally {
+      _probeInFlight = false;
+      if (_probeTrailing) {
+        _probeTrailing = false;
+        unawaited(_probeServer());
       }
     }
   }
 
   void _teardownClient() {
     _generation++;
+    _offlineProbe?.cancel();
+    _offlineProbe = null;
     _wsStatusSub?.cancel();
     _wsStatusSub = null;
     _wsEventsSub?.cancel();
@@ -285,6 +356,18 @@ class ConnectionController extends ChangeNotifier {
     if (_phase == p) return;
     _logger.i('connection: ${_phase.name} → ${p.name}');
     _phase = p;
+    if (p == ConnectionPhase.offline) {
+      // Safety net: while offline, the REST probe must keep running even
+      // if the WS client has stopped reporting status (wedged handshake).
+      _offlineProbe ??= Timer.periodic(_offlineProbeInterval, (_) {
+        if (_phase == ConnectionPhase.offline) {
+          unawaited(_probeServer());
+        }
+      });
+    } else {
+      _offlineProbe?.cancel();
+      _offlineProbe = null;
+    }
     notifyListeners();
   }
 

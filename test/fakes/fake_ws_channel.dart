@@ -16,6 +16,15 @@ class FakeWsChannel implements WebSocketChannel {
   final _controller = StreamController<Object?>();
   late final _FakeWsSink _sink;
   bool _handshakeFails = false;
+  bool _handshakeHangs = false;
+
+  /// The peer black-holes the handshake: no 101, no error, no FIN — the
+  /// exact shape of `IOWebSocketChannel.connect` with `connectTimeout: null`
+  /// (the package docs: "the connection process will never time-out",
+  /// lib/io.dart:31-32) against a peer whose SYNs are dropped — what
+  /// Android's per-uid firewall does to a backgrounded app in deep Doze.
+  /// [ready] stays pending forever and [stream] stays silent.
+  set handshakeHangs(bool v) => _handshakeHangs = v;
 
   /// The server is down: the handshake fails, like a real one — [ready]
   /// errors AND the stream emits an error (both, as `IOWebSocketChannel`
@@ -48,6 +57,13 @@ class FakeWsChannel implements WebSocketChannel {
 
   @override
   Future<void> get ready async {
+    if (_handshakeHangs) {
+      // The black hole: the handshake neither completes nor fails. A real
+      // `IOWebSocketChannel` with `connectTimeout: null` behaves exactly
+      // like this (lib/io.dart:31-32) — `ready` pending forever, stream
+      // silent forever, until the OS gives up (if it ever does).
+      await Completer<void>().future;
+    }
     if (_handshakeFails) {
       throw SocketException('handshake failed (server down)');
     }
