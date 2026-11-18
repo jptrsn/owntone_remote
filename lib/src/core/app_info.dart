@@ -9,3 +9,7 @@ library;
 
 const String kAppName = 'OwnTone Remote';
 const String kAppVersion = '0.1.0+1';
+
+/// SPDX id of the project license (LICENSE at the repo root). Rendered on
+/// the About screen; keep in sync with the LICENSE file.
+const String kAppLicense = 'GPL-3.0-only';
