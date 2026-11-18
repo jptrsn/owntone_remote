@@ -46,6 +46,15 @@ enum WsPhase {
   disabled,
 }
 
+/// How often the controller re-probes REST while [ConnectionPhase.offline]
+/// (fix, 2026-11-17 background/Doze wedge). While offline this timer — not
+/// the WS status stream — is the banner's authority: a wedged WS client
+/// (e.g. a black-holed handshake, see `kWsConnectTimeout` in ws_client.dart)
+/// must never strand the UI at "Server unreachable — retrying" while the
+/// server is actually reachable (R-01). The GET is trivial; 10 s matches the
+/// backoff cap so the two paths feel the same.
+const Duration kOfflineProbeInterval = Duration(seconds: 10);
+
 /// The full event set this app subscribes to (R-02, docs/API.md).
 const kWsSubscriptions = [
   'player',
@@ -84,6 +93,7 @@ class ConnectionController extends ChangeNotifier {
     WsFactory? wsFactory,
     Backoff? backoff,
     Logger? logger,
+    Duration? offlineProbeInterval = kOfflineProbeInterval,
   }) {
     _dioFactory = dioFactory ?? (options) => Dio(options);
     _wsFactory =
@@ -92,6 +102,7 @@ class ConnectionController extends ChangeNotifier {
             WsClient(uri: uri, subscriptions: subscriptions, backoff: b));
     _backoff = backoff ?? Backoff();
     _logger = logger ?? Logger(printer: PrettyPrinter(methodCount: 0));
+    _offlineProbeInterval = offlineProbeInterval ?? kOfflineProbeInterval;
   }
 
   late final DioFactory _dioFactory;
@@ -116,6 +127,15 @@ class ConnectionController extends ChangeNotifier {
   StreamSubscription<String>? _wsStatusSub;
   StreamSubscription<List<String>>? _wsEventsSub;
   bool _firstWsOpen = true;
+
+  /// The safety-net probe while offline (see [kOfflineProbeInterval]):
+  /// armed by [_setPhase] on entering [ConnectionPhase.offline], cancelled
+  /// on leaving it (and in [_teardownClient]/[dispose]). Without it, the
+  /// only offline→connected transitions rode the WS status stream — and a
+  /// wedged `WsClient` (black-holed handshake) stops emitting on that
+  /// stream, stranding the banner forever (user bug 2026-11-17).
+  late final Duration _offlineProbeInterval;
+  Timer? _offlineProbe;
 
   /// Bumped by every [_teardownClient] (connectTo start/failure, disconnect,
   /// dispose). An async continuation — the REST probe — must belong to the
@@ -243,8 +263,11 @@ class ConnectionController extends ChangeNotifier {
   }
 
   /// While the WS is down, REST decides reachability (offline banner, R-01).
-  /// Runs once per reconnect attempt. A failed probe only downgrades a
-  /// [ConnectionPhase.connected] state — and never after the WS reopened.
+  /// Runs on every WS reconnect attempt **and** on the offline retry timer
+  /// (see [kOfflineProbeInterval]) — the timer is what recovers when the WS
+  /// client has gone quiet (wedged handshake, 2026-11-17). A failed probe
+  /// only downgrades a [ConnectionPhase.connected] state — and never after
+  /// the WS reopened.
   Future<void> _probeServer() async {
     final api = _api;
     if (api == null) return;
@@ -257,10 +280,15 @@ class ConnectionController extends ChangeNotifier {
       if (_wsPhase != WsPhase.open) {
         _setPhase(ConnectionPhase.connected);
       }
-    } on DioException catch (e) {
+    } on Object catch (e) {
+      // Broad on purpose (fix, 2026-11-17): this future is `unawaited`
+      // — a non-Dio exception escaping here would be *silently swallowed*
+      // by the zone, and it used to skip the offline downgrade entirely.
+      // Any probe failure means "not confirmed reachable": downgrade if
+      // connected; while offline the periodic timer simply tries again.
       if (generation != _generation) return;
       if (_wsPhase != WsPhase.open && _phase == ConnectionPhase.connected) {
-        _logger.w('server probe failed (${e.error ?? e.type}) — offline');
+        _logger.w('server probe failed ($e) — offline');
         _setPhase(ConnectionPhase.offline);
       }
     }
@@ -268,6 +296,8 @@ class ConnectionController extends ChangeNotifier {
 
   void _teardownClient() {
     _generation++;
+    _offlineProbe?.cancel();
+    _offlineProbe = null;
     _wsStatusSub?.cancel();
     _wsStatusSub = null;
     _wsEventsSub?.cancel();
@@ -285,6 +315,18 @@ class ConnectionController extends ChangeNotifier {
     if (_phase == p) return;
     _logger.i('connection: ${_phase.name} → ${p.name}');
     _phase = p;
+    if (p == ConnectionPhase.offline) {
+      // Safety net: while offline, the REST probe must keep running even
+      // if the WS client has stopped reporting status (wedged handshake).
+      _offlineProbe ??= Timer.periodic(_offlineProbeInterval, (_) {
+        if (_phase == ConnectionPhase.offline) {
+          unawaited(_probeServer());
+        }
+      });
+    } else {
+      _offlineProbe?.cancel();
+      _offlineProbe = null;
+    }
     notifyListeners();
   }
 
