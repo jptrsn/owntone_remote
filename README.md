@@ -46,8 +46,9 @@ reinstall; release notes will flag it explicitly when that happens.
 ## What it does
 
 - Now playing, play/pause/next/previous, seek, queue management
-- Library browse (artists / albums / tracks / genres) and search
-- Volume, output selection (AirPlay / ALSA / Chromecast), per-device volume
+- Library browse (playlists / artists / albums → tracks / genres) and search
+- Volume, output selection (server-listed outputs; AirPlay + ALSA verified,
+  Chromecast depends on server-side support — see Known limitations in the release notes), per-device volume
 - Track ratings, shuffle/repeat modes, hardware volume-key routing
 - Live updates over the OwnTone websocket with resilient reconnect
 - Media notification / lock-screen controls (Android media session)

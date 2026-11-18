@@ -1937,7 +1937,7 @@ silently ignored), both gitignored; gradle falls back to debug signing
 only when absent (CI/fresh clones). **Escrow = private repo
 `jptrsn/owntone_remote-private`** (content checksum-verified at upload) —
 GitHub secrets were considered and REJECTED as backup: write-only, can
-never be read back (`tools/keystore/README.md` carries the restore
+never be read back (`tools/keystore/README.md` (PR #17) carries the restore
 procedure + rotation policy; `checksum.sha256` is the public anchor;
 `verify.sh <apk>` proves cert identity). `release.sh` now refuses to
 publish without the keystore, on checksum mismatch, on cert mismatch,

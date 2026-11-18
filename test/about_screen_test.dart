@@ -87,6 +87,16 @@ void main() {
       final pubspec = File('pubspec.yaml').readAsStringSync();
       expect(pubspec, contains('version: $kAppVersion'));
     });
+
+    test('android app_name mirrors kAppName (launcher label drift guard)', () {
+      // Same convention as the pubspec guard above: the Android chrome
+      // (launcher/Settings/permission dialogs) reads strings.xml, the UI
+      // reads kAppName — they must not drift.
+      final strings = File(
+        'android/app/src/main/res/values/strings.xml',
+      ).readAsStringSync();
+      expect(strings, contains('>$kAppName<'));
+    });
   });
 
   group('R-14 server info (GET /api/config)', () {
