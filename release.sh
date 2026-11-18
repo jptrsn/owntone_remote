@@ -34,6 +34,10 @@
 # set RELEASE_NOTES_ASK=1 to type them interactively, or RELEASE_NOTES_FORCE=1
 # to skip the version-mention guard.
 #
+# GH_REPO=<owner>/<repo> redirects the GitHub release (smoke tests against a
+# throwaway repo); the tag push still follows `git remote origin` — keep the
+# two pointed at the same place, the summary prints both.
+#
 # Obtainium users can then add: https://github.com/jptrsn/owntone_remote
 # (with three per-ABI APKs per release, users should enable Obtainium's
 # "filter APKs by CPU architecture" toggle — see the footer at the end).
@@ -252,6 +256,7 @@ ${RELEASE_NOTES}"
 echo "─────────────────────────────────────────"
 bold "Release summary:"
 echo "  Tag:     ${TAG}"
+echo "  Repo:    ${GH_REPO}  (tag push goes to 'origin' — verify they agree)"
 echo "  Version: ${VERSION_FULL}"
 echo "  APKs:    ${APK_PREFIX}-${TAG}-arm64-v8a.apk"
 echo "           ${APK_PREFIX}-${TAG}-armeabi-v7a.apk"
