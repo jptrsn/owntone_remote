@@ -1958,6 +1958,20 @@ harness before the subject):
    failed against the deleted local mirror; restored
    `git@github.com:jptrsn/owntone_remote.git`. Worktree experiments must
    use a *clone*, never a worktree, when they touch remotes.
+Security incident (same session, self-inflicted, remediated within
+minutes): `git add -A` on this branch staged
+`android/keystore.properties` — the signing ignore rules lived only on
+the signing PR's tree, so this branch's .gitignore had no pattern for
+it. The password file sat in the PUBLIC repo (PR #16 head) for ~1
+minute before purge + force-with-lease. The key had never signed a
+published artifact, so rotation was free — and free rotation is exactly
+why it was done without asking: new keypair + password, new public
+anchor (PR #17), escrow overwritten, cert re-verified on a fresh
+release build. The ignore block now lands on BOTH PR trees (whichever
+merges first arms develop). Lesson: check `git status` line by line
+before `git add -A` on branches whose .gitignore predates another
+branch's rules.
+
 Also caught by the tooling itself: the release dry-run went red until
 `kAppVersion` was bumped with pubspec — unit 008's drift guard earning
 its keep; AGENTS release step now names it.
