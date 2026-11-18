@@ -3,9 +3,12 @@
 # release.sh — Gate, build, tag, and publish OwnTone Remote to GitHub releases.
 #
 # The distribution channel for this project is GitHub releases + Obtainium
-# (user decision 2026-11-16). The release APK is debug-signed — fine for
-# Obtainium sideload; if ~/.android/debug.keystore changes between release
-# machines, users hit a signature mismatch and must uninstall/reinstall.
+# (user decision 2026-11-16). Since 2026-11-18 release APKs are signed with
+# a DEDICATED keystore (android/owntone-release.keystore, gitignored;
+# escrow + restore: tools/keystore/README.md) — this script REFUSES to
+# publish debug-signed or foreign-signed APKs (keystore preflight + cert
+# check). Emergency override ALLOW_DEBUG_SIGN=1 exists for disaster
+# recovery only and says the quiet part out loud.
 #
 # Prerequisites:
 #   - gh CLI installed and authenticated (gh auth login) with access to
@@ -31,6 +34,10 @@
 # set RELEASE_NOTES_ASK=1 to type them interactively, or RELEASE_NOTES_FORCE=1
 # to skip the version-mention guard.
 #
+# GH_REPO=<owner>/<repo> redirects the GitHub release (smoke tests against a
+# throwaway repo); the tag push still follows `git remote origin` — keep the
+# two pointed at the same place, the summary prints both.
+#
 # Obtainium users can then add: https://github.com/jptrsn/owntone_remote
 # (with three per-ABI APKs per release, users should enable Obtainium's
 # "filter APKs by CPU architecture" toggle — see the footer at the end).
@@ -38,7 +45,7 @@
 set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────────────────
-GH_REPO="jptrsn/owntone_remote"
+GH_REPO="${GH_REPO:-jptrsn/owntone_remote}"  # overridable for smoke-testing against a throwaway repo
 APK_PREFIX="owntone-remote"
 APP_NAME="OwnTone Remote"
 NOTES_DEFAULT="docs/RELEASE-NOTES.md"
@@ -114,10 +121,7 @@ TAG="v${VERSION}"
 bold "Version:  ${VERSION_FULL}"
 bold "Tag:      ${TAG}"
 bold "APKs:     ${APK_PREFIX}-${TAG}-{arm64-v8a,armeabi-v7a,x86_64}.apk"
-bold "Signing:  debug (accepted for the GitHub-release/Obtainium channel)"
-yellow "  Keystore stability: a rotated ~/.android/debug.keystore between"
-yellow "  release machines breaks Obtainium updates (signature mismatch —"
-yellow "  users must uninstall/reinstall). Keep this machine's keystore."
+bold "Signing:  dedicated release key (android/owntone-release.keystore)"
 echo
 
 if [[ -n "$(git status --porcelain)" ]]; then
@@ -134,6 +138,37 @@ fi
 REMOTE_TAG=$(git ls-remote --tags origin "refs/tags/${TAG}" 2>/dev/null) \
     || die "Cannot reach origin — refusing to guess about whether ${TAG} exists."
 [[ -z "$REMOTE_TAG" ]] || die "Tag '${TAG}' already exists on the remote. Bump the version in pubspec.yaml first."
+
+# ── Signing preflight (never publish a foreign-signed artifact) ──────────────
+ALLOW_DEBUG_SIGN="${ALLOW_DEBUG_SIGN:-0}"
+if [[ "$ALLOW_DEBUG_SIGN" == "1" ]]; then
+    yellow "⚠ ALLOW_DEBUG_SIGN=1 — the disaster-recovery path. The published"
+    yellow "  APKs will NOT carry the release key; every existing install"
+    yellow "  breaks on next update and the release notes must say so."
+    echo
+else
+    [[ -f "android/keystore.properties" && -f "android/owntone-release.keystore" ]] \
+        || die "Signing material missing (android/keystore.properties, android/owntone-release.keystore). Restore it per tools/keystore/README.md (private escrow repo). Emergency-only override: ALLOW_DEBUG_SIGN=1."
+    KS_EXPECTED=$(awk '{print $1}' tools/keystore/checksum.sha256) \
+        || die "tools/keystore/checksum.sha256 unreadable."
+    KS_ACTUAL=$(shasum -a 256 android/owntone-release.keystore | awk '{print $1}')
+    [[ "$KS_EXPECTED" == "$KS_ACTUAL" ]] \
+        || die "Keystore does NOT match the public checksum (expected ${KS_EXPECTED:0:12}…, got ${KS_ACTUAL:0:12}…) — wrong/restored-wrong key? See tools/keystore/README.md."
+fi
+
+# ── versionCode must strictly climb (Obtainium/Android refuse installs of ──
+# ── equal-or-lower versionCode; release.sh used to rely on the human) ──────
+CURRENT_BUILD=$(printf '%s' "$VERSION_FULL" | sed -e 's/.*+//')
+[[ "$CURRENT_BUILD" =~ ^[0-9]+$ ]] || die "Could not parse build number from '${VERSION_FULL}' (expected version: X.Y.Z+N)."
+LAST_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
+if [[ -n "$LAST_TAG" ]]; then
+    LAST_FULL=$(git show "${LAST_TAG}:pubspec.yaml" | grep '^version:' | head -1 | sed -e 's/version: *//' -e 's/"//g' -e "s/'//g")
+    LAST_BUILD=$(printf '%s' "$LAST_FULL" | sed -e 's/.*+//')
+    if [[ "$LAST_BUILD" =~ ^[0-9]+$ ]] && (( CURRENT_BUILD <= LAST_BUILD )); then
+        die "versionCode must increase: ${TAG} has +${CURRENT_BUILD} but ${LAST_TAG} already shipped +${LAST_BUILD}. Bump the +N in pubspec.yaml."
+    fi
+fi
+green "✓ versionCode ${CURRENT_BUILD} climbs past ${LAST_TAG:-<no prior tag>}."
 
 green "✓ Preflight checks passed."
 echo
@@ -207,7 +242,12 @@ fi
 SHORT_SHA=$(git rev-parse --short HEAD)
 FLUTTER_LABEL="$LOCAL_FLUTTER"
 if [[ "$FLUTTER_LABEL" == "unknown" ]]; then FLUTTER_LABEL="version not detected (see operator console drift warning)"; fi
-NOTES_HEADER="> Built from \`${SHORT_SHA}\` (main @ publish) with \`flutter build apk --release --split-per-abi\` on Flutter ${FLUTTER_LABEL}; debug-signed per the GitHub-release/Obtainium channel. The body below is the release doc as of publish — it describes the audited release-candidate build, while the attached per-ABI APKs are the artifacts built here."
+if [[ "$ALLOW_DEBUG_SIGN" == "1" ]]; then
+    SIGNING_LABEL="**debug-signed via the ALLOW_DEBUG_SIGN disaster-recovery override**"
+else
+    SIGNING_LABEL="signed with the release key (public anchor \`tools/keystore/checksum.sha256\`)"
+fi
+NOTES_HEADER="> Built from \`${SHORT_SHA}\` (main @ publish) with \`flutter build apk --release --split-per-abi\` on Flutter ${FLUTTER_LABEL}; ${SIGNING_LABEL}. The body below is the release doc as of publish — it describes the audited release-candidate build, while the attached per-ABI APKs are the artifacts built here."
 RELEASE_NOTES="${NOTES_HEADER}
 
 ${RELEASE_NOTES}"
@@ -216,6 +256,7 @@ ${RELEASE_NOTES}"
 echo "─────────────────────────────────────────"
 bold "Release summary:"
 echo "  Tag:     ${TAG}"
+echo "  Repo:    ${GH_REPO}  (tag push goes to 'origin' — verify they agree)"
 echo "  Version: ${VERSION_FULL}"
 echo "  APKs:    ${APK_PREFIX}-${TAG}-arm64-v8a.apk"
 echo "           ${APK_PREFIX}-${TAG}-armeabi-v7a.apk"
@@ -253,12 +294,31 @@ for abi in arm64-v8a armeabi-v7a x86_64; do
     APK_SIZE=$(du -h "$dest" | cut -f1) || APK_SIZE="?"
     echo "  ${dest} (${APK_SIZE})"
 done
+
+if [[ "$ALLOW_DEBUG_SIGN" == "1" ]]; then
+    yellow "⚠ Skipping release-key cert check (ALLOW_DEBUG_SIGN=1) —"
+    yellow "  these APKs must not be published as normally-signed releases."
+else
+    # The gradle fallback silently debug-signs when the keystore vanished
+    # mid-session; verify every artifact actually carries the release key.
+    for apk in $APK_FILES; do
+        tools/keystore/verify.sh "$apk" >/dev/null \
+            || die "$apk is not signed by the release key — aborting before publish."
+    done
+    green "✓ All APKs signed by the release key (cert-checked)."
+fi
+
+# Integrity asset: users (and Obtainium, on demand) can verify the bits.
+SUMS="${APK_PREFIX}-${TAG}-SHA256SUMS.txt"
+shasum -a 256 $APK_FILES > "$SUMS"
+APK_FILES="${APK_FILES} ${SUMS}"
+echo "  ${SUMS}"
 green "✓ APKs built."
 echo
 
 if [[ "$DRY_RUN" == "1" ]]; then
     bold "Dry run complete. APKs left in place (gitignored); nothing was pushed."
-    echo "  (delete them with: rm -f ${APK_PREFIX}-${TAG}-*.apk)"
+    echo "  (delete them with: rm -f ${APK_PREFIX}-${TAG}-*.apk ${APK_PREFIX}-${TAG}-SHA256SUMS.txt)"
     exit 0
 fi
 
@@ -294,7 +354,7 @@ if ! gh release create "$TAG" \
     $APK_FILES <<< "$RELEASE_NOTES"; then
     red "Release creation/upload failed — the tag is pushed and APKs remain in the project root."
     echo "To FINISH the release (assets upload is resumable):"
-    echo "    gh release upload ${TAG} ${APK_PREFIX}-${TAG}-*.apk --repo ${GH_REPO} --clobber"
+    echo "    gh release upload ${TAG} ${APK_PREFIX}-${TAG}-*.apk ${APK_PREFIX}-${TAG}-SHA256SUMS.txt --repo ${GH_REPO} --clobber"
     echo "    gh release edit ${TAG} --repo ${GH_REPO} --draft=false   # only if left as a draft"
     echo "To START OVER:"
     echo "    gh release delete ${TAG} --repo ${GH_REPO} --yes --cleanup-tag"

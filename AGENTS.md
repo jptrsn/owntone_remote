@@ -316,6 +316,9 @@ A unit is **done** only when ALL of:
   origin/main origin/develop` — if false, the post-release back-merge was
   skipped; do it before cutting). Do
   the pubspec version bump + `docs/RELEASE-NOTES.md` **on the release
+  branch** — and `lib/src/core/app_info.dart`'s `kAppVersion` (the About
+  screen; a test asserts it mirrors pubspec and will redden the gates if
+  forgotten) — **on the release
   branch**; pushing it fires the gates (the release-candidate run), and
   the PR `release/v* → main` carries the same required check —
   **a failing RC blocks the release**. After merge: run `./release.sh`
@@ -323,6 +326,24 @@ A unit is **done** only when ALL of:
   `develop`** so the bump and notes return.
 - **`hotfix/*`** — only if required (user call). Branch from main, fix,
   PR → main (gates required), then merge main back to develop.
+- **Release signing (updated 2026-11-18).** Release APKs are signed with the
+  dedicated keystore `android/owntone-release.keystore` (+ `keystore.properties`),
+  both gitignored; the **only backup** is the private escrow repo
+  `jptrsn/owntone_remote-private` — never delete it. GitHub repo *secrets*
+  are write-only and therefore useless as the backup (documented in
+  `tools/keystore/README.md`). `release.sh` refuses to publish when the
+  material is missing, when the keystore fails the public checksum
+  (`tools/keystore/checksum.sha256`), when an APK's certificate isn't the
+  release key, or when versionCode didn't climb; `ALLOW_DEBUG_SIGN=1` is
+  the disaster-recovery-only override. The gradle fallback to debug signing
+  (keystore absent) exists for CI/fresh-clone builds only. The v0.1.0
+  release predates this and was debug-signed: **the first release cut with
+  the new key requires a one-time uninstall/reinstall — say so in its
+  release notes.** The project is GPL-3.0-only (the LICENSE arrived with
+  PR #16, merged before this one; the repo had gone public without one).
+  **`pubspec`'s `+N` is Android versionCode: it must be strictly greater
+  than every release ever tagged — never reset it on a version bump**
+  (`release.sh` enforces this and the guards above).
 - Branch naming: `feature/*`, `fix/*`, `release/v*`, `hotfix/*`.
 - Red CI with a network/runner signature (known: Gradle NDK zip-download
   flake — gates.yml retries the network-touching steps once internally) →
