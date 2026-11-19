@@ -2425,3 +2425,16 @@ input had been issued; this matches the AGENTS-noted concurrent session
 driving the server. Paused via API at 21:16:48Z (204; ~9 s audible on the
 other session's cue before detection). Outputs left as the other session
 set them (their change — not "restored").
+
+**Units 003+004/005 done-in-progress (2026-11-19, same session).** REA
+(`rea-agents` 6.7.0, global npm) + apktool 3.0.3 static pass →
+`docs/retune-capture/static-notes.md` (manifest/prefs/132-layout
+reconciliation, zero unexplained). Inventory →
+`docs/retune-capture/feature-inventory.md`; actionable proposals →
+`docs/retune-capture/diff-list.md` (D-01…D-19). **Gate: user to prune
+diff list** — unit 004 stays in_progress until then; REQUIREMENTS.md
+scope notes update on that pass. Shortlist rec: D-02 (Songs tab), D-05
+(playlist artwork+smart badge), D-04 (Go to Artist/Album), D-09 (global
+outputs action) — all S; then D-06 (detail Play All/Shuffle/Play Next/Add
+to Up Next — needs QueueController add-only + shuffle-first), D-01
+(discovery, pre-approved), D-03/D-10 taste calls.

@@ -1,6 +1,6 @@
 ---
 name: 004-inventory-and-mapping
-status: pending
+status: in_progress
 intent: retune-ux-capture
 supervised_steps: [4]
 ---
@@ -46,7 +46,19 @@ approved by the user. This is the gate for `spec-authoring`.
 4. `supervised: true` — user has pruned + approved (recorded verbatim in
    `## Result`); REQUIREMENTS.md scope notes updated to match.
 
-## Result
+## Result — IN PROGRESS (awaiting user pruning gate)
 
-*(fill: user's pruning decisions verbatim, final in-v1 list, resolved
-gaps, open items deferred to spec-authoring)*
+Inventory written: `docs/retune-capture/feature-inventory.md` (per-screen
+features → JSON endpoints → status; ITUNES-ONLY-LISTED section; gap
+candidates). Actionable diff list: `docs/retune-capture/diff-list.md`
+(D-01…D-19, each with evidence, current-code reference, effort,
+recommendation; **Decision column awaiting the user**). Criterion 4
+(user pruning, verbatim) + REQUIREMENTS.md scope-note updates land on the
+user's pass over the diff list.
+
+Pre-gate user decisions already recorded verbatim:
+- 2026-11-19: skip pairing UI ("owntone_remote already has IP/port
+  dialog; **only improvement: auto-discovery**"); Composers/Radio/
+  Audiobooks/Libraries **out of scope**; Genius **drop entirely**;
+  ask before playback (honored — supervised window used, incidents
+  logged).
