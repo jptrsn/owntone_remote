@@ -329,7 +329,7 @@ a third app-bar icon). `N` is the current queue size.
 
 | Element | Detail |
 |---|---|
-| App bar | "Queue" + trailing clear icon (tooltip `Clear queue`) |
+| App bar | "Queue" + hide toggle (tooltip `Hide items played earlier` ↔ `Show items played earlier`, issue #23) + trailing clear icon (tooltip `Clear queue`) |
 | Rows | title · `artist · album` · `M:SS` — server order, no sorting; no leading numbers (removed 2026-10-26) |
 | Now-playing row | `primaryContainer` background + leading play icon when `QueueItem.id == PlayerState.itemId` (the queue-entry id, **not** `track_id` — verified live) |
 
@@ -342,12 +342,21 @@ destructive on the live library's real queue.
 (R-02); a reconnect refetches too. Rows are lazy-built from the full list
 (185 items render fine).
 
+The hide toggle (issue #23, OwnTone web-UI parity) is a **pure visibility
+filter**: `visibleQueue` cuts everything before the now-playing entry
+(anchor: the queue-entry id again), computed fresh on every build so a WS
+`queue`/`player` event re-anchors the cut. Zero API calls, zero optimistic
+removal — the queue mutation it once mimicked must never come back. The
+state is session-only on `QueueController` (not persisted); an
+unanchorable cut (no current item) shows everything.
+
 ### Actions → endpoints
 
 | Action | Call | Safety |
 |---|---|---|
 | Row tap (play this) | `POST /api/queue/items/add?uris=library:track:<id>&clear=true&playback=start` | **supervised** — audible |
 | Clear | `PUT /api/queue/clear` (optimistic empty; pre-clear list restored + typed error on failure) | safe while paused/stopped |
+| Hide toggle | **none — pure view filter** (issue #23) | always safe, works offline |
 
 Play actions from the browse rows use the same single add call (unit 005b);
 `library:artist:<id>` and `library:album:<id>` uris expand server-side

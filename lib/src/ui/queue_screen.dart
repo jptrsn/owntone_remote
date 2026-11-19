@@ -93,11 +93,32 @@ class _QueueScreenState extends State<QueueScreen> {
       queueController.queue,
       player.player?.itemId,
     );
+    // Issue #23: the hide toggle is a pure view filter — this is the whole
+    // "action". No controller call, no API touch; recomputed on every build
+    // so a WS queue/player event re-anchors the cut automatically. Stays
+    // pressable while offline (it touches nothing on the server).
+    final items = visibleQueue(
+      queueController.queue,
+      player.player?.itemId,
+      hidePlayed: queueController.hidePlayedItems,
+    );
 
     return BrowseScreenScaffold(
       title: 'Queue',
       offlineMessage: 'Server unreachable — retrying. Queue disabled.',
       actions: [
+        IconButton(
+          tooltip: queueController.hidePlayedItems
+              ? 'Show items played earlier'
+              : 'Hide items played earlier',
+          icon: Icon(
+            queueController.hidePlayedItems
+                ? Icons.visibility_off
+                : Icons.visibility,
+          ),
+          onPressed: () => queueController.hidePlayedItems =
+              !queueController.hidePlayedItems,
+        ),
         IconButton(
           tooltip: 'Clear queue',
           icon: const Icon(Icons.delete_sweep),
@@ -108,6 +129,7 @@ class _QueueScreenState extends State<QueueScreen> {
       ],
       body: _QueueList(
         controller: queueController,
+        items: items,
         enabled: enabled,
         nowPlayingId: nowPlaying?.id,
         onPlay: (item) => unawaited(queueController.playUris([item.uri])),
@@ -119,12 +141,17 @@ class _QueueScreenState extends State<QueueScreen> {
 class _QueueList extends StatefulWidget {
   const _QueueList({
     required this.controller,
+    required this.items,
     required this.enabled,
     required this.nowPlayingId,
     required this.onPlay,
   });
 
   final QueueController controller;
+
+  /// The rows to render — the (possibly hide-cut, issue #23) view of
+  /// `controller.queue` computed by the parent on every build.
+  final List<QueueItem> items;
   final bool enabled;
   final String? nowPlayingId;
   final void Function(QueueItem item) onPlay;
@@ -171,9 +198,9 @@ class _QueueListState extends State<_QueueList> {
           Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.all(8),
-              itemCount: c.queue.length,
+              itemCount: widget.items.length,
               separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, i) => _queueRow(context, c.queue[i]),
+              itemBuilder: (context, i) => _queueRow(context, widget.items[i]),
             ),
           ),
         ],
@@ -196,7 +223,7 @@ class _QueueListState extends State<_QueueList> {
       }
       return const ListSkeletonRows();
     }
-    if (c.queue.isEmpty) {
+    if (widget.items.isEmpty) {
       return const Center(
         child: ListEmptyState(
           message: 'The queue is empty.',
@@ -206,9 +233,9 @@ class _QueueListState extends State<_QueueList> {
     }
     return ListView.separated(
       padding: const EdgeInsets.all(8),
-      itemCount: c.queue.length,
+      itemCount: widget.items.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, i) => _queueRow(context, c.queue[i]),
+      itemBuilder: (context, i) => _queueRow(context, widget.items[i]),
     );
   }
 

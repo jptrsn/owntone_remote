@@ -38,6 +38,22 @@ class QueueController extends ChangeNotifier {
 
   List<QueueItem> get queue => _queue;
 
+  /// Issue #23 (OwnTone web-UI parity): "hide items played earlier" is a
+  /// PURE visibility toggle — flipping it must never touch the server
+  /// (no API call, no optimistic removal; the screen filters the list it
+  /// already has via [visibleQueue]). Session state on purpose: the cut is
+  /// a viewing preference, not a server fact, and losing it on app restart
+  /// is acceptable (the minimal choice — no persistence layer involved).
+  bool _hidePlayedItems = false;
+
+  bool get hidePlayedItems => _hidePlayedItems;
+
+  set hidePlayedItems(bool value) {
+    if (_hidePlayedItems == value) return;
+    _hidePlayedItems = value;
+    if (!_disposed) notifyListeners();
+  }
+
   /// True once the first fetch succeeded (distinguishes "loading" from an
   /// empty queue).
   bool get hasLoaded => _hasLoaded;
@@ -205,9 +221,36 @@ class QueueController extends ChangeNotifier {
 /// item_id 196174 = entry id, whose track_id is 1195), so the comparison is
 /// against [QueueItem.id] — not `trackId`.
 QueueItem? findNowPlaying(List<QueueItem> queue, int? itemId) {
+  final i = indexOfNowPlaying(queue, itemId);
+  return i == null ? null : queue[i];
+}
+
+/// Index of the now-playing entry (same entry-id match as [findNowPlaying]),
+/// or null when there is no current item or it is not in [queue]. The anchor
+/// of the issue #23 hide-cut, pure.
+int? indexOfNowPlaying(List<QueueItem> queue, int? itemId) {
   if (itemId == null) return null;
-  for (final item in queue) {
-    if (item.id == itemId.toString()) return item;
+  final id = itemId.toString();
+  for (var i = 0; i < queue.length; i++) {
+    if (queue[i].id == id) return i;
   }
   return null;
+}
+
+/// The queue as displayed (issue #23, pure view-model filter — the ONLY
+/// thing the hide toggle does): with [hidePlayed] on, everything before the
+/// now-playing entry is cut; the list is NOT mutated in any way. Unanchorable
+/// cuts (no current item, or the current item not in the list) show
+/// everything — hiding without an anchor would hide arbitrary rows. The cut
+/// is computed from the CURRENT list + itemId on every build, so a WS
+/// `queue`/`player` event that moves the current track re-anchors it.
+List<QueueItem> visibleQueue(
+  List<QueueItem> queue,
+  int? itemId, {
+  required bool hidePlayed,
+}) {
+  if (!hidePlayed) return queue;
+  final index = indexOfNowPlaying(queue, itemId);
+  if (index == null || index == 0) return queue;
+  return queue.sublist(index);
 }
