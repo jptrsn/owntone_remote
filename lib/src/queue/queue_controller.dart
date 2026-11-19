@@ -156,11 +156,28 @@ class QueueController extends ChangeNotifier {
   /// Queue play (docs/API.md): one `POST /api/queue/items/add` with
   /// `clear=true&playback=start` — the single call that both replaces the
   /// queue and makes the server play. **Supervised**: only reachable from a
-  /// user tap on this server (real speakers).
+  /// user tap on this server (real speakers). Browse/search "play this"
+  /// taps use this (replace is correct there); an already-queued row must
+  /// use [skipToQueueItem] instead — issue #21.
   Future<bool> playUris(List<String> uris) => _action(
     'Play',
     (api) => api.playUris(uris, clear: true, startPlayback: true),
   );
+
+  /// Tapping a queued row advances the queue IN PLACE (issue #21, R-11,
+  /// OwnTone web-UI parity): the queue content is unchanged and the tapped
+  /// entry simply becomes the current track — `PUT
+  /// /api/player/play?item_id=…` (keyed on the queue-entry id), the web
+  /// UI's own row click read from the served webplayer JS on 2026-11-19.
+  /// **Must never route through
+  /// [playUris]**: that add call carries `clear=true` and REPLACES the
+  /// queue — the exact defect this replaced. No optimistic edit: the entry
+  /// becoming current fires `player` + `queue` WS events (PlayerController
+  /// moves the highlight, [_onWsEvents] refetches); the [_action] trailing
+  /// refresh covers the no-event case. **Supervised** (starts audio — real
+  /// speakers), reachable only from a user row tap.
+  Future<bool> skipToQueueItem(QueueItem item) =>
+      _action('Skip to track', (api) => api.skipToQueueItem(item.id));
 
   Future<bool> _action(
     String label,

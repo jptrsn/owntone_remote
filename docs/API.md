@@ -62,7 +62,7 @@ treat unknown types as display-only strings).
 | Method | Endpoint | Notes |
 |---|---|---|
 | GET | `/api/player` | state `play`\|`pause`\|`stop`; repeat `off`\|`all`\|`single`; consume, shuffle (bool); volume 0–100; item_id; item_length_ms; item_progress_ms; artwork_url |
-| PUT | `/api/player/play` · `pause` · `stop` · `toggle` | 204. **play/toggle = SUPERVISED** (audio) |
+| PUT | `/api/player/play` · `pause` · `stop` · `toggle` | 204. **play/toggle = SUPERVISED** (audio). `play?item_id=N` (queue-entry id) selects that queue item and plays it — the web UI's in-place queue-skip, queue content untouched (read from the served webplayer JS 2026-11-19; issue #21) |
 | PUT | `/api/player/next` · `previous` | 204. Paused → stays paused (verify in spike); still SUPERVISED-treat |
 | PUT | `/api/player/shuffle?state=true\|false` | 204 |
 | PUT | `/api/player/repeat?state=off\|all\|single` | 204 |
