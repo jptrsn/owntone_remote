@@ -233,13 +233,11 @@ void main() {
 
       final line = tester.getRect(artistAlbumLine());
       final stars = tester.getRect(npStars());
+      // The discriminating check: the old inline layout put the stars' top
+      // at the line's top; an own row puts it at or below the line's bottom.
       expect(stars.top, greaterThanOrEqualTo(line.bottom), reason: 'own row');
-      expect(
-        stars.left,
-        greaterThanOrEqualTo(line.left),
-        reason: 'not to the right of the line (the inline layout)',
-      );
-      // Centred like the line above it, not pushed to one edge.
+      // The inline Row sat centred as a pair, so its stars were pushed off
+      // centre to the right; an own row is centred on its own.
       expect(
         stars.center.dx,
         moreOrLessEquals(

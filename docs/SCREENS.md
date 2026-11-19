@@ -55,11 +55,15 @@ artwork absorbs the slack and shrinks (1:1 preserved) — user requirement
 4. **Artwork** — square, `maxwidth=600` downscaled from the server
    (`/artwork/…`); centered in the remaining vertical space.
 5. **Title** — headline, up to 2 lines, ellipsis.
-6. **Artist · Album + rating** — one line, ellipsis; tappable 5-star
-   control (R-12, unit 006) inline at the line's end for the current
-   *track* (hidden when stopped). Inline rather than its own row: the
-   fixed-height slack of criterion 8 (unit 001) does not survive a
-   separate stars row (it overflowed a short viewport by 28px).
+ 6. **Artist · Album**, and below it the **rating** — artist · album on
+    one line, ellipsis; the tappable 5-star control (R-12, unit 006) on
+    its **own row, centered, below** that line, for the current *track*
+    (hidden when stopped) — design intent per issue #25, not inline.
+    The extra row's fixed height is absorbed by the viewport-fit contract
+    (criterion 8, unit 001): the artwork sits in an `Expanded` and
+    shrinks, and the entry row was tightened 32→24px; pinned by the
+    short-viewport tests (a 360×560 surface overflowed by 10px without
+    the tightening).
 7. **Progress row** — elapsed time (left) · seek slider · total time
    (right).
 8. **Transport row** — previous · play/pause (large) · next.
@@ -367,7 +371,7 @@ window with the original value recorded and restored.
 | Surface | Control |
 |---|---|
 | Album / playlist track rows | compact stars (trailing, before the length) — row tap stays play, stars own their taps |
-| Now playing | stars inline at the end of the Artist · Album line (hidden when stopped) |
+| Now playing | stars on their own row, centered, below the Artist · Album line (hidden when stopped) — issue #25 |
 | Queue rows | none — queue items carry no rating; the control follows the *track* |
 
 ### Mapping (lossy by design — `lib/src/library/rating.dart`)
