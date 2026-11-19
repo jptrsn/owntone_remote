@@ -62,6 +62,21 @@ class OutputsController extends ChangeNotifier {
     ];
   }
 
+  /// True when deselecting selected output [id] empties the selected set
+  /// (issue #20, R-09) — i.e. [id] is the ONLY selected output. The UI
+  /// shows the last-output confirm for exactly this case and, on confirm
+  /// while the server plays, stops it. A deselect that leaves ≥1 output
+  /// selected stays silent: audio just continues on the remaining outputs
+  /// (OwnTone web-UI parity — its served webplayer confirms nothing at
+  /// all on output toggles; read from `assets/index.js` 2026-11-19).
+  /// Only meaningful for an id that is currently selected.
+  static bool emptiesSelection(List<Output> outputs, String id) {
+    final wasSelected = outputs
+        .where((o) => o.selected)
+        .toList(growable: false);
+    return wasSelected.length == 1 && wasSelected.single.id == id;
+  }
+
   /// Wires the controller to the connection and fetches the first slice if
   /// the connection is already up. Idempotent.
   Future<void> init() async {

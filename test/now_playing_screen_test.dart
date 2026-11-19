@@ -52,6 +52,9 @@ class Fixture {
   /// Artwork URL for the queue item (null = none → placeholder).
   String? itemArtwork;
 
+  /// Queue-item metadata (issue #26's playhead-row test pushes a long title).
+  String title = 'Test Track';
+
   /// When non-null, PUTs to this path answer 500 (rollback/snackbar tests).
   String? failPutPath;
 
@@ -72,7 +75,7 @@ class Fixture {
         {
           'id': 'q1',
           'track_id': 42,
-          'title': 'Test Track',
+          'title': title,
           'artist': 'Test Artist',
           'album': 'Test Album',
           'length_ms': length,
@@ -514,6 +517,109 @@ void main() {
         final seek = tester.widget<Slider>(find.byType(Slider).first);
         expect(seek.onChanged, isNull);
         expect(find.byIcon(Icons.music_note), findsOneWidget);
+      },
+    );
+  });
+
+  group('playhead row — times share the slider row (issue #26, R-03)', () {
+    // Repro per the issue: long title + 10:00+ (5-char) durations. The old
+    // layout stacked Text/Slider/Text (full-width slider, times pushed off
+    // the row). The contract (SCREENS.md item 7): ONE row
+    // `[elapsed] —flex slider— [total]`, the slider the only flex child so
+    // it can never squeeze the labels.
+    testWidgets(
+      'long title + 10:00+ durations: elapsed, Expanded slider and total in '
+      'one Row; labels keep their width at a narrow viewport',
+      (tester) async {
+        // 360×640 — the narrowest surface the app supports (unit 004: the
+        // entry row + app bar are sized for a 360-logical-px viewport; below
+        // that they overflow for reasons unrelated to this row).
+        tester.view.physicalSize = const Size(1080, 1920);
+        tester.view.devicePixelRatio = 3.0;
+        addTearDown(tester.view.reset);
+        await tester.runAsync(wireUp);
+        fx.title =
+            'A Really Unreasonably Long Track Title That Cannot Fit One Line';
+        fx.length = ((45 * 60) + 12) * 1000; // '45:12' (minutes ≥ 10)
+        fx.progress = ((10 * 60) + 30) * 1000; // '10:30'
+        channels.last.serverSend('{"notify":["player"]}');
+        await pumpScreen(tester);
+        await tester.runAsync(realPump);
+        await tester.pump();
+        expect(tester.takeException(), isNull, reason: 'no overflow');
+
+        const elapsed = '10:30';
+        const total = '45:12';
+        final elapsedFinder = find.text(elapsed);
+        final totalFinder = find.text(total);
+        expect(elapsedFinder, findsOneWidget);
+        expect(totalFinder, findsOneWidget);
+
+        // All three live in the SAME Row (the defect put them in three
+        // stacked Column children).
+        final rowFinder = find
+            .ancestor(of: elapsedFinder, matching: find.byType(Row))
+            .first;
+        final sliderFinder = find.descendant(
+          of: rowFinder,
+          matching: find.byType(Slider),
+        );
+        expect(sliderFinder, findsOneWidget);
+        expect(
+          find.descendant(of: rowFinder, matching: totalFinder),
+          findsOneWidget,
+        );
+
+        // The slider is the row's only flex child, and the flex is Expanded
+        // (it takes the leftover space between the labels, nothing more).
+        final row = tester.widget<Row>(rowFinder);
+        final flexed = row.children.whereType<Expanded>().toList();
+        expect(flexed, hasLength(1), reason: 'slider takes only the flex');
+        expect(flexed.single.child, isA<Slider>());
+        expect(
+          row.children
+              .where((c) => c is! Expanded)
+              .map((c) => (c as Text).data),
+          [elapsed, total],
+          reason: 'the two non-flex children are the time labels',
+        );
+
+        // Geometry: the slider sits strictly between the labels, and the
+        // labels are single-line at their own width (a squeezed label would
+        // wrap → double height, or ellipsize).
+        final eRect = tester.getRect(elapsedFinder);
+        final tRect = tester.getRect(totalFinder);
+        final sRect = tester.getRect(sliderFinder);
+        expect(sRect.left, greaterThanOrEqualTo(eRect.right));
+        expect(sRect.right, lessThanOrEqualTo(tRect.left));
+        expect(
+          (eRect.center.dy - sRect.center.dy).abs(),
+          lessThan(1.0),
+          reason: 'times are ON the playhead row, not near it',
+        );
+        expect((tRect.center.dy - sRect.center.dy).abs(), lessThan(1.0));
+        // Single line: ~1 line of the label text style, not 2+.
+        expect(eRect.height, lessThan(24));
+        expect(tRect.height, lessThan(24));
+        // Never ellipsized: the label's laid-out width matches the text's
+        // own intrinsic width (a squeezed label renders narrower).
+        for (final (finder, text) in [
+          (elapsedFinder, elapsed),
+          (totalFinder, total),
+        ]) {
+          final painter = TextPainter(
+            text: TextSpan(
+              text: text,
+              style: DefaultTextStyle.of(tester.element(finder)).style,
+            ),
+            textDirection: TextDirection.ltr,
+          )..layout();
+          expect(
+            tester.getSize(finder).width,
+            closeTo(painter.width, 0.5),
+            reason: '$text keeps its intrinsic width',
+          );
+        }
       },
     );
   });

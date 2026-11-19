@@ -25,9 +25,22 @@ class RatingServer {
 
   bool failPut = false;
 
+  /// One-shot: the next track GET answers 503 (transient-error paths).
+  bool failNextTrackGet = false;
+
   /// When set, the PUT resolves only after this completes (optimistic-
   /// window observation).
   Completer<void>? putGate;
+
+  /// When true, a successful rating PUT does NOT commit `ratings` —
+  /// `GET /api/library/tracks/{id}` keeps serving the pre-write value
+  /// until [commitRating] applies it. Models the OwnTone 29.3 async rating
+  /// commit measured 2026-11-17 (GET served the stale rating for 0.1–1.6 s
+  /// AFTER the PUT returned 2xx).
+  bool lagCommit = false;
+
+  /// Apply a deferred PUT (pairs with [lagCommit]).
+  void commitRating(int id, int value) => ratings[id] = value;
 
   /// Every `PUT /api/library/tracks/{id}?rating=` line seen.
   final List<String> puts = [];
@@ -68,6 +81,14 @@ class RatingServer {
         return jsonResponse(o, {'outputs': []});
     }
     if (p.startsWith('/api/library/tracks/') && o.method == 'GET') {
+      if (failNextTrackGet) {
+        failNextTrackGet = false;
+        throw DioException(
+          requestOptions: o,
+          type: DioExceptionType.badResponse,
+          response: Response(requestOptions: o, statusCode: 503),
+        );
+      }
       final id = int.parse(p.substring('/api/library/tracks/'.length));
       return jsonResponse(o, {
         'id': id,
@@ -100,7 +121,7 @@ class RatingServer {
     final p = o.path;
     final id = int.parse(p.substring('/api/library/tracks/'.length));
     final q = o.queryParameters.map((k, v) => MapEntry(k, v.toString()));
-    ratings[id] = int.parse(q['rating']!);
+    if (!lagCommit) ratings[id] = int.parse(q['rating']!);
     return Response(requestOptions: o, statusCode: 204);
   }
 }
@@ -191,6 +212,201 @@ void main() {
     expect(rating.nowPlayingRating, 20);
   });
 
+  RatingController fastRating({required int polls, required Duration delay}) {
+    // Replace the suite's default controller with a fast-polling one (the
+    // production budget is ~3 s; these tests observe the window, not the
+    // real timers). tearDown disposes whatever `rating` points at.
+    rating.dispose();
+    rating = RatingController(
+      connection: conn,
+      player: player,
+      confirmPolls: polls,
+      confirmPollDelay: delay,
+    );
+    return rating;
+  }
+
+  test('async server commit: the FIRST tap sticks — stale GETs and a database '
+      'event inside the commit window cannot roll the optimistic stars back '
+      '(R-12; OwnTone 29.3 async rating commit measured 2026-11-17)', () async {
+    // Repro of the user report: PUT 2xx returns before the server's
+    // commit; GET keeps serving the pre-write rating for 0.1–1.6 s
+    // (curl-sampled). Pre-fix the single confirm-GET read stale and the
+    // stars snapped back — the user had to tap twice.
+    server.lagCommit = true;
+    final fast = fastRating(polls: 2, delay: Duration.zero);
+    await fast.init();
+    await pump();
+    expect(fast.nowPlayingRating, 60, reason: 'baseline loaded');
+
+    final ok = await fast.setRating(42, 100);
+    expect(ok, isTrue);
+    expect(server.ratings[42], 60, reason: 'fake server has NOT committed');
+    expect(
+      fast.nowPlayingRating,
+      100,
+      reason: 'optimistic survives the exhausted confirm polls',
+    );
+
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(
+      fast.nowPlayingRating,
+      100,
+      reason: 'a ws-driven refetch landing on stale data holds the shadow',
+    );
+
+    server.commitRating(42, 100); // the async commit finally lands
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(fast.nowPlayingRating, 100);
+
+    server.commitRating(42, 40); // external edit AFTER confirmation…
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(
+      fast.nowPlayingRating,
+      40,
+      reason: 'the confirming GET cleared the shadow — external edits apply',
+    );
+  });
+
+  test('async server commit: the confirm poll reconciles mid-window without '
+      'any ws event (R-12)', () async {
+    server.lagCommit = true;
+    final fast = fastRating(polls: 30, delay: const Duration(milliseconds: 10));
+    await fast.init();
+    await pump();
+
+    final pending = fast.setRating(42, 20);
+    await pump(40); // a few stale polls run
+    expect(
+      fast.nowPlayingRating,
+      20,
+      reason: 'optimistic through the stale window',
+    );
+    // …and a ws-driven refetch landing in the same window is refused by
+    // the _refreshRating guard (this also pins the guard in this test).
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(fast.nowPlayingRating, 20, reason: 'stale ws event held');
+    server.commitRating(42, 20); // commit lands while the budget runs
+    await pending;
+    expect(fast.nowPlayingRating, 20);
+
+    server.commitRating(42, 40);
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(
+      fast.nowPlayingRating,
+      40,
+      reason: 'the matching poll cleared the shadow',
+    );
+  });
+
+  test('stop inside the unconfirmed window then replay: the stars re-key and '
+      'stay tappable (PR #12 review R1 — the guard shadows the VALUE, never '
+      'the track-id key)', () async {
+    server.lagCommit = true;
+    final fast = fastRating(polls: 1, delay: Duration.zero);
+    await fast.init();
+    await pump();
+    await fast.setRating(42, 100);
+    expect(fast.nowPlayingRating, 100, reason: 'shadow held');
+
+    server.state = 'stop';
+    await player.refreshState();
+    await pump();
+    expect(fast.nowPlayingTrackId, isNull);
+
+    server.state = 'pause'; // the same track replays
+    await player.refreshState();
+    await pump();
+    expect(
+      fast.nowPlayingTrackId,
+      42,
+      reason: 'the row renders again (a null key hides the stars entirely)',
+    );
+    expect(
+      fast.nowPlayingRating,
+      60,
+      reason: 'stop dropped the shadow; server (uncommitted) value shows',
+    );
+  });
+
+  test('a reconnect resyncs server truth over a stuck shadow, even when it '
+      'diverges from the user write (PR #12 review R1 — the escape list '
+      'claimed reconnect; now it is true)', () async {
+    server.lagCommit = true;
+    final fast = fastRating(polls: 1, delay: Duration.zero);
+    await fast.init();
+    await pump();
+    await fast.setRating(42, 100);
+    server.commitRating(42, 40); // server settles on a DIFFERENT value
+    expect(
+      fast.nowPlayingRating,
+      100,
+      reason: 'same connection: the guard holds (documented trade)',
+    );
+
+    conn.disconnect();
+    await pump();
+    await conn.connectTo(_cfg);
+    await pump(150);
+    expect(
+      fast.nowPlayingRating,
+      40,
+      reason: 'a fresh connection is a resync-from-reality point',
+    );
+  });
+
+  test('a WS flap without a phase edge still clears a stuck shadow via '
+      'refetchAll (PR #12 review R2 — the second reconnect clear is the '
+      'only escape on this path)', () async {
+    server.lagCommit = true;
+    final fast = fastRating(polls: 1, delay: Duration.zero);
+    await fast.init();
+    await pump();
+    await fast.setRating(42, 100);
+    server.commitRating(42, 40); // server settles elsewhere
+    expect(fast.nowPlayingRating, 100, reason: 'shadow holds, same socket');
+
+    channels.last.serverClose(); // flap: server drops the websocket
+    await pump();
+    await pump(300); // ws backoff reconnect (test backoff is ~5-20 ms)
+    expect(
+      fast.nowPlayingRating,
+      40,
+      reason: 'reconnect resyncs server truth via refetchAll',
+    );
+  });
+
+  test('a transient confirm-GET error keeps the poll window (PR #12 review '
+      'R2 — continue, not abandon)', () async {
+    server.lagCommit = true;
+    final fast = fastRating(polls: 40, delay: const Duration(milliseconds: 10));
+    await fast.init();
+    await pump();
+    server.failNextTrackGet = true; // first confirm poll 503s
+    final pending = fast.setRating(42, 20);
+    await pump(40);
+    expect(fast.nowPlayingRating, 20, reason: 'window alive past error');
+    server.commitRating(42, 20);
+    await pending;
+    expect(fast.nowPlayingRating, 20);
+    // Prove the poll (not the hold) produced that state — a loop that
+    // had ABANDONED on the 503 would leave the shadow masking a later
+    // external edit (mutation-checked: continue→return reddens this).
+    server.commitRating(42, 40);
+    channels.last.serverSend('{"notify":["database"]}');
+    await pump();
+    expect(
+      fast.nowPlayingRating,
+      40,
+      reason: 'poll continued past the error, matched, and cleared',
+    );
+  });
+
   test(
     'failed setRating: rollback + typed error + seq (optimistic-rollback)',
     () async {
@@ -201,6 +417,18 @@ void main() {
       expect(rating.actionError, contains('Rating failed'));
       expect(rating.actionError, contains('HTTP 500'));
       expect(rating.actionErrorSeq, 1);
+      // Pin the rollback's shadow-release (PR #12 R1 mutation-check): a
+      // failed write left shadowing the track would mask every later
+      // external edit of it.
+      server.failPut = false;
+      server.commitRating(42, 30);
+      channels.last.serverSend('{"notify":["database"]}');
+      await pump();
+      expect(
+        rating.nowPlayingRating,
+        30,
+        reason: 'rollback released the shadow completely',
+      );
     },
   );
 

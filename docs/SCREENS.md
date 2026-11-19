@@ -55,11 +55,15 @@ artwork absorbs the slack and shrinks (1:1 preserved) — user requirement
 4. **Artwork** — square, `maxwidth=600` downscaled from the server
    (`/artwork/…`); centered in the remaining vertical space.
 5. **Title** — headline, up to 2 lines, ellipsis.
-6. **Artist · Album + rating** — one line, ellipsis; tappable 5-star
-   control (R-12, unit 006) inline at the line's end for the current
-   *track* (hidden when stopped). Inline rather than its own row: the
-   fixed-height slack of criterion 8 (unit 001) does not survive a
-   separate stars row (it overflowed a short viewport by 28px).
+ 6. **Artist · Album**, and below it the **rating** — artist · album on
+    one line, ellipsis; the tappable 5-star control (R-12, unit 006) on
+    its **own row, centered, below** that line, for the current *track*
+    (hidden when stopped) — design intent per issue #25, not inline.
+    The extra row's fixed height is absorbed by the viewport-fit contract
+    (criterion 8, unit 001): the artwork sits in an `Expanded` and
+    shrinks, and the entry row was tightened 32→24px; pinned by the
+    short-viewport tests (reverting the tightening overflows a 360×560
+    surface by 6px — mutation-verified).
 7. **Progress row** — elapsed time (left) · seek slider · total time
    (right).
 8. **Transport row** — previous · play/pause (large) · next.
@@ -220,11 +224,21 @@ per D6); the app bar stays as specified in unit 001/002.
 
 ### Interaction design (decided in unit 004)
 
-- **Playing-guard dialog (user decision 2026-10-22):** while the server
-  state is `play`, *any* selection change redirects live audio — a
-  confirmation dialog ("Server is playing — moving outputs redirects
-  live audio. Continue?") appears before the change. Paused/stopped: no
-  dialog. Volume changes are never guarded (no audio redirect).
+- **Playing-guard dialog on enabling (user decision 2026-10-22, scoped to
+  enabling by issue #20):** while the server state is `play`, *enabling*
+  an output redirects/duplicates live audio onto it — a confirmation
+  dialog ("Server is playing — moving outputs redirects live audio.
+  Continue?") appears before the change. Paused/stopped: no dialog.
+- **Conditional deselect (issue #20, OwnTone web-UI parity — its webplayer
+  confirms nothing on output toggles):** deselecting one of **several**
+  selected outputs is **silent** even while playing (audio continues on
+  the rest). Deselecting the **only** selected output shows a confirm
+  ("No outputs left selected — … the server has no audio output.
+  Continue?") in any player state; on confirm the output is deactivated
+  and, if a **fresh** player read says `play`, playback is stopped
+  server-side (`PUT /api/player/stop` — not pause: a playing server with
+  zero outputs burns the queue emitting nothing). Volume changes are never
+  guarded (no audio redirect).
 - **Optimistic updates with rollback** (same contract as now playing):
   the checkbox flips / volume label moves immediately; the confirming
   refetch reconciles; a failed call (5xx / network / 4xx) rolls back and
@@ -325,7 +339,7 @@ a third app-bar icon). `N` is the current queue size.
 
 | Element | Detail |
 |---|---|
-| App bar | "Queue" + trailing clear icon (tooltip `Clear queue`) |
+| App bar | "Queue" + hide toggle (tooltip `Hide items played earlier` ↔ `Show items played earlier`, issue #23) + trailing clear icon (tooltip `Clear queue`) |
 | Rows | title · `artist · album` · `M:SS` — server order, no sorting; no leading numbers (removed 2026-10-26) |
 | Now-playing row | `primaryContainer` background + leading play icon when `QueueItem.id == PlayerState.itemId` (the queue-entry id, **not** `track_id` — verified live) |
 
@@ -338,12 +352,21 @@ destructive on the live library's real queue.
 (R-02); a reconnect refetches too. Rows are lazy-built from the full list
 (185 items render fine).
 
+The hide toggle (issue #23, OwnTone web-UI parity) is a **pure visibility
+filter**: `visibleQueue` cuts everything before the now-playing entry
+(anchor: the queue-entry id again), computed fresh on every build so a WS
+`queue`/`player` event re-anchors the cut. Zero API calls, zero optimistic
+removal — the queue mutation it once mimicked must never come back. The
+state is session-only on `QueueController` (not persisted); an
+unanchorable cut (no current item) shows everything.
+
 ### Actions → endpoints
 
 | Action | Call | Safety |
 |---|---|---|
-| Row tap (play this) | `POST /api/queue/items/add?uris=library:track:<id>&clear=true&playback=start` | **supervised** — audible |
+| Row tap (advance to this) | `PUT /api/player/play?item_id=<entry id>` — in-place queue-skip, queue content untouched (issue #21, the web UI's own row click; **never** the add-with-clear path) | **supervised** — audible |
 | Clear | `PUT /api/queue/clear` (optimistic empty; pre-clear list restored + typed error on failure) | safe while paused/stopped |
+| Hide toggle | **none — pure view filter** (issue #23) | always safe, works offline |
 
 Play actions from the browse rows use the same single add call (unit 005b);
 `library:artist:<id>` and `library:album:<id>` uris expand server-side
@@ -367,7 +390,7 @@ window with the original value recorded and restored.
 | Surface | Control |
 |---|---|
 | Album / playlist track rows | compact stars (trailing, before the length) — row tap stays play, stars own their taps |
-| Now playing | stars inline at the end of the Artist · Album line (hidden when stopped) |
+| Now playing | stars on their own row, centered, below the Artist · Album line (hidden when stopped) — issue #25 |
 | Queue rows | none — queue items carry no rating; the control follows the *track* |
 
 ### Mapping (lossy by design — `lib/src/library/rating.dart`)

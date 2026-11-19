@@ -12,6 +12,7 @@ import 'browse_rows.dart';
 import 'browse_screen_scaffold.dart';
 import 'browse_screens.dart';
 import 'list_states.dart';
+import 'root_screen.dart';
 
 /// Search of the OwnTone library (R-13, unit 007):
 /// `GET /api/search?type=…&query=` per result group (tracks, artists,
@@ -318,6 +319,16 @@ class _Body extends StatelessWidget {
     }
 
     final queue = context.read<QueueController>();
+    // R-13 (issue #24): a search tap that *initiates playback* also switches
+    // the active screen to Now Playing (`showNowPlaying` — pop back to the
+    // root route the app shows when connected). Collection-row taps that only
+    // open a detail screen (onOpen) deliberately stay put; the play button is
+    // the playback path. Same helper for every group so none drifts.
+    void play(List<String> uris) {
+      unawaited(queue.playUris(uris));
+      showNowPlaying(context);
+    }
+
     add<Track>(
       'tracks',
       'Tracks',
@@ -327,7 +338,7 @@ class _Body extends StatelessWidget {
         enabled: enabled,
         showArtist: true,
         onRate: rateTrack(context, t.id),
-        onPlay: () => unawaited(queue.playUris([t.uri])),
+        onPlay: () => play([t.uri]),
       ),
     );
     add<Artist>(
@@ -342,7 +353,7 @@ class _Body extends StatelessWidget {
             builder: (_) => ArtistAlbumsScreen(artist: a),
           ),
         ),
-        onPlay: () => unawaited(queue.playUris(['library:artist:${a.id}'])),
+        onPlay: () => play(['library:artist:${a.id}']),
       ),
     );
     add<Album>(
@@ -355,7 +366,7 @@ class _Body extends StatelessWidget {
         onOpen: () => Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => AlbumTracksScreen(album: a)),
         ),
-        onPlay: () => unawaited(queue.playUris([a.uri])),
+        onPlay: () => play([a.uri]),
       ),
     );
     add<Playlist>(
@@ -370,7 +381,7 @@ class _Body extends StatelessWidget {
             builder: (_) => PlaylistTracksScreen(playlist: p),
           ),
         ),
-        onPlay: () => unawaited(queue.playUris([p.uri])),
+        onPlay: () => play([p.uri]),
       ),
     );
 

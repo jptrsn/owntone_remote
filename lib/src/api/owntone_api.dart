@@ -280,6 +280,20 @@ class OwntoneApi {
     ];
   }
 
+  /// Queue-skip (issue #21, R-11): make an already-queued entry the current
+  /// track, IN PLACE — the queue content is untouched (no add, no clear),
+  /// only the current item moves. This is the OwnTone web UI's own queue-row
+  /// click: read from the served webplayer JS on 2026-11-19, the
+  /// `ListItemQueueItem` row handler is `IS.play({item_id})` → `PUT
+  /// /api/player/play?item_id=…` (the queue-entry id). The `new_position`
+  /// queue-item PUT
+  /// is drag-reorder only and does NOT change the current track — do not
+  /// "simplify" this onto it. [entryId] is the queue-entry `id` (same id the
+  /// player reports as `item_id`, verified live 2026-10-23).
+  /// SUPERVISED: it starts/keeps playback on a track (real speakers).
+  Future<void> skipToQueueItem(String entryId) =>
+      _put('/api/player/play', {'item_id': entryId});
+
   Future<void> play() => _put('/api/player/play');
   Future<void> pause() => _put('/api/player/pause');
   Future<void> stop() => _put('/api/player/stop');

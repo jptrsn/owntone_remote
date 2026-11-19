@@ -22,6 +22,17 @@ android/app/release
 # Logs
 *.log
 
+owntone-remote-*-SHA256SUMS.txt
+
+# Signing material — NEVER commit (private escrow + restore: tools/keystore/README.md)
+android/owntone-release.keystore
+android/keystore.properties
+*.keystore
+keystore.properties
+
+# Overnight pipeline run scratch (ledger is run state, never a deliverable)
+docs/overnight-ledger.md
+
 # ReTune capture: decoded APK artifacts are regenerable (see tools/retune/README.md)
 tools/retune/decoded/
 

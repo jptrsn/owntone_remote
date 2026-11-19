@@ -62,7 +62,7 @@ treat unknown types as display-only strings).
 | Method | Endpoint | Notes |
 |---|---|---|
 | GET | `/api/player` | state `play`\|`pause`\|`stop`; repeat `off`\|`all`\|`single`; consume, shuffle (bool); volume 0–100; item_id; item_length_ms; item_progress_ms; artwork_url |
-| PUT | `/api/player/play` · `pause` · `stop` · `toggle` | 204. **play/toggle = SUPERVISED** (audio) |
+| PUT | `/api/player/play` · `pause` · `stop` · `toggle` | 204. **play/toggle = SUPERVISED** (audio). `play?item_id=N` (queue-entry id) selects that queue item and plays it — the web UI's in-place queue-skip, queue content untouched (read from the served webplayer JS 2026-11-19; issue #21) |
 | PUT | `/api/player/next` · `previous` | 204. Paused → stays paused (verify in spike); still SUPERVISED-treat |
 | PUT | `/api/player/shuffle?state=true\|false` | 204 |
 | PUT | `/api/player/repeat?state=off\|all\|single` | 204 |
@@ -110,7 +110,7 @@ Add response: `{version, count, items[]}`.
 | GET | `/api/library/albums[?offset&limit]` | `paging` of albums |
 | GET | `/api/library/albums/{id}/tracks[?offset&limit]` | `paging` of tracks |
 | GET | `/api/library/tracks/{id}` | single track (has `rating`) |
-| PUT | `/api/library/tracks/{id}?rating=0-100` | 204 (R-12; supervised). Also `usermark`, `play_count`, `skip_count`, … |
+| PUT | `/api/library/tracks/{id}?rating=0-100` | 200 observed (docs say 204) (R-12; supervised). **Commit is async:** `GET /api/library/tracks/{id}` can serve the PRE-write rating for 0.1–1.6 s after the PUT returns (curl-sampled 2026-11-17) — clients must not single-GET-confirm. Also `usermark`, `play_count`, `skip_count`, … |
 | PUT | `/api/library/tracks` | body `{"tracks":[{"id":1,"rating":100},…]}` batch |
 | GET | `/api/library/genres` | `paging` of `{name}` (browse-info) |
 | GET | `/api/library/count` | tracks/artists/albums/db_playtime (+`expression`) |

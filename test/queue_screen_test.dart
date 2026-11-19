@@ -248,34 +248,264 @@ void main() {
     });
   });
 
-  group('R-11 play from the queue (C1 wire)', () {
-    testWidgets('row tap → one add call, clear + playback=start', (
+  // Issue #23 (OwnTone web-UI parity): "remove from queue after playback"
+  // is a PURE visibility toggle — hide everything before the now-playing
+  // entry, zero queue mutation of any kind (no API call, no optimistic
+  // removal), and the cut re-anchors when a WS event moves the current
+  // track. R-11 is the queue requirement (docs/REQUIREMENTS.md; the issue's
+  // "R-05 area" label follows the #19/#24 misnumbering precedent).
+  group('R-11 hide items played earlier (pure visibility, issue #23)', () {
+    // The cut only shows with a row BEFORE the current one: anchor on the
+    // middle entry (id 196175 = 'Blues in the Attic').
+    Future<void> pumpWithMiddleCurrent(WidgetTester tester) async {
+      await tester.runAsync(() => wireUp(configure: (f) => f.itemId = 196175));
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+      expect(find.text('House Party'), findsOneWidget);
+    }
+
+    testWidgets('toggle on hides rows before the current index (a)', (
+      tester,
+    ) async {
+      await pumpWithMiddleCurrent(tester);
+      final before = List.of(adapter.requests);
+
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+
+      // Cut anchored on the current row: everything before it is gone,
+      // the current row (still highlighted) and everything after stay.
+      expect(row('Skunk'), findsNothing);
+      expect(find.text('Skunk'), findsNothing);
+      expect(row('Blues in the Attic', nowPlaying: true), findsOneWidget);
+      expect(row('House Party'), findsOneWidget);
+      // The control flipped (tooltip/icon reflect state).
+      expect(find.byTooltip('Show items played earlier'), findsOneWidget);
+      // (b) PURE: the toggle fired NOTHING at the server — not a mutation,
+      // not even a refetch (mutation-verified: any removal/refetch call on
+      // the toggle path reddens this).
+      expect(
+        adapter.requests,
+        before,
+        reason: 'the hide toggle must be a pure view filter — zero requests',
+      );
+    });
+
+    testWidgets('toggle off restores the hidden rows, still zero calls (c)', (
+      tester,
+    ) async {
+      await pumpWithMiddleCurrent(tester);
+      final before = List.of(adapter.requests);
+
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+      expect(find.text('Skunk'), findsNothing);
+
+      await tester.tap(find.byTooltip('Show items played earlier'));
+      await settle(tester);
+
+      expect(row('Skunk'), findsOneWidget);
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.byTooltip('Hide items played earlier'), findsOneWidget);
+      expect(
+        adapter.requests,
+        before,
+        reason: 'toggle on AND off must leave the request log untouched',
+      );
+      expect(
+        adapter.requests.where(
+          (r) =>
+              r.contains('/api/queue/clear') ||
+              r.contains('/items/add') ||
+              r.startsWith('DELETE') ||
+              r.contains('remove'),
+        ),
+        isEmpty,
+        reason: 'zero queue-mutating requests (issue #23 fix-unit note)',
+      );
+    });
+
+    testWidgets('a WS queue/player event re-anchors the cut (d)', (
+      tester,
+    ) async {
+      await pumpWithMiddleCurrent(tester);
+
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+      expect(find.text('Skunk'), findsNothing);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+
+      // The current track advances (any client — web UI included): a
+      // `queue`-carrying WS event must re-anchor the cut at the NEW index,
+      // not keep the one captured when the toggle was pressed.
+      await tester.runAsync(() async {
+        fx.itemId = 196176;
+        channels.last.serverSend('{"notify":["queue","player"]}');
+      });
+      await settle(tester);
+
+      expect(find.text('Skunk'), findsNothing);
+      expect(
+        find.text('Blues in the Attic'),
+        findsNothing,
+        reason:
+            'the cut stayed on the old anchor — it must follow the '
+            'current track (issue #23)',
+      );
+      expect(row('House Party', nowPlaying: true), findsOneWidget);
+
+      // And back to the first entry (cut index 0) → everything is visible.
+      await tester.runAsync(() async {
+        fx.itemId = 196174;
+        channels.last.serverSend('{"notify":["queue","player"]}');
+      });
+      await settle(tester);
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+      expect(find.text('House Party'), findsOneWidget);
+    });
+
+    testWidgets('unanchorable cut (no current item) shows everything', (
+      tester,
+    ) async {
+      await tester.runAsync(() => wireUp(configure: (f) => f.itemId = null));
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+      // Stopped / no item_id: no anchor → hiding would be a guess, so all
+      // rows stay (the server queue is untouched either way).
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+      expect(find.text('House Party'), findsOneWidget);
+    });
+
+    testWidgets('toggle state lives on the controller (survives the screen)', (
+      tester,
+    ) async {
+      await pumpWithMiddleCurrent(tester);
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+      expect(queue.hidePlayedItems, isTrue);
+      expect(find.text('Skunk'), findsNothing);
+
+      // Leave and re-enter the screen (the controller outlives the widget):
+      // the session toggle persists; a widget-local bool would reset.
+      await pumpScreen(tester, const NowPlayingScreen());
+      await settle(tester);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(find.text('Skunk'), findsNothing);
+      expect(find.text('House Party'), findsOneWidget);
+    });
+  });
+
+  // Issue #21 (OwnTone web-UI parity): tapping a queued row advances the
+  // queue IN PLACE — the item becomes the current track, the queue content
+  // is untouched. The web UI's own row click is `PUT
+  /// /api/player/play?item_id=<entry id>` (read from the served webplayer
+  /// JS on 2026-11-19); the old add-with-clear+playback=start handler is
+  /// the defect: it REPLACED the queue. R-11 is the queue requirement (the
+  /// issue's "R-05 area" label follows the #19/#23/#24 misnumbering
+  /// precedent).
+  group('R-11 tap advances the queue in place (issue #21)', () {
+    testWidgets('row tap → the skip call for that entry id, and NOTHING '
+        'else mutating or transporting (a/b/c)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      final before = List.of(adapter.requests);
+
+      await tester.tap(find.text('House Party'));
+      await settle(tester);
+
+      // (a) the skip call, keyed on the tapped entry's id (196176 = House
+      // Party's queue-entry id, not its track_id 1193).
+      final fired = adapter.requests.skip(before.length).toList();
+      expect(
+        fired,
+        contains('PUT /api/player/play?item_id=196176'),
+        reason: 'tap must fire the web-UI queue-skip (issue #21)',
+      );
+      // (b) ZERO queue-replacing calls: no add (with or without
+      // clear/playback=start), no clear, no DELETE.
+      expect(
+        fired.where(
+          (r) =>
+              r.contains('/items/add') ||
+              r.contains('/api/queue/clear') ||
+              r.startsWith('DELETE'),
+        ),
+        isEmpty,
+        reason:
+            'the defect was the queue-replacing add call (issue #21) — '
+            'an in-place advance must never fire one',
+      );
+      // (c) no transport calls: the only player-endpoint request is the
+      // skip itself — no bare play/toggle, no next/previous/pause/stop.
+      expect(fired.where((r) => r.contains('/api/player/')).toSet(), {
+        'PUT /api/player/play?item_id=196176',
+      }, reason: 'the handler must issue no play/toggle/next/previous call');
+      // The rows stay (the fixture serves the untouched 3-item queue).
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+      expect(find.text('House Party'), findsOneWidget);
+    });
+
+    testWidgets('after the skip lands, the current marker moves to the '
+        'tapped row — queue content and order unchanged', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(row('Skunk', nowPlaying: true), findsOneWidget);
+
+      await tester.tap(find.text('House Party'));
+      await settle(tester);
+      // The fixture flipped item_id on the skip call; the server's
+      // player+queue events drive the UI (mirrored with a WS push, the
+      // #23 pattern).
+      await tester.runAsync(() async {
+        channels.last.serverSend('{"notify":["player","queue"]}');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+      await settle(tester);
+
+      // (a) the marker moved: the tapped row is now the now-playing one…
+      expect(row('House Party', nowPlaying: true), findsOneWidget);
+      expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+      // (b) …and the queue is UNCHANGED: same three rows, same order.
+      expect(row('Skunk', nowPlaying: true), findsNothing);
+      final titles = [
+        'Skunk',
+        'Blues in the Attic',
+        'House Party',
+      ].map((t) => find.text(t));
+      for (final t in titles) {
+        expect(t, findsOneWidget, reason: 'queue content must be unchanged');
+      }
+      expect(
+        adapter.requests.where((r) => r.contains('/items/add')),
+        isEmpty,
+        reason: 'no re-add of any kind (issue #21)',
+      );
+    });
+
+    testWidgets('failed skip: snackbar, rows unchanged, marker unmoved', (
       tester,
     ) async {
       await tester.runAsync(wireUp);
       await pumpScreen(tester, const QueueScreen());
       await settle(tester);
+      fx.failSkip = true;
 
       await tester.tap(find.text('House Party'));
       await settle(tester);
-      expect(
-        adapter.requests,
-        contains(
-          'POST /api/queue/items/add'
-          '?uris=library%3Atrack%3A1193&clear=true&playback=start',
-        ),
-      );
-    });
-
-    testWidgets('failed play: snackbar, queue unchanged', (tester) async {
-      await tester.runAsync(wireUp);
-      await pumpScreen(tester, const QueueScreen());
-      await settle(tester);
-      fx.failPlay = true;
-
-      await tester.tap(find.text('House Party'));
-      await settle(tester);
-      expect(find.textContaining('Play failed'), findsOneWidget);
+      expect(find.textContaining('Skip to track failed'), findsOneWidget);
+      expect(row('House Party', nowPlaying: true), findsNothing);
+      expect(row('Skunk', nowPlaying: true), findsOneWidget);
       expect(find.text('House Party'), findsOneWidget);
     });
   });
@@ -555,16 +785,20 @@ void main() {
       );
       expect(find.text('Skunk'), findsOneWidget);
 
-      // Taps do nothing while offline (no add call is recorded — the
-      // backoff retries also hit the adapter, so compare on the add path).
-      final addsBefore = adapter.requests
-          .where((r) => r.contains('/items/add'))
-          .length;
+      // Taps do nothing while offline (neither the queue-replacing add
+      // nor the issue #21 skip call is recorded — the backoff retries
+      // also hit the adapter, so compare counts on the two action paths).
+      int countOf(String needle) =>
+          adapter.requests.where((r) => r.contains(needle)).length;
+      final addsBefore = countOf('/items/add');
+      final skipsBefore = countOf('/api/player/play');
       await tester.tap(find.text('Skunk'));
       await settle(tester);
+      expect(countOf('/items/add'), addsBefore);
       expect(
-        adapter.requests.where((r) => r.contains('/items/add')).length,
-        addsBefore,
+        countOf('/api/player/play'),
+        skipsBefore,
+        reason: 'offline row taps must fire the skip neither',
       );
     });
   });
@@ -597,6 +831,10 @@ class Fixture {
   bool failQueueGet = false;
   bool failClear = false;
   bool failPlay = false;
+
+  /// Issue #21: when true, the queue-skip call (`PUT /api/player/play
+  /// ?item_id=…`) fails, so the snackbar path can be asserted.
+  bool failSkip = false;
 
   /// While true, REST calls fail and new WS handshakes fail — the app stays
   /// in its offline state until this is cleared (the unit 002 dropServer
@@ -673,6 +911,26 @@ class Fixture {
           );
         }
         items.clear();
+        return Response(requestOptions: o, statusCode: 204);
+      case '/api/player/play':
+        // Issue #21: the in-place queue-skip. Server-true semantics —
+        // item_id moves to the named ENTRY, the items[] list is untouched
+        // (no add, no clear ever reaches this branch from a row tap).
+        if (o.method != 'PUT') {
+          return Response(requestOptions: o, statusCode: 405);
+        }
+        if (failSkip) {
+          throw DioException(
+            requestOptions: o,
+            type: DioExceptionType.badResponse,
+            response: Response(requestOptions: o, statusCode: 500),
+          );
+        }
+        final id = int.tryParse(o.uri.queryParameters['item_id'] ?? '');
+        if (id == null || !items.any((e) => e['id'] == id)) {
+          return Response(requestOptions: o, statusCode: 404);
+        }
+        itemId = id;
         return Response(requestOptions: o, statusCode: 204);
       case '/api/queue/items/add':
         if (failPlay) {

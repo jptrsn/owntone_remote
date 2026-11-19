@@ -96,7 +96,17 @@ iTunes-specific features.
     `test/glyph_hygiene_test.dart` bans the glyph family. 2-round agentic
     review (R1 approve-with-nits → tautological assertion + a11y flag
     fixed; R2 mutation-verified both new assertions → mergeable). Squash
-    `c86b278`). Device decision (user
+    `c86b278`). **2026-11-17: v0.1.0 released**
+    (first GitHub release + Obtainium channel, tag `v0.1.0` @ `29edc22`,
+    `release.sh` published 3 per-ABI debug-signed APKs, tag CI cross-check
+    green); **GitFlow adopted** (PR #13 `f3aea52` — protected main,
+    develop integration, gated release candidates; this file's § Branching
+    & CI is authoritative); **rating double-tap fixed** (PR #12
+    `a1f8371` — OwnTone commits ratings asynchronously (PUT 2xx before
+    the DB commit; track GET stale 0.1–1.6 s, curl-measured), the single
+    confirm-GET read stale and rolled the optimistic stars back; fix =
+    write-shadow + confirm polling in RatingController, 2 review rounds,
+    435/435). Device decision (user
   2026-10-26): the unit **creates its own AVD (`OwnToneVerify_API_36`)
   and deletes it when finished** — never start or reuse an existing AVD;
   other sessions own the running emulators. Device decision (user
@@ -270,7 +280,9 @@ A unit is **done** only when ALL of:
    unit file's `## Result` section** (command + output, or device observation
    with timestamp). A clean build is not evidence of behaviour.
 2. Gates pass (run from repo root once `flutter create` has run; for the
-   capture/spec intents the gates are the unit's own DoD checklist):
+   capture/spec intents the gates are the unit's own DoD checklist). CI
+   runs these same gates on `develop` (every merge) and on every release
+   candidate (`release/**`, PR → `main`) — see § Branching & CI:
 
    ```sh
    flutter analyze                                  # 0 issues
@@ -285,8 +297,74 @@ A unit is **done** only when ALL of:
 5. A `docs/SESSION-LOG.md` entry is appended.
 6. Committed (see commit rules below).
 
+## Branching & CI (GitFlow, adopted 2026-11-17)
+
+- **`main`** — production. **Protected** (PRs required; required status
+  check `gates`; enforced for admins). Receives **only** `release/v*` and
+  `hotfix/*` merges. Nothing is pushed directly to main — **docs/record
+  commits go to `develop`**, not main. CI has **no push trigger on main**,
+  so push-triggered gates never fire there (an infra flake on a docs-only
+  push made a red `gates` run appear on main on 2026-11-17 — this is what
+  motivated this shape; a red run on the tagged commit from the `v*` tag
+  trigger is a release-quality signal, visible on that SHA but gating
+  nothing on main).
+- **`develop`** — integration. All feature/bugfix units branch off
+  `develop` and PR back to it (gates required — "no broken code sits in
+  develop"). The unit-commit and PR conventions below land here.
+- **`release/vX.Y.Z`** — cut from develop when a release is planned (first
+  check the previous release came back: `git merge-base --is-ancestor
+  origin/main origin/develop` — if false, the post-release back-merge was
+  skipped; do it before cutting). Do
+  the pubspec version bump + `docs/RELEASE-NOTES.md` **on the release
+  branch** — and `lib/src/core/app_info.dart`'s `kAppVersion` (the About
+  screen; a test asserts it mirrors pubspec and will redden the gates if
+  forgotten) — **on the release
+  branch**; pushing it fires the gates (the release-candidate run), and
+  the PR `release/v* → main` carries the same required check —
+  **a failing RC blocks the release**. After merge: run `./release.sh`
+  from a synced main (tags + publishes), then **merge `main` back to
+  `develop`** so the bump and notes return.
+- **`hotfix/*`** — only if required (user call). Branch from main, fix,
+  PR → main (gates required), then merge main back to develop.
+- **Release signing (updated 2026-11-18).** Release APKs are signed with the
+  dedicated keystore `android/owntone-release.keystore` (+ `keystore.properties`),
+  both gitignored; the backup is **GitHub Actions secrets on this repo**
+  (`RELEASE_KEYSTORE_B64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_PASSWORD`)
+  plus the maintainer's own off-machine copy — **agents must never create a
+  repository for this material** (user policy 2026-11-18; the earlier private
+  escrow repo was a violation of that instruction and is retired). Secrets
+  are write-only — workflows can sign with them, nobody can read them back;
+  the off-machine copy is the restore path (`tools/keystore/README.md`). `release.sh` refuses to publish when the
+  material is missing, when the keystore fails the public checksum
+  (`tools/keystore/checksum.sha256`), when an APK's certificate isn't the
+  release key, or when versionCode didn't climb; `ALLOW_DEBUG_SIGN=1` is
+  the disaster-recovery-only override. The gradle fallback to debug signing
+  (keystore absent) exists for CI/fresh-clone builds only. The v0.1.0
+  release predates this and was debug-signed: **the first release cut with
+  the new key requires a one-time uninstall/reinstall — say so in its
+  release notes.** The project is GPL-3.0-only (the LICENSE arrived with
+  PR #16, merged before this one; the repo had gone public without one).
+  **`pubspec`'s `+N` is Android versionCode: it must be strictly greater
+  than every release ever tagged — never reset it on a version bump**
+  (`release.sh` enforces this and the guards above).
+- Branch naming: `feature/*`, `fix/*`, `release/v*`, `hotfix/*`.
+- Red CI with a network/runner signature (known: Gradle NDK zip-download
+  flake — gates.yml retries the network-touching steps once internally) →
+  re-run the job once; still red after the in-step retry = real failure,
+  fix it, don't re-run again.
+
 ## ai-dlc discipline
 
+- **Unattended overnight runs**: `.ai-dlc/overnight/pipeline.md` is the
+  authoritative process; the user authorized merge-to-develop unattended
+  **only** for the units in its Run configuration (issues #19–#26, decision
+  2026-11-18). Runs start as the `overnight` agent
+  (`.opencode/agent/overnight.md`) whose permission blocks pre-answer every
+  prompt the run may raise and hard-deny repo creation, the `question` tool,
+  and any path outside the repo + `/tmp`. **Scratch for any run lives ONLY
+  under `/tmp` (subfolders included) or the working tree** — no `/var/folders`
+  or `~` scratch. A permission prompt appearing mid-run = the config drifted:
+  hard blocker, fix the config, never click through.
 - Work **one unit at a time**. Read the intent + the unit + the specific docs
   the unit names. Do not load the whole repo into context.
 - **Backpressure:** never skip a gate, never mark a unit done with failing
@@ -297,6 +375,8 @@ A unit is **done** only when ALL of:
 - **Commit per completed unit** — this is how handoff works in this repo.
   Message format: `<intent>/<unit>: <why, not what>`.
   Example: `spike/001: rocker works backgrounded — mediaPlayback FGS survives pause state`
+- **Unit branches come off `develop` and PR back to `develop`** (GitFlow
+  section above); `main` only ever sees release/hotfix merges.
 - **Never push** unless explicitly asked.
 - If a unit is ballooning (>10 criteria, >3 major components, you keep
   forgetting where you were), split it: write the remainder as a new unit

@@ -65,9 +65,12 @@ class _OutputsScreenState extends State<OutputsScreen> {
     super.dispose();
   }
 
-  /// The guardrail (unit 004): while the server plays, a selection change
-  /// redirects live audio — confirm before proceeding. Paused/stopped: no
-  /// dialog.
+  /// The enable-side guardrail (unit 004): while the server plays, enabling
+  /// an output redirects/duplicates live audio onto it — confirm before
+  /// proceeding. Paused/stopped: no dialog. Issue #20 moved the DESELECT
+  /// paths out of here: multi-deselect is silent (see [_onCheckbox]) and
+  /// the last-output deselect has its own confirm (see
+  /// [_lastDeselectFlow]).
   Future<void> _withPlayingGuard(
     Future<void> Function() action,
     PlayerController player,
@@ -110,8 +113,23 @@ class _OutputsScreenState extends State<OutputsScreen> {
     OutputsController outputs,
     PlayerController player,
   ) {
-    final enable = !o.selected;
-    final needPin = enable && (o.hasPassword || o.needsAuthKey);
+    if (o.selected) {
+      if (OutputsController.emptiesSelection(outputs.outputs, o.id)) {
+        // The LAST selected output: its own confirm, then stop-if-playing
+        // (issue #20).
+        unawaited(_lastDeselectFlow(o, outputs, player));
+      } else {
+        // One of SEVERAL selected outputs (issue #20): silent, even while
+        // playing — audio simply continues on the remaining outputs, so
+        // there is nothing to warn about. Do not route this back through
+        // [_withPlayingGuard]: the unconditional playing confirm on every
+        // deselect was the defect (OwnTone's own web UI confirms nothing
+        // here).
+        unawaited(outputs.toggle(o.id));
+      }
+      return;
+    }
+    final needPin = o.hasPassword || o.needsAuthKey;
     unawaited(
       _withPlayingGuard(() async {
         if (needPin) {
@@ -123,6 +141,51 @@ class _OutputsScreenState extends State<OutputsScreen> {
         }
       }, player),
     );
+  }
+
+  /// Issue #20: deselecting the only selected output silences the server,
+  /// so it gets a confirm — in any player state (a "paused" cache is
+  /// exactly what a stale slice looks like while the server plays). On
+  /// confirm the output is deactivated and, when the server is freshly
+  /// read as playing, playback is STOPPED server-side (`PUT
+  /// /api/player/stop`, not pause): a playing server with zero outputs
+  /// burns through the queue while emitting nothing audible, and a pause
+  /// would keep advancing it.
+  Future<void> _lastDeselectFlow(
+    Output o,
+    OutputsController outputs,
+    PlayerController player,
+  ) async {
+    if (!mounted) return;
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('No outputs left selected'),
+        content: const Text(
+          'This is the only selected output. Deselecting it leaves the '
+          'server with no audio output. Continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (proceed != true || !mounted) return;
+    final ok = await outputs.toggle(o.id);
+    // A failed toggle rolled the selection back — nothing emptied, no stop.
+    if (!ok) return;
+    // Fresh read, never the cached slice (unit 004 contract): a stale
+    // cached 'pause' must not skip the stop while the server actually
+    // plays (2026-10-23 C3 lesson).
+    final fresh = await player.refreshState();
+    if (fresh?.isPlaying == true) await player.stop();
   }
 
   Future<String?> _pinDialog(Output o) => showDialog<String>(
@@ -283,12 +346,24 @@ class _OutputRow extends StatelessWidget {
                 ),
               ],
             ),
+            // R-09 (issue #19): an unselected output gets no audio, so its
+            // volume control is meaningless — OwnTone's own web UI renders it
+            // disabled-but-visible. `output.selected` comes from the slice,
+            // which refetches on every `outputs`/`volume` WS event, so a
+            // server-side selection change flips this in place without a
+            // rebuild from scratch. Do not "simplify" back to `enabled`
+            // alone: that re-enables sliders that cannot affect the server's
+            // audible mix (the widget test pins it).
             Slider(
               min: 0,
               max: 100,
               value: volume,
-              onChanged: enabled ? (v) => onVolumeChange(output, v) : null,
-              onChangeEnd: enabled ? (v) => onVolumeRelease(output, v) : null,
+              onChanged: enabled && output.selected
+                  ? (v) => onVolumeChange(output, v)
+                  : null,
+              onChangeEnd: enabled && output.selected
+                  ? (v) => onVolumeRelease(output, v)
+                  : null,
             ),
           ],
         ),

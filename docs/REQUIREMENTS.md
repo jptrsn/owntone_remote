@@ -116,6 +116,14 @@ volume (`PUT /api/player/volume?output_id=`). PIN dialog for
 - toggling one output sends the full selected-id set (not N toggle calls);
 - per-output volume verified via `GET /api/outputs`;
 - PIN prompted before enabling a protected output.
+- volume control rendered **disabled (but visible)** for every output where
+  `selected == false` (OwnTone web-UI parity — issue #19), and enablement
+  follows the live `outputs` websocket update, not just the initial fetch;
+- deselecting an output while **≥1 output stays selected** is **silent**
+  even during playback — audio simply continues on the remaining outputs
+  (OwnTone web-UI parity — issue #20); deselecting the **only** selected
+  output confirms first, and on confirm, while the server plays, playback
+  is **stopped** server-side (`PUT /api/player/stop`, not pause);
 - *(Changing which output is active while playing is a supervised action —
   R-N7.)*
 
@@ -135,8 +143,11 @@ View current queue (`GET /api/queue`, now-playing highlighted via
 `item_id`), play an item (supervised), clear queue.
 **Acceptance:**
 - queue list matches the server; now-playing row is identifiable;
-- tapping a track plays it (`POST /api/queue/items/add?uris=…&playback=start`
-  — supervised);
+- tapping a **queued** row advances the queue **in place** — same items,
+  tapped entry becomes the current track (`PUT /api/player/play?item_id=…`,
+  OwnTone web-UI parity — issue #21); the queue-replacing
+  `POST /api/queue/items/add?…&clear=true&playback=start` belongs to
+  browse/search "play this" only; both supervised (audible);
 - clear works; WS `queue` events refresh the list.
 
 ### R-12 Rating — P1

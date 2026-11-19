@@ -1,8 +1,11 @@
 name: owntone_remote
 description: "OwnTone Remote — a remote control for a self-hosted OwnTone server."
+license: GPL-3.0-only
+repository: https://github.com/jptrsn/owntone_remote
+issue_tracker: https://github.com/jptrsn/owntone_remote/issues
 publish_to: 'none'
 
-version: 0.1.0+1
+version: 0.1.1+2
 
 environment:
   sdk: ^3.11.5

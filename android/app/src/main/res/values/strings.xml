@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Human-readable application name (launcher, Settings, permission
+         dialogs, recent tasks). The Flutter UI has always said
+         "OwnTone Remote"; this keeps the Android chrome consistent.
+         kAppName in lib/src/core/app_info.dart must match. -->
+    <string name="app_name">OwnTone Remote</string>
+</resources>

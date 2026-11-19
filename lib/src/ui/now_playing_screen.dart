@@ -197,9 +197,9 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
 /// 005b).
 ButtonStyle _entryButtonStyle(ThemeData theme) => TextButton.styleFrom(
   textStyle: theme.textTheme.labelSmall,
-  iconSize: 16,
+  iconSize: 14,
   visualDensity: VisualDensity.compact,
-  minimumSize: const Size(0, 32),
+  minimumSize: const Size(0, 24),
   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
 );
 
@@ -330,7 +330,7 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
                             ),
                           )
                         : null,
-                    icon: const Icon(Icons.cast, size: 16),
+                    icon: const Icon(Icons.cast, size: 14),
                     label: Text(
                       'Playing via: ${selectedNames.isEmpty ? 'none' : selectedNames}',
                       maxLines: 1,
@@ -347,7 +347,7 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
                         ),
                       )
                     : null,
-                icon: const Icon(Icons.queue_music, size: 16),
+                icon: const Icon(Icons.queue_music, size: 14),
                 label: Text('Queue · ${widget.queueCount}'),
                 style: _entryButtonStyle(theme),
               ),
@@ -359,7 +359,7 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
                         ),
                       )
                     : null,
-                icon: const Icon(Icons.library_music, size: 16),
+                icon: const Icon(Icons.library_music, size: 14),
                 label: const Text('Library'),
                 style: _entryButtonStyle(theme),
               ),
@@ -369,6 +369,14 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
           // The artwork absorbs the slack: it takes the viewport width on a
           // tall screen and shrinks on a short one — always 1:1, never
           // scrolling (unit 001 criterion 8).
+          //
+          // Issue #25 moved the rating to its own row below artist/album,
+          // which costs ~20px of fixed height. The Column does not scroll,
+          // so the entry row above was tightened from 32 to 24px (its
+          // `shrinkWrap` tap target already renders smaller than that) to
+          // give the artwork back enough room — reverting it overflows a
+          // 360×560 surface by 6px (mutation-verified; the short-viewport
+          // test in rating_screen_test.dart catches it).
           Expanded(
             child: Center(child: ArtworkBox(url: item?.artworkUrl)),
           ),
@@ -382,67 +390,90 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
             ),
           ),
           const SizedBox(height: 4),
-          // R-12 (unit 006): the now-playing rating — tappable stars for the
-          // *track* of the current queue item (the queue item itself carries
-          // no rating; RatingController resolves track_id → track). Inline
-          // with the artist line, not a row of its own: the unit-001
-          // viewport-fit contract (artwork shrinks, nothing scrolls) has
-          // ~16px of fixed-height slack on a short surface, and a separate
-          // stars row overflowed the Column by 28px. Hidden with no item
-          // (stopped).
+          // Artist · Album on its own line, ellipsized (R-03). The rating is
+          // deliberately NOT inline here (issue #25): it gets its own row
+          // below, per the design intent.
           Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      [
-                        if (item?.artist != null) item!.artist,
-                        if (item?.album != null) item!.album,
-                      ].join(' · '),
-                      style: theme.textTheme.bodyLarge,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (item?.trackId != null && widget.onRate != null) ...[
-                    const SizedBox(width: 8),
-                    RatingStars(
-                      key: const ValueKey('now-playing-rating'),
-                      rating: widget.nowPlayingRating,
-                      enabled: enabled,
-                      onRate: widget.onRate!,
-                      iconSize: 22,
-                    ),
-                  ],
-                ],
+              child: Text(
+                [
+                  if (item?.artist != null) item!.artist,
+                  if (item?.album != null) item!.album,
+                ].join(' · '),
+                style: theme.textTheme.bodyLarge,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
+          // R-12 (unit 006, layout per issue #25): tappable stars for the
+          // *track* of the current queue item (queue items carry no rating;
+          // RatingController resolves track_id → track) on their OWN row,
+          // vertically below artist/album. Hidden with no item (stopped).
+          //
+          // The extra row costs fixed height, which the unit-001
+          // viewport-fit contract (artwork absorbs the slack, nothing
+          // scrolls) is what keeps from overflowing a short surface: the
+          // artwork sits in an Expanded, so it shrinks instead. Unit 006
+          // avoided this row for an overflow it could not then afford; that
+          // is why the short-viewport tests must stay green.
+          if (item?.trackId != null && widget.onRate != null)
+            Center(
+              child: RatingStars(
+                key: const ValueKey('now-playing-rating'),
+                rating: widget.nowPlayingRating,
+                enabled: enabled,
+                onRate: widget.onRate!,
+                iconSize: 22,
+              ),
+            ),
           const SizedBox(height: 24),
-          Text(
-            _fmt(Duration(milliseconds: currentMs)),
-            textAlign: TextAlign.start,
-          ),
+          // Issue #26 (R-03, SCREENS.md item 7): the times share the
+          // playhead row — `[elapsed] —flex slider— [total]`. The slider is
+          // the row's ONLY flex child, so it gets just the leftover space
+          // between the labels and can never squeeze them: non-flex Row
+          // children are laid out first, at their intrinsic width, whatever
+          // the title length or duration (a 5-char `45:12` total keeps its
+          // full width at the narrow viewport — the old stacked
+          // Text/Slider/Text column displaced the labels instead). The
+          // labels are single-line, non-wrapping (the pinned test asserts
+          // one Row + Expanded slider + no overflow).
+          //
           // Drag-state seek (spike Finding 14): the slider follows the
           // finger; the one `seek?position_ms=` call goes out on release,
           // and server refetches arriving mid-drag do not move it.
-          Slider(
-            value: sliderValue,
-            onChanged: enabled && totalMs > 0
-                ? (v) => setState(() => _seekDragMs = (v * totalMs).round())
-                : null,
-            onChangeEnd: enabled && totalMs > 0
-                ? (v) {
-                    final ms = (v * totalMs).round();
-                    setState(() => _seekDragMs = null);
-                    unawaited(widget.controller.seekMs(ms));
-                  }
-                : null,
+          Row(
+            children: [
+              Text(
+                _fmt(Duration(milliseconds: currentMs)),
+                maxLines: 1,
+                softWrap: false,
+              ),
+              Expanded(
+                child: Slider(
+                  value: sliderValue,
+                  onChanged: enabled && totalMs > 0
+                      ? (v) =>
+                            setState(() => _seekDragMs = (v * totalMs).round())
+                      : null,
+                  onChangeEnd: enabled && totalMs > 0
+                      ? (v) {
+                          final ms = (v * totalMs).round();
+                          setState(() => _seekDragMs = null);
+                          unawaited(widget.controller.seekMs(ms));
+                        }
+                      : null,
+                ),
+              ),
+              Text(
+                _fmt(Duration(milliseconds: totalMs)),
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.end,
+              ),
+            ],
           ),
-          Text(_fmt(Duration(milliseconds: totalMs)), textAlign: TextAlign.end),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,

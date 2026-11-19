@@ -54,6 +54,13 @@ class Fixture {
 
   final List<List<String>> setCalls = [];
   final List<Map<String, dynamic>> perOutputBodies = [];
+
+  /// `PUT /api/player/stop` calls (issue #20: the last-deselect stop).
+  final List<String> stopCalls = [];
+
+  /// `PUT /api/player/volume` calls (per-output volume), with their query
+  /// params — used to prove a disabled slider commits nothing (issue #19).
+  final List<Map<String, dynamic>> volumeCalls = [];
   String? failPutPath;
   bool rejectNextPin = false;
 
@@ -101,7 +108,14 @@ class Fixture {
         response: Response(requestOptions: o, statusCode: 500),
       );
     }
+    if (o.path == '/api/player/volume') {
+      volumeCalls.add(Map<String, dynamic>.from(o.queryParameters));
+      return Response(requestOptions: o, statusCode: 204);
+    }
     switch (o.path) {
+      case '/api/player/stop':
+        stopCalls.add(o.path);
+        return Response(requestOptions: o, statusCode: 204);
       case '/api/outputs/set':
         final ids = ((o.data as Map<String, dynamic>)['outputs'] as List)
             .cast<String>()
@@ -326,7 +340,10 @@ void main() {
     });
   });
 
-  group('playing guard (unit 004, user decision 2026-10-22)', () {
+  // Issue #20 scoped unit 004's unconditional playing confirm to the
+  // ENABLE path (the web UI guards nothing on deselects that leave outputs
+  // selected; the last-output case has its own confirm below).
+  group('playing guard on enabling (unit 004, user decision 2026-10-22)', () {
     testWidgets(
       'playing: guard dialog before the change; cancel → server untouched',
       (tester) async {
@@ -339,7 +356,7 @@ void main() {
         await pumpScreen(tester);
         await tester.pump();
 
-        await tester.tap(find.byType(Checkbox).at(0)); // Alpha off
+        await tester.tap(find.byType(Checkbox).at(2)); // Gamma on
         await tester.pumpAndSettle();
         expect(find.text('Server is playing'), findsOneWidget);
         expect(
@@ -396,15 +413,15 @@ void main() {
         await tester.runAsync(wireUp); // cache: pause
         // The server started playing without the app learning of it (no WS
         // event, no app action) — exactly the stale state observed on the
-        // long-lived C3 instance. The guard must refetch, not trust the
-        // cached 'pause'.
+        // long-lived C3 instance. The enabling guard must refetch, not
+        // trust the cached 'pause'.
         await tester.runAsync(() async {
           fx.state = 'play';
         });
         await pumpScreen(tester);
         await tester.pump();
 
-        await tester.tap(find.byType(Checkbox).at(0));
+        await tester.tap(find.byType(Checkbox).at(2)); // Gamma on
         await tester.pumpAndSettle();
         expect(find.text('Server is playing'), findsOneWidget);
 
@@ -413,5 +430,268 @@ void main() {
         expect(fx.setCalls, isEmpty, reason: 'cancel = no request');
       },
     );
+  });
+
+  // R-09 (issue #20): deselecting one of SEVERAL selected outputs is silent
+  // — audio just continues on the remaining outputs (OwnTone web-UI parity:
+  // the served webplayer's ControlOutputVolume fires `update(id,
+  // {selected: !selected})` with no confirm anywhere — read from
+  // http://192.168.1.13:3689/assets/index.js on 2026-11-19). Deselecting
+  // the ONLY selected output confirms first and, on confirm while the
+  // server plays, stops playback server-side (PUT /api/player/stop — not
+  // pause: a playing server with zero outputs burns the queue while
+  // emitting nothing). Fixture starts with Alpha the only selected output.
+  group('R-09 conditional deselect guard (issue #20)', () {
+    Future<void> makePlaying() async {
+      fx.state = 'play';
+      channels.single.serverSend('{"notify":["player"]}');
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    }
+
+    Future<void> selectGamma() async {
+      fx.store.firstWhere((s) => s['id'] == 'c')['selected'] = true;
+      channels.single.serverSend('{"notify":["outputs"]}');
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    }
+
+    bool checkboxValue(WidgetTester tester, int i) =>
+        tester.widgetList<Checkbox>(find.byType(Checkbox)).toList()[i].value!;
+
+    testWidgets(
+      'multi-deselect while PLAYING: silent — no dialog, one set call, no stop',
+      (tester) async {
+        await tester.runAsync(() async {
+          await wireUp();
+          await selectGamma(); // Alpha + Gamma both selected
+          await makePlaying(); // and the server plays
+        });
+        await pumpScreen(tester);
+        await tester.pump();
+        expect(
+          checkboxValue(tester, 2),
+          isTrue,
+          reason: 'harness sees Gamma selected before the tap',
+        );
+
+        await tapCheckbox(tester, 2); // Gamma off, Alpha stays selected
+
+        expect(find.text('Server is playing'), findsNothing);
+        expect(find.text('No outputs left selected'), findsNothing);
+        expect(fx.setCalls, hasLength(1));
+        expect(fx.setCalls.single, ['a'], reason: 'full remaining set');
+        expect(fx.stopCalls, isEmpty, reason: 'audio continues on Alpha');
+        expect(checkboxValue(tester, 2), isFalse, reason: 'deselects live');
+      },
+    );
+
+    testWidgets(
+      'last deselect while PLAYING: confirm → set [] then player stop',
+      (tester) async {
+        await tester.runAsync(() async {
+          await wireUp(); // Alpha is the only selected output
+          await makePlaying();
+        });
+        await pumpScreen(tester);
+        await tester.pump();
+        expect(
+          checkboxValue(tester, 0),
+          isTrue,
+          reason: 'harness sees Alpha selected before the tap',
+        );
+
+        await tester.tap(find.byType(Checkbox).at(0)); // Alpha = the last
+        await tester.pumpAndSettle();
+        expect(find.text('No outputs left selected'), findsOneWidget);
+        expect(
+          find.text(
+            'This is the only selected output. Deselecting it leaves the '
+            'server with no audio output. Continue?',
+          ),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+        expect(fx.setCalls, hasLength(1));
+        expect(fx.setCalls.single, <String>[], reason: 'empties the set');
+        expect(
+          fx.stopCalls,
+          hasLength(1),
+          reason: 'stop (not pause) — was playing with zero selected',
+        );
+        expect(checkboxValue(tester, 0), isFalse);
+      },
+    );
+
+    testWidgets(
+      'last deselect: cancel → no set call, no stop call, selection kept',
+      (tester) async {
+        await tester.runAsync(() async {
+          await wireUp();
+          await makePlaying();
+        });
+        await pumpScreen(tester);
+        await tester.pump();
+
+        await tester.tap(find.byType(Checkbox).at(0));
+        await tester.pumpAndSettle();
+        expect(find.text('No outputs left selected'), findsOneWidget);
+
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(fx.setCalls, isEmpty, reason: 'cancel = no request');
+        expect(fx.stopCalls, isEmpty, reason: 'cancel = no stop either');
+        expect(checkboxValue(tester, 0), isTrue);
+      },
+    );
+
+    testWidgets('last deselect while PAUSED: confirm → set [], NO stop call', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp); // fixture default: pause
+      await pumpScreen(tester);
+      await tester.pump();
+
+      await tester.tap(find.byType(Checkbox).at(0));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('No outputs left selected'),
+        findsOneWidget,
+        reason: 'the last-output confirm shows in any player state',
+      );
+
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(fx.setCalls, hasLength(1));
+      expect(fx.setCalls.single, <String>[]);
+      expect(
+        fx.stopCalls,
+        isEmpty,
+        reason: 'stop only when the player was playing',
+      );
+      expect(player.player?.isPaused, isTrue, reason: 'server still paused');
+    });
+
+    testWidgets(
+      'last deselect stop decision reads the FRESH slice, not the cache '
+      '(unit 004 contract)',
+      (tester) async {
+        await tester.runAsync(wireUp); // cache: pause
+        // Server flipped to play without the app learning (no WS event, no
+        // app action) — the exact 2026-10-23 C3 stale-slice state. On
+        // confirm the stop must still fire: the decision refetches instead
+        // of reading the cached 'pause'.
+        await tester.runAsync(() async {
+          fx.state = 'play';
+        });
+        await pumpScreen(tester);
+        await tester.pump();
+
+        await tester.tap(find.byType(Checkbox).at(0));
+        await tester.pumpAndSettle();
+        expect(find.text('No outputs left selected'), findsOneWidget);
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+        expect(fx.setCalls.single, <String>[]);
+        expect(
+          fx.stopCalls,
+          hasLength(1),
+          reason:
+              'fresh read caught play — a cached pause must not skip '
+              'the stop',
+        );
+      },
+    );
+  });
+
+  // R-09 (issue #19, REQUIREMENTS R-09 acceptance "volume control rendered
+  // disabled (but visible) for every output where selected == false … and
+  // enablement follows the live `outputs` websocket update"): an unselected
+  // output receives no audio, so OwnTone's own web UI greys its volume
+  // control out. The enablement source must be the slice's `selected` (which
+  // refetches on every WS `outputs` event), not just the initial fetch.
+  group('R-09 volume control disabled for unselected outputs (issue #19)', () {
+    List<Slider> sliders(WidgetTester tester) =>
+        tester.widgetList<Slider>(find.byType(Slider)).toList();
+
+    testWidgets('unselected rows: slider visible but inert; selected live', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester);
+      await tester.pump();
+
+      // Visible: one slider per output, value preserved.
+      final s = sliders(tester);
+      expect(s, hasLength(3));
+      expect(s[0].value, 50.0);
+      expect(s[1].value, 60.0);
+      expect(s[2].value, 70.0);
+
+      // Enabled state tracks `selected` (Alpha selected, Beta/Gamma not).
+      expect(s[0].onChanged, isNotNull, reason: 'Alpha selected');
+      expect(s[0].onChangeEnd, isNotNull);
+      expect(s[1].onChanged, isNull, reason: 'Beta unselected → inert');
+      expect(s[1].onChangeEnd, isNull);
+      expect(s[2].onChanged, isNull, reason: 'Gamma unselected → inert');
+      expect(s[2].onChangeEnd, isNull);
+
+      // Behaviour, not just the callback field: dragging the inert slider
+      // commits nothing; the live one does (harness sanity check).
+      await tester.drag(find.byType(Slider).at(2), const Offset(80, 0));
+      await tester.pumpAndSettle();
+      expect(fx.volumeCalls, isEmpty, reason: 'unselected drag must be inert');
+
+      await tester.drag(find.byType(Slider).at(0), const Offset(-80, 0));
+      await tester.pumpAndSettle();
+      expect(fx.volumeCalls, hasLength(1), reason: 'selected drag commits');
+      expect(fx.volumeCalls.single['output_id'], 'a');
+    });
+
+    testWidgets('a WS outputs update flips the sliders live', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester);
+      await tester.pump();
+      expect(sliders(tester)[0].onChanged, isNotNull);
+      expect(sliders(tester)[2].onChanged, isNull);
+
+      // Server-side selection change (Alpha off, Gamma on) announced over
+      // the websocket — no app action, no relaunch.
+      await tester.runAsync(() async {
+        for (final out in fx.store) {
+          out['selected'] = out['id'] == 'c';
+        }
+        channels.single.serverSend('{"notify":["outputs"]}');
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+      });
+      await tester.pump();
+
+      final flipped = sliders(tester);
+      expect(
+        flipped[0].onChanged,
+        isNull,
+        reason: 'Alpha unselected over WS → slider inert',
+      );
+      expect(
+        flipped[0].onChangeEnd,
+        isNull,
+        reason: 'onChangeEnd must follow onChanged (disabled-but-visible)',
+      );
+      expect(
+        flipped[2].onChanged,
+        isNotNull,
+        reason: 'Gamma selected over WS → slider live',
+      );
+      expect(flipped[2].onChangeEnd, isNotNull);
+      // Still visible, values intact.
+      expect(flipped[1].value, 60.0);
+      expect(flipped[2].value, 70.0);
+
+      // And the now-live slider really writes.
+      await tester.drag(find.byType(Slider).at(2), const Offset(-80, 0));
+      await tester.pumpAndSettle();
+      expect(fx.volumeCalls, hasLength(1));
+      expect(fx.volumeCalls.single['output_id'], 'c');
+    });
   });
 }
