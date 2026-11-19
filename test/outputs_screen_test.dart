@@ -54,6 +54,10 @@ class Fixture {
 
   final List<List<String>> setCalls = [];
   final List<Map<String, dynamic>> perOutputBodies = [];
+
+  /// `PUT /api/player/volume` calls (per-output volume), with their query
+  /// params — used to prove a disabled slider commits nothing (issue #19).
+  final List<Map<String, dynamic>> volumeCalls = [];
   String? failPutPath;
   bool rejectNextPin = false;
 
@@ -100,6 +104,10 @@ class Fixture {
         type: DioExceptionType.badResponse,
         response: Response(requestOptions: o, statusCode: 500),
       );
+    }
+    if (o.path == '/api/player/volume') {
+      volumeCalls.add(Map<String, dynamic>.from(o.queryParameters));
+      return Response(requestOptions: o, statusCode: 204);
     }
     switch (o.path) {
       case '/api/outputs/set':
@@ -413,5 +421,96 @@ void main() {
         expect(fx.setCalls, isEmpty, reason: 'cancel = no request');
       },
     );
+  });
+
+  // R-09 (issue #19, REQUIREMENTS R-09 acceptance "volume control rendered
+  // disabled (but visible) for every output where selected == false … and
+  // enablement follows the live `outputs` websocket update"): an unselected
+  // output receives no audio, so OwnTone's own web UI greys its volume
+  // control out. The enablement source must be the slice's `selected` (which
+  // refetches on every WS `outputs` event), not just the initial fetch.
+  group('R-09 volume control disabled for unselected outputs (issue #19)', () {
+    List<Slider> sliders(WidgetTester tester) =>
+        tester.widgetList<Slider>(find.byType(Slider)).toList();
+
+    testWidgets('unselected rows: slider visible but inert; selected live', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester);
+      await tester.pump();
+
+      // Visible: one slider per output, value preserved.
+      final s = sliders(tester);
+      expect(s, hasLength(3));
+      expect(s[0].value, 50.0);
+      expect(s[1].value, 60.0);
+      expect(s[2].value, 70.0);
+
+      // Enabled state tracks `selected` (Alpha selected, Beta/Gamma not).
+      expect(s[0].onChanged, isNotNull, reason: 'Alpha selected');
+      expect(s[0].onChangeEnd, isNotNull);
+      expect(s[1].onChanged, isNull, reason: 'Beta unselected → inert');
+      expect(s[1].onChangeEnd, isNull);
+      expect(s[2].onChanged, isNull, reason: 'Gamma unselected → inert');
+      expect(s[2].onChangeEnd, isNull);
+
+      // Behaviour, not just the callback field: dragging the inert slider
+      // commits nothing; the live one does (harness sanity check).
+      await tester.drag(find.byType(Slider).at(2), const Offset(80, 0));
+      await tester.pumpAndSettle();
+      expect(fx.volumeCalls, isEmpty, reason: 'unselected drag must be inert');
+
+      await tester.drag(find.byType(Slider).at(0), const Offset(-80, 0));
+      await tester.pumpAndSettle();
+      expect(fx.volumeCalls, hasLength(1), reason: 'selected drag commits');
+      expect(fx.volumeCalls.single['output_id'], 'a');
+    });
+
+    testWidgets('a WS outputs update flips the sliders live', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester);
+      await tester.pump();
+      expect(sliders(tester)[0].onChanged, isNotNull);
+      expect(sliders(tester)[2].onChanged, isNull);
+
+      // Server-side selection change (Alpha off, Gamma on) announced over
+      // the websocket — no app action, no relaunch.
+      await tester.runAsync(() async {
+        for (final out in fx.store) {
+          out['selected'] = out['id'] == 'c';
+        }
+        channels.single.serverSend('{"notify":["outputs"]}');
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+      });
+      await tester.pump();
+
+      final flipped = sliders(tester);
+      expect(
+        flipped[0].onChanged,
+        isNull,
+        reason: 'Alpha unselected over WS → slider inert',
+      );
+      expect(
+        flipped[0].onChangeEnd,
+        isNull,
+        reason: 'onChangeEnd must follow onChanged (disabled-but-visible)',
+      );
+      expect(
+        flipped[2].onChanged,
+        isNotNull,
+        reason: 'Gamma selected over WS → slider live',
+      );
+      expect(flipped[2].onChangeEnd, isNotNull);
+      // Still visible, values intact.
+      expect(flipped[1].value, 60.0);
+      expect(flipped[2].value, 70.0);
+
+      // And the now-live slider really writes.
+      await tester.drag(find.byType(Slider).at(2), const Offset(-80, 0));
+      await tester.pumpAndSettle();
+      expect(fx.volumeCalls, hasLength(1));
+      expect(fx.volumeCalls.single['output_id'], 'c');
+    });
   });
 }
