@@ -2074,3 +2074,49 @@ while `flutter run` lives kills that port for good — restart the run.
 Observed, deliberately out of scope: the `_fmt` `mm:ss` formatter wraps hours
 (a 123-minute track renders `03:45`), so a literal "3-digit-minute" label is
 impossible without a formatter change #26 does not ask for.
+
+## 2026-11-19 — overnight: issue #24 search play → Now Playing navigation (opencode)
+
+Branch `fix/issue-24-search-nav-nowplaying` off develop (`f30974e`). Frozen
+spec `.ai-dlc/night-2026-11-18/issues/24.md`: a search tap that initiates
+playback must also switch the active screen to Now Playing (R-13/search area;
+the issue's "R-08" is read as the search area — REQUIREMENTS has no search
+content under R-08).
+
+**What changed.** `root_screen.dart` gains `showNowPlaying(context)` —
+`Navigator.popUntil(isFirst)`: the app has no tab bar, Now Playing is the
+root route and every listen screen is pushed above it, so the tab-switch IS
+the pop-to-root (a push would stack a duplicate now-playing; documented).
+`search_screen.dart` now routes ALL FOUR group play handlers (track/artist/
+album/playlist) through one `play(uris)` closure that fires the unchanged
+`playUris` queue-add and then calls the helper. Row taps that only open a
+detail screen (onOpen) deliberately stay put. Browse/queue play taps were
+checked and do NOT navigate today (bare `playUris`) — no pattern existed to
+mirror; extending them is recorded as a follow-up candidate, not done (out
+of the issue's Where).
+
+**Evidence.** PRIMARY: `test/search_screen_test.dart` group "R-13 play
+navigates to Now Playing (issue #24)" — 3 tests on the app's real route
+shape (now-playing stub as home, SearchScreen pushed through the navigator)
+asserting queue-add POST + route switch together; mutation-verified (removing
+the `showNowPlaying` line reddens both navigation tests; restored, green).
+Device: own disposable AVD `OwnToneNight_API_36` (android-36 google_apis
+arm64, pixel_7; created + deleted by this unit; serial verified by
+`ro.boot.qemu.avd_name` before every adb call). The tap-through ran on a
+LOOPBACK REST-only fixture (`websocket_port: 0`, `adb reverse tcp:3689`,
+unit #26 pattern) — the `POST /api/queue/items/add?…&playback=start` landed
+on the fixture, so audio was physically impossible; the shared server
+received ZERO requests and stayed byte-identical (`state pause`,
+`item_id 208437`, `item_progress_ms 38427` at all three checks). After the
+track tap the widget tree contained only `RootScreen → NowPlayingScreen`
+(SearchScreen and LibraryHomeScreen routes gone) — the on-device fix proof.
+Console: 0 `E/flutter`, 0 exceptions/overflows. Pixel 6 never touched.
+Gates green: analyze 0 · format 0/95 · test 449/449 · debug APK built.
+Report: `.ai-dlc/night-2026-11-18/reports/24.md`.
+
+Tooling facts kept: `input text` + seeded `FlutterSharedPreferences.xml`
+(via `run-as`) replace the unavailable flutter-driver extension for getting
+the app connected on the AVD (no `enableFlutterDriverExtension` in this app —
+driver taps error "flutter driver extension is not enabled"); uiautomator
+dumps work fine on this emulator (the dead-bridge oracle is Pixel 6-specific),
+with row semantics labels carrying `&#10;` separators.
