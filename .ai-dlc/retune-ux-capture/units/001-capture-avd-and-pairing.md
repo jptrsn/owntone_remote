@@ -1,6 +1,6 @@
 ---
 name: 001-capture-avd-and-pairing
-status: pending
+status: done
 intent: retune-ux-capture
 supervised_steps: [3]
 ---
@@ -63,7 +63,29 @@ user** to 192.168.1.13, library screens showing real data, server paused.
 4. Server verified paused (evidence: curl output).
 5. Snapshot `paired` saved (evidence: `adb -s <s> emu snapshot_list`).
 
-## Result
+## Result — DONE 2026-11-19 (deviation: physical device, not AVD)
 
-*(fill: serial, Android version, package name, pairing evidence, snapshot
-name, incidents if any)*
+**Device: Pixel 6 `25071FDF600953`, Android 17 (SDK 37)** — the unit's
+`Retune_API_33` AVD path is retired: AVD was created + booted
+(android-33 google_apis arm64) but the emulator NAT drops the mDNS
+multicast JmDNS discovery needs (`LibraryLocatorService` silent; ping to
+192.168.1.13 works — L3 fine, 5353 multicast not bridged). User directed
+the Pixel 6 instead; AVD killed. (Pixel-10/GrapheneOS install failure
+explained: ReTune targetSdk 19 < modern floor; existing installs survive
+OTAs, new installs are refused.)
+
+- Install: `adb install --bypass-low-target-sdk-block` → Success
+  (v1-JAR-signed APK, no re-signing — clean-room posture intact).
+- Package recorded: `com.squallydoc.retune` (v3.5.23, versionCode 134).
+- Pairing (supervised, user completed): `PairLibraryActivity` code
+  `4 6 7 7` entered in OwnTone web UI → `LibraryViewActivity` reached;
+  `LibraryLocatorService` resolved `My Music on hp-server` at
+  `192.168.1.13:3689` in 0.4 s (`DbId 3B5D37ED1467D500`); `_touch-remote`
+  advertisement visible on LAN (`dns-sd -B`) → server-side callback path OK.
+- Server verified `pause` before/after pairing (curl; baseline snapshot
+  `/tmp/retune_snap/`). Snapshot step N/A (physical device).
+- ReTune now the read-only reference on this device (no pm clear /
+  uninstall / settings changes; transient View-as toggle reverted).
+- Incidents: two playback observations — see SESSION-LOG 2026-11-19
+  (one harness prev-button tap ~35 s; one external concurrent-session
+  cue ~9 s, found not caused). Both paused via API within the window.
