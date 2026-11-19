@@ -2120,3 +2120,52 @@ the app connected on the AVD (no `enableFlutterDriverExtension` in this app —
 driver taps error "flutter driver extension is not enabled"); uiautomator
 dumps work fine on this emulator (the dead-bridge oracle is Pixel 6-specific),
 with row semantics labels carrying `&#10;` separators.
+
+## 2026-11-19 — overnight: issue #19 volume disabled for unselected outputs (opencode)
+
+Branch `fix/issue-19-disable-volume-unselected` off develop (`d76ab2e`). Frozen
+spec `.ai-dlc/night-2026-11-18/issues/19.md`: the Outputs screen's per-output
+volume slider must be disabled-but-visible when `selected == false` (OwnTone
+web-UI parity), following the live `outputs` WS update. The issue's "R-07
+outputs area" reads as **R-09** (REQUIREMENTS has outputs at R-09; R-07 is the
+notification — same misnumbering precedent as #24's R-08→R-13); the R-09
+acceptance list gained the implementing bullet.
+
+**What changed.** One render site: `_OutputRow`'s `Slider` in
+`outputs_screen.dart` gates `onChanged`/`onChangeEnd` on `enabled &&
+output.selected` (was the connection phase alone). A null-`onChanged` Material
+Slider is disabled-but-visible for free (renders track/thumb/value, attaches
+no drag recognizers), and `output.selected` rides the existing slice →
+rebuild path (`OutputsController` refetches on every `outputs`/`volume` WS
+event, unit-012 shape), so the enablement follows server selection live
+without controller/model changes. The checkbox stays enabled — unselected
+outputs must remain selectable. Doc comment warns against collapsing the
+gate back to `enabled`.
+
+**Evidence.** PRIMARY: `test/outputs_screen_test.dart` group "R-09 volume
+control disabled for unselected outputs (issue #19)" — 2 tests on the
+in-repo fakes asserting slider nullness AND drag-commit behaviour both ways
+(disabled drag → zero `PUT /api/player/volume` via the fixture's new
+`volumeCalls` log; enabled drag → exactly one with the right `output_id`),
+plus the WS `{"notify":["outputs"]}` flip re-gating the same pumped screen;
+mutation-verified (reverting the gate reddens both; restored from a `.night`
+backup copy, not `git checkout`, per the PR #4 fabricated-evidence warning).
+Device: own disposable AVD `OwnToneNight_API_36` (android-36 google_apis
+arm64, pixel_7; created + deleted by this unit; serial verified by
+`ro.boot.qemu.avd_name` before every adb call). On the shared server (read
++ the two run-config-authorized toggles, each after a `state==pause`
+re-verify): uiautomator semantics showed every unselected row's volume as
+`View enabled=false` while the selected ESP-68F8 row was `SeekBar
+enabled=true`; `PUT /api/outputs/{Volumio} {"selected":false}` → 2.5 s later
+the same screen flipped Volumio to `View enabled=false` + "not selected"
+(WS-driven, no relaunch) and `{"selected":true}` flipped it back to
+`SeekBar enabled=true`. `/api/outputs` re-verified **byte-identical** to the
+stored snapshot (sha256 `13f24eea…`, 11/11 outputs), player `pause` at
+`208437` @ `38427`, master volume 42 — zero volume writes ever issued.
+Console: 0 `E/flutter`, 0 exceptions/overflows. `flutter run`'s attach
+flaked on DevFS setup (unit #26 family) — recovered by `adb forward` to the
+app's VM port + `flutter-agent-lens` connect (widget tree works there;
+`evaluate_expression` does not over a raw forward — "No compilation service
+available", #26's finding reproduced). Pixel 6 never touched; own qemu
+count 0 at teardown. Gates green: analyze 0 · format 0/95 · test 451/451 ·
+debug APK built. Report: `.ai-dlc/night-2026-11-18/reports/19.md`.
