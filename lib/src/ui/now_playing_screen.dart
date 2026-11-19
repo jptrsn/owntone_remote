@@ -429,27 +429,51 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
               ),
             ),
           const SizedBox(height: 24),
-          Text(
-            _fmt(Duration(milliseconds: currentMs)),
-            textAlign: TextAlign.start,
-          ),
+          // Issue #26 (R-03, SCREENS.md item 7): the times share the
+          // playhead row — `[elapsed] —flex slider— [total]`. The slider is
+          // the row's ONLY flex child, so it gets just the leftover space
+          // between the labels and can never squeeze them: non-flex Row
+          // children are laid out first, at their intrinsic width, whatever
+          // the title length or duration (a 5-char `45:12` total keeps its
+          // full width at the narrow viewport — the old stacked
+          // Text/Slider/Text column displaced the labels instead). The
+          // labels are single-line, non-wrapping (the pinned test asserts
+          // one Row + Expanded slider + no overflow).
+          //
           // Drag-state seek (spike Finding 14): the slider follows the
           // finger; the one `seek?position_ms=` call goes out on release,
           // and server refetches arriving mid-drag do not move it.
-          Slider(
-            value: sliderValue,
-            onChanged: enabled && totalMs > 0
-                ? (v) => setState(() => _seekDragMs = (v * totalMs).round())
-                : null,
-            onChangeEnd: enabled && totalMs > 0
-                ? (v) {
-                    final ms = (v * totalMs).round();
-                    setState(() => _seekDragMs = null);
-                    unawaited(widget.controller.seekMs(ms));
-                  }
-                : null,
+          Row(
+            children: [
+              Text(
+                _fmt(Duration(milliseconds: currentMs)),
+                maxLines: 1,
+                softWrap: false,
+              ),
+              Expanded(
+                child: Slider(
+                  value: sliderValue,
+                  onChanged: enabled && totalMs > 0
+                      ? (v) =>
+                            setState(() => _seekDragMs = (v * totalMs).round())
+                      : null,
+                  onChangeEnd: enabled && totalMs > 0
+                      ? (v) {
+                          final ms = (v * totalMs).round();
+                          setState(() => _seekDragMs = null);
+                          unawaited(widget.controller.seekMs(ms));
+                        }
+                      : null,
+                ),
+              ),
+              Text(
+                _fmt(Duration(milliseconds: totalMs)),
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.end,
+              ),
+            ],
           ),
-          Text(_fmt(Duration(milliseconds: totalMs)), textAlign: TextAlign.end),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
