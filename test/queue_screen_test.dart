@@ -248,6 +248,161 @@ void main() {
     });
   });
 
+  // Issue #23 (OwnTone web-UI parity): "remove from queue after playback"
+  // is a PURE visibility toggle — hide everything before the now-playing
+  // entry, zero queue mutation of any kind (no API call, no optimistic
+  // removal), and the cut re-anchors when a WS event moves the current
+  // track. R-11 is the queue requirement (docs/REQUIREMENTS.md; the issue's
+  // "R-05 area" label follows the #19/#24 misnumbering precedent).
+  group('R-11 hide items played earlier (pure visibility, issue #23)', () {
+    // The cut only shows with a row BEFORE the current one: anchor on the
+    // middle entry (id 196175 = 'Blues in the Attic').
+    Future<void> pumpWithMiddleCurrent(WidgetTester tester) async {
+      await tester.runAsync(() => wireUp(configure: (f) => f.itemId = 196175));
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+      expect(find.text('House Party'), findsOneWidget);
+    }
+
+    testWidgets('toggle on hides rows before the current index (a)', (
+      tester,
+    ) async {
+      await pumpWithMiddleCurrent(tester);
+      final before = List.of(adapter.requests);
+
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+
+      // Cut anchored on the current row: everything before it is gone,
+      // the current row (still highlighted) and everything after stay.
+      expect(row('Skunk'), findsNothing);
+      expect(find.text('Skunk'), findsNothing);
+      expect(row('Blues in the Attic', nowPlaying: true), findsOneWidget);
+      expect(row('House Party'), findsOneWidget);
+      // The control flipped (tooltip/icon reflect state).
+      expect(find.byTooltip('Show items played earlier'), findsOneWidget);
+      // (b) PURE: the toggle fired NOTHING at the server — not a mutation,
+      // not even a refetch (mutation-verified: any removal/refetch call on
+      // the toggle path reddens this).
+      expect(
+        adapter.requests,
+        before,
+        reason: 'the hide toggle must be a pure view filter — zero requests',
+      );
+    });
+
+    testWidgets('toggle off restores the hidden rows, still zero calls (c)', (
+      tester,
+    ) async {
+      await pumpWithMiddleCurrent(tester);
+      final before = List.of(adapter.requests);
+
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+      expect(find.text('Skunk'), findsNothing);
+
+      await tester.tap(find.byTooltip('Show items played earlier'));
+      await settle(tester);
+
+      expect(row('Skunk'), findsOneWidget);
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.byTooltip('Hide items played earlier'), findsOneWidget);
+      expect(
+        adapter.requests,
+        before,
+        reason: 'toggle on AND off must leave the request log untouched',
+      );
+      expect(
+        adapter.requests.where(
+          (r) =>
+              r.contains('/api/queue/clear') ||
+              r.contains('/items/add') ||
+              r.startsWith('DELETE') ||
+              r.contains('remove'),
+        ),
+        isEmpty,
+        reason: 'zero queue-mutating requests (issue #23 fix-unit note)',
+      );
+    });
+
+    testWidgets('a WS queue/player event re-anchors the cut (d)', (
+      tester,
+    ) async {
+      await pumpWithMiddleCurrent(tester);
+
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+      expect(find.text('Skunk'), findsNothing);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+
+      // The current track advances (any client — web UI included): a
+      // `queue`-carrying WS event must re-anchor the cut at the NEW index,
+      // not keep the one captured when the toggle was pressed.
+      await tester.runAsync(() async {
+        fx.itemId = 196176;
+        channels.last.serverSend('{"notify":["queue","player"]}');
+      });
+      await settle(tester);
+
+      expect(find.text('Skunk'), findsNothing);
+      expect(
+        find.text('Blues in the Attic'),
+        findsNothing,
+        reason:
+            'the cut stayed on the old anchor — it must follow the '
+            'current track (issue #23)',
+      );
+      expect(row('House Party', nowPlaying: true), findsOneWidget);
+
+      // And back to the first entry (cut index 0) → everything is visible.
+      await tester.runAsync(() async {
+        fx.itemId = 196174;
+        channels.last.serverSend('{"notify":["queue","player"]}');
+      });
+      await settle(tester);
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+      expect(find.text('House Party'), findsOneWidget);
+    });
+
+    testWidgets('unanchorable cut (no current item) shows everything', (
+      tester,
+    ) async {
+      await tester.runAsync(() => wireUp(configure: (f) => f.itemId = null));
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+      // Stopped / no item_id: no anchor → hiding would be a guess, so all
+      // rows stay (the server queue is untouched either way).
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+      expect(find.text('House Party'), findsOneWidget);
+    });
+
+    testWidgets('toggle state lives on the controller (survives the screen)', (
+      tester,
+    ) async {
+      await pumpWithMiddleCurrent(tester);
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+      expect(queue.hidePlayedItems, isTrue);
+      expect(find.text('Skunk'), findsNothing);
+
+      // Leave and re-enter the screen (the controller outlives the widget):
+      // the session toggle persists; a widget-local bool would reset.
+      await pumpScreen(tester, const NowPlayingScreen());
+      await settle(tester);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(find.text('Skunk'), findsNothing);
+      expect(find.text('House Party'), findsOneWidget);
+    });
+  });
+
   group('R-11 play from the queue (C1 wire)', () {
     testWidgets('row tap → one add call, clear + playback=start', (
       tester,

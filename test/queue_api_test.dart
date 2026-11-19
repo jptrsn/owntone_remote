@@ -130,6 +130,72 @@ void main() {
       expect(findNowPlaying(queue, null), isNull);
     });
   });
+
+  // Issue #23 (OwnTone web-UI parity): the hide-cut view filter, pure.
+  // R-11 is the queue requirement (the issue's "R-05 area" label follows
+  // the #19/#24 misnumbering precedent).
+  group('visibleQueue + indexOfNowPlaying (pure, R-11 issue #23)', () {
+    final queue = <QueueItem>[
+      QueueItem(
+        id: '1',
+        position: 0,
+        trackId: 10,
+        title: 'A',
+        artist: '',
+        album: '',
+        lengthMs: 1000,
+        uri: 'library:track:10',
+      ),
+      QueueItem(
+        id: '2',
+        position: 1,
+        trackId: 11,
+        title: 'B',
+        artist: '',
+        album: '',
+        lengthMs: 1000,
+        uri: 'library:track:11',
+      ),
+      QueueItem(
+        id: '3',
+        position: 2,
+        trackId: 12,
+        title: 'C',
+        artist: '',
+        album: '',
+        lengthMs: 1000,
+        uri: 'library:track:12',
+      ),
+    ];
+
+    test('off → the very same list (no copy, no mutation)', () {
+      expect(visibleQueue(queue, 2, hidePlayed: false), same(queue));
+    });
+
+    test('on → everything from the current entry onward (entry-id match)', () {
+      // Anchor on entry id 2: A is cut, B (current) + C stay.
+      expect(visibleQueue(queue, 2, hidePlayed: true), [queue[1], queue[2]]);
+      // A track_id (10/11/12) is NOT an anchor — the match is the entry id.
+      expect(visibleQueue(queue, 11, hidePlayed: true), same(queue));
+    });
+
+    test('on, unanchorable or index 0 → the full list', () {
+      expect(visibleQueue(queue, 1, hidePlayed: true), same(queue)); // head
+      expect(visibleQueue(queue, null, hidePlayed: true), same(queue));
+      expect(visibleQueue(queue, 99, hidePlayed: true), same(queue));
+    });
+
+    test('the input list is never mutated (pure view filter)', () {
+      visibleQueue(queue, 3, hidePlayed: true);
+      expect(queue.map((i) => i.id), ['1', '2', '3']);
+    });
+
+    test('indexOfNowPlaying matches the entry id', () {
+      expect(indexOfNowPlaying(queue, 2), 1);
+      expect(indexOfNowPlaying(queue, 11), isNull);
+      expect(indexOfNowPlaying(queue, null), isNull);
+    });
+  });
 }
 
 Map<String, dynamic> dataFor(RequestOptions o) {
