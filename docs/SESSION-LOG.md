@@ -2016,9 +2016,13 @@ catches it). Gates green: analyze 0 · format 0/95 · `flutter test
 
 **Device row: skipped-due-to-play.** The shared server was at `state ==
 play` (other session listening; item 209131→209193) on all ~12 polls across
-~28 min, so per the run config no device step ran — the AVD
-`OwnToneNight_API_36` was never booted (deleted before returning, per
-policy) and no playback was started or risked. The screenshot-diff half of
+~28 min, so per the run config this session booted no device and started,
+touched, or risked no playback. The AVD `OwnToneNight_API_36` — left
+**booted** by the interrupted attempt at 21:19, holding the stale-serial
+`emulator-5554` (AGENTS' own warning: serials shift, never trust a
+remembered serial — tonight it was NOT the other session's Pixel_9_Pro;
+every other AVD's disk mtime predates the run, so no foreign emulator
+existed) — was killed and deleted before returning. The screenshot-diff half of
 the issue's verification is therefore **open for a fresh session** once the
 server pauses; the geometry itself is pinned by the two widget tests
 (stars below the artist·album line + centred, default and 360×560
