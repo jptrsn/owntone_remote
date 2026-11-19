@@ -522,6 +522,118 @@ void main() {
     });
   });
 
+  // R-13 (issue #24): a search tap that initiates playback must also switch
+  // the active screen to the Now Playing view (`showNowPlaying` in
+  // root_screen.dart — pop to the root route the app renders when
+  // connected), not leave the user on the results. The playback POST and
+  // the navigation are asserted together from the same tap: "plays AND
+  // leaves the results" is the defect's exact shape.
+  group('R-13 play navigates to Now Playing (issue #24)', () {
+    late GlobalKey<NavigatorState> navKey;
+
+    /// The app's real shape: Search is pushed on top of the now-playing
+    /// root, so the test pumps a now-playing stand-in as `home` and pushes
+    /// [SearchScreen] through the navigator — the navigation is then
+    /// observable as "the results are gone, the root is showing".
+    Future<void> pumpWithRoot(WidgetTester tester) async {
+      navKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<ConnectionController>.value(value: conn),
+            ChangeNotifierProvider<QueueController>.value(value: queue),
+          ],
+          child: MaterialApp(
+            navigatorKey: navKey,
+            home: const Scaffold(body: Center(child: Text('NOW_PLAYING_STUB'))),
+          ),
+        ),
+      );
+      navKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const SearchScreen()),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('track play switches the active screen off the results', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpWithRoot(tester);
+      expect(find.text('NOW_PLAYING_STUB'), findsNothing);
+      await typeQuery(tester, 'match');
+      await tester.tap(find.text('Song 1'));
+      await settle(tester);
+      // Drain the pop transition (the route reverse animation is ~300 ms —
+      // `settle`'s 150 ms of pumps would still show the popped route).
+      await tester.pumpAndSettle();
+      // The tap initiated playback (the queue-add really went out)…
+      expect(
+        adapter.requests,
+        contains(
+          'POST /api/queue/items/add?uris=${Uri.encodeComponent('library:track:101')}'
+          '&clear=true&playback=start',
+        ),
+      );
+      // …and switched away from the results back to the now-playing root.
+      expect(
+        find.text('NOW_PLAYING_STUB'),
+        findsOneWidget,
+        reason: 'issue #24: play must switch the active screen to Now Playing',
+      );
+      expect(find.byKey(const ValueKey('search-field')), findsNothing);
+    });
+
+    testWidgets('row tap (detail) does NOT switch — only the play path', (
+      tester,
+    ) async {
+      useTallSurface(tester);
+      await tester.runAsync(wireUp);
+      await pumpWithRoot(tester);
+      await typeQuery(tester, 'match');
+      // A collection row tap that only opens the detail screen must NOT
+      // switch to Now Playing (the user is still browsing).
+      await tester.tap(find.text('Matched Album'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+      expect(find.text('Matched Track'), findsOneWidget);
+      expect(
+        find.text('NOW_PLAYING_STUB'),
+        findsNothing,
+        reason: 'opening a detail screen is not a play action',
+      );
+    });
+
+    testWidgets('collection-row play button switches too', (tester) async {
+      useTallSurface(tester);
+      await tester.runAsync(wireUp);
+      await pumpWithRoot(tester);
+      await typeQuery(tester, 'match');
+      final albumPlay = find.descendant(
+        of: find.ancestor(
+          of: find.text('Matched Album'),
+          matching: find.byType(BrowseRow),
+        ),
+        matching: find.byTooltip('Play'),
+      );
+      expect(albumPlay, findsOneWidget);
+      await tester.tap(albumPlay);
+      await settle(tester);
+      expect(
+        adapter.requests,
+        contains(
+          'POST /api/queue/items/add?uris=${Uri.encodeComponent('library:album:alMatch')}'
+          '&clear=true&playback=start',
+        ),
+      );
+      expect(
+        find.text('NOW_PLAYING_STUB'),
+        findsOneWidget,
+        reason: 'issue #24: any search play path lands on Now Playing',
+      );
+    });
+  });
+
   group('R-13 viewport (unit 004 rule)', () {
     testWidgets('grouped results render at 360 logical px with no overflow', (
       tester,

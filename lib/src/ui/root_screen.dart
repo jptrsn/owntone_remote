@@ -6,6 +6,19 @@ import '../settings/settings_store.dart';
 import 'now_playing_screen.dart';
 import 'settings_screen.dart';
 
+/// Switch the active screen to the Now Playing view (issue #24, R-13).
+///
+/// This is the app's "tab switch": there is no tab bar — [RootScreen]
+/// renders [NowPlayingScreen] as the root route and every listen screen
+/// (Library/Search, Queue, Outputs) is *pushed on top of it*, so landing on
+/// Now Playing is popping the stack back to its first route. Play-from-a-
+/// list taps (search results) call this after queueing playback so the user
+/// ends up on the player instead of the list they played from. Do not
+/// replace with a `push`: that would stack a second now-playing screen on
+/// top and the back gesture would walk the duplicate.
+void showNowPlaying(BuildContext context) =>
+    Navigator.of(context).popUntil((route) => route.isFirst);
+
 /// Switches the app on the connection phase (R-01, unit 001 criterion 6):
 ///   idle       → settings (first launch / after disconnect)
 ///   connecting → spinner
