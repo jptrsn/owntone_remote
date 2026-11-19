@@ -13,7 +13,9 @@ import 'list_states.dart';
 
 /// The queue screen (R-11, unit 005b): rows in server order, the
 /// now-playing row highlighted via `PlayerState.itemId` (which is the
-/// queue-entry `id` — verified live), a clear action, and tap-to-play.
+/// queue-entry `id` — verified live), a clear action, and tap-to-skip —
+/// tapping a row advances the queue in place (issue #21), it never
+/// re-adds or clears.
 class QueueScreen extends StatefulWidget {
   const QueueScreen({super.key});
 
@@ -132,7 +134,10 @@ class _QueueScreenState extends State<QueueScreen> {
         items: items,
         enabled: enabled,
         nowPlayingId: nowPlaying?.id,
-        onPlay: (item) => unawaited(queueController.playUris([item.uri])),
+        // Issue #21: a queued row is already in the queue — tapping it
+        // skips in place (queue content unchanged), it must NOT re-add
+        // with clear+playback=start (that replaced the whole queue).
+        onSkip: (item) => unawaited(queueController.skipToQueueItem(item)),
       ),
     );
   }
@@ -144,7 +149,7 @@ class _QueueList extends StatefulWidget {
     required this.items,
     required this.enabled,
     required this.nowPlayingId,
-    required this.onPlay,
+    required this.onSkip,
   });
 
   final QueueController controller;
@@ -154,7 +159,10 @@ class _QueueList extends StatefulWidget {
   final List<QueueItem> items;
   final bool enabled;
   final String? nowPlayingId;
-  final void Function(QueueItem item) onPlay;
+
+  /// Row tap (issue #21): advance the queue in place to [item] —
+  /// `QueueController.skipToQueueItem`, never `playUris`.
+  final void Function(QueueItem item) onSkip;
 
   @override
   State<_QueueList> createState() => _QueueListState();
@@ -259,7 +267,7 @@ class _QueueListState extends State<_QueueList> {
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: widget.enabled ? () => widget.onPlay(item) : null,
+          onTap: widget.enabled ? () => widget.onSkip(item) : null,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(

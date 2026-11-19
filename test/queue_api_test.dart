@@ -63,6 +63,16 @@ void main() {
       expect(items, hasLength(2));
     });
 
+    // Issue #21 (R-11, OwnTone web-UI parity): in-place queue advance is
+    // the web UI's own row click — `PUT /api/player/play?item_id=<entry
+    // id>` (read from the served webplayer JS on 2026-11-19). One call,
+    // keyed on the QUEUE-ENTRY id; zero queue writes — the add-with-clear
+    // this replaced is what cleared the queue (the defect).
+    test('skipToQueueItem: PUT /api/player/play?item_id=<entry id>', () async {
+      await api.skipToQueueItem('196176');
+      expect(adapter.requests.single, 'PUT /api/player/play?item_id=196176');
+    });
+
     test(
       'playUris: clear + startPlayback flags (the supervised call)',
       () async {

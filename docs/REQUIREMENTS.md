@@ -138,8 +138,11 @@ View current queue (`GET /api/queue`, now-playing highlighted via
 `item_id`), play an item (supervised), clear queue.
 **Acceptance:**
 - queue list matches the server; now-playing row is identifiable;
-- tapping a track plays it (`POST /api/queue/items/add?uris=…&playback=start`
-  — supervised);
+- tapping a **queued** row advances the queue **in place** — same items,
+  tapped entry becomes the current track (`PUT /api/player/play?item_id=…`,
+  OwnTone web-UI parity — issue #21); the queue-replacing
+  `POST /api/queue/items/add?…&clear=true&playback=start` belongs to
+  browse/search "play this" only; both supervised (audible);
 - clear works; WS `queue` events refresh the list.
 
 ### R-12 Rating — P1

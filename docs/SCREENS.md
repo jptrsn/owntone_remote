@@ -354,7 +354,7 @@ unanchorable cut (no current item) shows everything.
 
 | Action | Call | Safety |
 |---|---|---|
-| Row tap (play this) | `POST /api/queue/items/add?uris=library:track:<id>&clear=true&playback=start` | **supervised** — audible |
+| Row tap (advance to this) | `PUT /api/player/play?item_id=<entry id>` — in-place queue-skip, queue content untouched (issue #21, the web UI's own row click; **never** the add-with-clear path) | **supervised** — audible |
 | Clear | `PUT /api/queue/clear` (optimistic empty; pre-clear list restored + typed error on failure) | safe while paused/stopped |
 | Hide toggle | **none — pure view filter** (issue #23) | always safe, works offline |
 
