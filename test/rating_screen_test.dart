@@ -220,6 +220,55 @@ void main() {
   group('R-12 now playing (C2)', () {
     Finder npStars() => find.byKey(const ValueKey('now-playing-rating'));
 
+    // Issue #25: the stars render on their OWN row, vertically below the
+    // artist · album line — not inline at that line's end.
+    Finder artistAlbumLine() => find.text('Thundersmack · Brass');
+
+    testWidgets('issue #25: stars sit below the artist · album line', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const NowPlayingScreen());
+      await settle(tester);
+
+      final line = tester.getRect(artistAlbumLine());
+      final stars = tester.getRect(npStars());
+      expect(stars.top, greaterThanOrEqualTo(line.bottom), reason: 'own row');
+      expect(
+        stars.left,
+        greaterThanOrEqualTo(line.left),
+        reason: 'not to the right of the line (the inline layout)',
+      );
+      // Centred like the line above it, not pushed to one edge.
+      expect(
+        stars.center.dx,
+        moreOrLessEquals(
+          tester.getSize(find.byType(NowPlayingScreen)).width / 2,
+          epsilon: 1.0,
+        ),
+      );
+    });
+
+    testWidgets('issue #25: own-row stars still fit a short viewport (R-03)', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1080, 1680);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const NowPlayingScreen());
+      await settle(tester);
+
+      expect(tester.takeException(), isNull, reason: 'no overflow');
+      expect(npStars(), findsOneWidget);
+      expect(
+        tester.getRect(npStars()).top,
+        greaterThanOrEqualTo(tester.getRect(artistAlbumLine()).bottom),
+      );
+      // The bottom-most control is still inside the viewport.
+      expect(tester.getRect(find.text('50')).bottom, lessThanOrEqualTo(560));
+    });
+
     testWidgets('shows the current track rating (floor-quantized)', (
       tester,
     ) async {
