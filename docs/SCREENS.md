@@ -224,11 +224,21 @@ per D6); the app bar stays as specified in unit 001/002.
 
 ### Interaction design (decided in unit 004)
 
-- **Playing-guard dialog (user decision 2026-10-22):** while the server
-  state is `play`, *any* selection change redirects live audio — a
-  confirmation dialog ("Server is playing — moving outputs redirects
-  live audio. Continue?") appears before the change. Paused/stopped: no
-  dialog. Volume changes are never guarded (no audio redirect).
+- **Playing-guard dialog on enabling (user decision 2026-10-22, scoped to
+  enabling by issue #20):** while the server state is `play`, *enabling*
+  an output redirects/duplicates live audio onto it — a confirmation
+  dialog ("Server is playing — moving outputs redirects live audio.
+  Continue?") appears before the change. Paused/stopped: no dialog.
+- **Conditional deselect (issue #20, OwnTone web-UI parity — its webplayer
+  confirms nothing on output toggles):** deselecting one of **several**
+  selected outputs is **silent** even while playing (audio continues on
+  the rest). Deselecting the **only** selected output shows a confirm
+  ("No outputs left selected — … the server has no audio output.
+  Continue?") in any player state; on confirm the output is deactivated
+  and, if a **fresh** player read says `play`, playback is stopped
+  server-side (`PUT /api/player/stop` — not pause: a playing server with
+  zero outputs burns the queue emitting nothing). Volume changes are never
+  guarded (no audio redirect).
 - **Optimistic updates with rollback** (same contract as now playing):
   the checkbox flips / volume label moves immediately; the confirming
   refetch reconciles; a failed call (5xx / network / 4xx) rolls back and
