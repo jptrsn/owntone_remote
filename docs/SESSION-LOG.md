@@ -2028,3 +2028,49 @@ server pauses; the geometry itself is pinned by the two widget tests
 (stars below the artist·album line + centred, default and 360×560
 surfaces). No supervised steps in the issue; no rating write attempted
 against the real server.
+
+## 2026-11-19 — overnight: issue #26 playhead times row — built + device-verified (opencode)
+
+Night run (`.ai-dlc/night-2026-11-18/`) built issue #26 on
+`fix/issue-26-playhead-times-row` (PR to develop; merging is the
+orchestrator/human step). The seek-bar was `Text(elapsed)` / full-width
+`Slider` / `Text(total)` as three stacked Column children — the times never
+shared the playhead row and long text displaced them. Now one row
+`[elapsed] Expanded(Slider) [total]`: the slider is the Row's only flex child
+(leftover space only), the labels are non-flex, single-line, non-wrapping, so
+they keep their intrinsic width whatever the title/duration (R-03, SCREENS.md
+item 7). New widget test (long 78-char title + `10:30`/`45:12` at 360×640:
+three in one Row, slider the sole `Expanded`, slider strictly between the
+labels, shared centre line, labels at TextPainter intrinsic width) is
+**mutation-verified** — it fails against the pre-fix stacked layout. Drag-state
+seek tests pass untouched (the narrowed slider is still exercised via
+`find.byType(Slider).first`), which is the regression evidence for spike
+Finding 14. Gates green: analyze 0 · format 0/95 · `flutter test
+--exclude-tags live` 446/446 · debug APK built.
+
+**Device rows: GO and observed** (server `state == pause` at all four checks —
+kickoff, before the density change, before teardown, at teardown; no playback
+step attempted, no transport control tapped). Own disposable AVD
+`OwnToneNight_API_36` (android-36 google_apis arm64, pixel_7), serial resolved
+by `getprop ro.boot.qemu.avd_name` → `emulator-5554` before every adb call
+(AGENTS stale-serial rule); Pixel 6 and all other devices untouched; **AVD
+killed + deleted before returning**. With the real server connected from the
+AVD (`connected q=1432 out=11 ver=29.3`), the live render tree gave
+`00:38,01:29[Text,Expanded,Text]` with `elapsed@24,656 36x20 | S@60,642 291x48
+| total@351,656 36x20` at 411 dp, and at the narrow 360 dp (`wm density 480`)
+`W=312 … S 240x48 …` — the slider alone absorbed the whole 51 px shrink while
+both labels held 36 px, one line, same centre line. The issue's exact long-text
+case (78-char title + `45:12`) was reproduced on-device against a loopback
+REST-only fixture (the shared server's current item belongs to another session
+— changing it would be a forbidden shared-state mutation): same one-row
+geometry, title confined to its 2-line ellipsized slot, **0** RenderFlex
+overflow lines in the `flutter run` console. Screenshots were captured but
+pixel-compare is recorded as a limitation (this model has no image input) —
+the render-tree rects above plus the CI test are the geometry evidence.
+Two tooling facts worth keeping: `evaluate_expression` only works through
+`flutter run`'s own DDS port (a manual `adb forward` to the device VM port
+yields "No compilation service available"), and `adb forward --remove-all`
+while `flutter run` lives kills that port for good — restart the run.
+Observed, deliberately out of scope: the `_fmt` `mm:ss` formatter wraps hours
+(a 123-minute track renders `03:45`), so a literal "3-digit-minute" label is
+impossible without a formatter change #26 does not ask for.
