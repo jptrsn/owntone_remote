@@ -283,12 +283,24 @@ class _OutputRow extends StatelessWidget {
                 ),
               ],
             ),
+            // R-09 (issue #19): an unselected output gets no audio, so its
+            // volume control is meaningless — OwnTone's own web UI renders it
+            // disabled-but-visible. `output.selected` comes from the slice,
+            // which refetches on every `outputs`/`volume` WS event, so a
+            // server-side selection change flips this in place without a
+            // rebuild from scratch. Do not "simplify" back to `enabled`
+            // alone: that re-enables sliders that cannot affect the server's
+            // audible mix (the widget test pins it).
             Slider(
               min: 0,
               max: 100,
               value: volume,
-              onChanged: enabled ? (v) => onVolumeChange(output, v) : null,
-              onChangeEnd: enabled ? (v) => onVolumeRelease(output, v) : null,
+              onChanged: enabled && output.selected
+                  ? (v) => onVolumeChange(output, v)
+                  : null,
+              onChangeEnd: enabled && output.selected
+                  ? (v) => onVolumeRelease(output, v)
+                  : null,
             ),
           ],
         ),

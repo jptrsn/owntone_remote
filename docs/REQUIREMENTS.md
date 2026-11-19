@@ -116,6 +116,9 @@ volume (`PUT /api/player/volume?output_id=`). PIN dialog for
 - toggling one output sends the full selected-id set (not N toggle calls);
 - per-output volume verified via `GET /api/outputs`;
 - PIN prompted before enabling a protected output.
+- volume control rendered **disabled (but visible)** for every output where
+  `selected == false` (OwnTone web-UI parity — issue #19), and enablement
+  follows the live `outputs` websocket update, not just the initial fetch;
 - *(Changing which output is active while playing is a supervised action —
   R-N7.)*
 
