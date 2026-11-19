@@ -2389,3 +2389,39 @@ screenshot closures CLOSED here; remaining candidates are the PR-comment
 follow-ups (#20 post-dialog predicate re-check, failed-toggle test,
 checkbox ValueKey; #24 browse/queue nav; #19 mid-drag hardening; #26
 mm:ss formatter).
+
+## 2026-11-19 — retune-ux-capture: ReTune revived on Pixel 6 + screen walk (opencode)
+
+**Why.** Capture units (retune-ux-capture 001–004) never ran; user wants a
+UX diff list vs owntone_remote. ReTune (com.squallydoc.retune 3.5.23,
+targetSdk 19) is blocked on modern Android by the targetSdk<24 install
+floor — **`adb install --bypass-low-target-sdk-block` installs it on the
+Pixel 6 (Android 17)**; user had used it pre-OTA (installs pre-dating the
+floor survive). Retune_API_33 AVD was tried first but emulator NAT drops
+mDNS multicast (JmDNS discovery dead) → killed; real LAN on Pixel 6
+discovers OwnTone in 0.4 s and pairing completes (code entered in OwnTone
+web UI). Pairing intact — device is now the read-only ReTune reference.
+
+**INCIDENT (audio safety).** During now-playing capture, an `input tap
+350 2070` intended as a mini-player-bar tap hit the **previous-track
+button** (its bounds [222,1969][390,2137] overlap x=350; button bounds
+were read from the hierarchy but the tap was aimed at the mini-bar
+geometry assumed from the library screen). OwnTone transitioned `pause →
+play` — item 210493 played ~35 s through selected outputs
+(ESP-68F8/ESP-CAAC64/Volumio Kitchen) before `PUT /api/player/pause`
+(204). What played: item 210493 (queue entry, The Flatliners album
+context), first ~35 s. Contained at 21:02:10Z. No unattended risk (user
+present). Restores: volume 41→31 (204; ReTune rocker step = **5** per
+press, R-14 parity datum), shuffle/repeat/visualizer reverted during walk,
+queue untouched (1432 items; read-only walk). Player current-item restore
+(210493→209359@145947) needs `play?item_id` = SUPERVISED — requested, see
+below. Lesson logged: tap coordinates must come from the CURRENT
+screen's hierarchy, never remembered geometry.
+
+**Second playback observation (external, not harness-caused).** While
+restoring device settings (stayon), the player was found `play` on a NEW
+item (211169, 54.5 s) with ESP-CAAC64 deselected — no ReTune transport
+input had been issued; this matches the AGENTS-noted concurrent session
+driving the server. Paused via API at 21:16:48Z (204; ~9 s audible on the
+other session's cue before detection). Outputs left as the other session
+set them (their change — not "restored").
