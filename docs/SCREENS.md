@@ -62,8 +62,8 @@ artwork absorbs the slack and shrinks (1:1 preserved) — user requirement
     The extra row's fixed height is absorbed by the viewport-fit contract
     (criterion 8, unit 001): the artwork sits in an `Expanded` and
     shrinks, and the entry row was tightened 32→24px; pinned by the
-    short-viewport tests (a 360×560 surface overflowed by 10px without
-    the tightening).
+    short-viewport tests (reverting the tightening overflows a 360×560
+    surface by 6px — mutation-verified).
 7. **Progress row** — elapsed time (left) · seek slider · total time
    (right).
 8. **Transport row** — previous · play/pause (large) · next.

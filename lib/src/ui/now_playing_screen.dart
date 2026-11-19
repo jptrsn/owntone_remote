@@ -374,8 +374,9 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
           // which costs ~20px of fixed height. The Column does not scroll,
           // so the entry row above was tightened from 32 to 24px (its
           // `shrinkWrap` tap target already renders smaller than that) to
-          // give the artwork back enough room — a 360×560 surface
-          // overflowed by 10px without it.
+          // give the artwork back enough room — reverting it overflows a
+          // 360×560 surface by 6px (mutation-verified; the short-viewport
+          // test in rating_screen_test.dart catches it).
           Expanded(
             child: Center(child: ArtworkBox(url: item?.artworkUrl)),
           ),
