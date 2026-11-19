@@ -2438,3 +2438,13 @@ scope notes update on that pass. Shortlist rec: D-02 (Songs tab), D-05
 outputs action) — all S; then D-06 (detail Play All/Shuffle/Play Next/Add
 to Up Next — needs QueueController add-only + shuffle-first), D-01
 (discovery, pre-approved), D-03/D-10 taste calls.
+
+**retune-ux-capture GATE CLOSED 2026-11-19 (user).** Verbatim: "confirm
+drops, save everything to the project using the ai-dlc approach, then we
+need to draft a series of github issues that report each change that is
+required to the existing project." → diff-list decisions recorded
+(D-01/02/04/05/06/09 accepted → R-15…R-20 in REQUIREMENTS.md; drops
+confirmed; D-03/D-10 deferred as taste); mDNS moved INTO scope (R-20 —
+was listed out-of-scope pre-gate); unit 004 done — **intent complete**.
+Issue drafts: `.ai-dlc/retune-ux-capture/issues/` (6, repo issue style;
+publish pending user go).

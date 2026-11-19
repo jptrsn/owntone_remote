@@ -172,9 +172,74 @@ multi-server. About screen with server version.
 **Acceptance:**
 - settings persist; changes apply without restart where sensible.
 
+## v1.1 additions — retune-ux-capture gate (accepted 2026-11-19)
+
+Derived from `docs/retune-capture/diff-list.md` (ReTune 3.5.23 reference);
+issues drafted in `.ai-dlc/retune-ux-capture/issues/`.
+
+### R-15 Songs (all-tracks) browse — P1
+Library home gains a **Songs** section listing every library track as a
+paged two-line list (`title` / `artist - album`) via
+`GET /api/library/tracks` (paginated); rows use `TrackRow` semantics
+(rate + play accessory per R-12/R-10).
+**Acceptance:** list pages correctly and survives reconnect refetch
+(same contract as other browse screens); row play replaces the queue and
+starts; row rating flow works.
+
+### R-16 Playlist row artwork + smart badge — P2
+`PlaylistRow` leads with the playlist artwork (through `ArtworkProbe` —
+one-GET-per-URL verdict, 204 → normal no-image branch, per unit 010) with
+the current `queue_music` icon as fallback; smart playlists show a
+"smart" chip from the API `smart` flag.
+**Acceptance:** artwork shown when the server has one; no 204 errors
+logged; icon fallback otherwise; badge matches server flag.
+
+### R-17 Now-playing context navigation — P2
+Now-playing overflow gains **Go to Artist** and **Go to Album** opening
+the corresponding browse detail screens (`ArtistAlbumsScreen` /
+`AlbumTracksScreen`) for the current track.
+**Acceptance:** both navigate to the right screen; disabled/inert when no
+track is loaded.
+
+### R-18 Global outputs access — P2
+Browse screens (library home + all paged browse lists) carry the outputs
+action in the app bar (same destination as now-playing's), respecting the
+360-logical-px viewport finding (unit 004 — no overflow).
+**Acceptance:** one tap from any browse screen to Outputs; no app-bar
+overflow at 360 dp.
+
+### R-19 Browse-detail context actions — P1
+Playlist/album (and artist-albums) detail screens gain an overflow with
+**Play All · Shuffle · Play Next · Add to Up Next**. `QueueController`
+gains add-only (`POST /api/queue/items/add` without `clear`,
+`playback=` per `docs/API.md` — verify the exact param live) and a
+shuffle-then-play path.
+**Acceptance:** Play All replaces+plays (supervised); Shuffle plays the
+set shuffled without toggling global shuffle mode (verify against
+server — if server-side shuffle-first needs `?random`, use it, else
+client-side pre-shuffle); Play Next inserts ahead of the current next
+item; Add to Up Next appends without playback change; all four keep
+queue events refreshing the UI (unit 011 single-flight).
+
+### R-20 Server auto-discovery — P2
+Connection setup browses `_http._tcp`… **exact OwnTone service type to be
+verified live** (`dns-sd -B` against the server; OwnTone advertises via
+Avahi — check `/api/config` + avahi publish type) and lists discoverable
+servers for one-tap selection; manual host/port entry remains the
+fallback and default. No pairing ceremony (OwnTone JSON has none).
+**Acceptance:** on a LAN with the server running, the server appears
+without typing an IP; picking it connects (R-01 flow); discovery timeout
+never blocks manual entry.
+
 ## Explicitly out of scope
 
 See PLAN.md §4. In particular: **all iTunes-specific ReTune features
 (radio, movies/TV, iTunes U, podcasts, audiobooks, courses, classes,
-Genius), widgets, mDNS, multi-server, playlist editing, offline playback,
+Genius), widgets, multi-server, playlist editing, offline playback,
 DAAP/DACP.**
+Dropped at the 2026-11-19 capture gate (user-confirmed): play-**history**
+view (no JSON endpoint), visualizer/peak-meter, playlist client sort,
+screen-off-disconnect, screen-lock, default-view prefs, half-star
+ratings, home-screen widgets, multi-library switching. **mDNS discovery
+moved INTO scope** 2026-11-19 (R-20) — the earlier exclusion predates the
+capture gate.
