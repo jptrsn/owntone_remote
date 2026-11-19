@@ -2225,3 +2225,58 @@ fixture). Tooling: byte-standard `FlutterSharedPreferences.xml` seeded via
 drove the app's own Settings UI instead. Gates green: analyze 0 · format
 0/95 · test --exclude-tags live 461/461 · debug APK built; AVD deleted,
 own-qemu 0. Report: `.ai-dlc/night-2026-11-18/reports/23.md`.
+
+## 2026-11-19 — overnight: issue #21 queue tap advances in place (opencode)
+
+Branch `fix/issue-21-queue-advance-in-place` off develop (`ac98906`). Frozen
+spec `.ai-dlc/night-2026-11-18/issues/21.md`: tapping a queued track must
+advance the queue IN PLACE (OwnTone 29.3 web-UI parity) instead of clearing
+it. The issue's "R-05 area" reads as **R-11** (Queue) — #19/#23/#24
+misnumbering precedent; tests cite R-11. **Endpoint adjudicated from the
+served reference oracle, not the plan's guess**: the webplayer JS at :3689
+(`ListItemQueueItem`, ~506028) binds the row click to `IS.play({item_id})`
+→ `PUT /api/player/play?item_id=<entry id>` (the `new_position` queue-item
+PUT is drag-reorder only — `zS.move` fires solely from the drag handlers);
+official json-api docs don't even list `item_id`. Trap #3 honoured.
+
+**What changed.** `owntone_api.dart`: `skipToQueueItem(entryId)`.
+`queue_controller.dart`: `skipToQueueItem(item)` on the standard `_action`
+(typed error + trailing post-commit refetch, no optimistic edit — the
+item-change fires `player`+`queue` WS events); `playUris` (replace) stays
+for browse/search, the split documented against future re-merge.
+`queue_screen.dart`: row tap `onPlay`→`onSkip`. API.md/REQUIREMENTS.md
+R-11/SCREENS.md queue-action row updated (#19 precedent).
+
+**Evidence.** PRIMARY: `test/queue_screen_test.dart` group "R-11 tap
+advances the queue in place (issue #21)" — (a) skip call keyed on the ENTRY
+id, (b) zero queue-replacing calls, (c) player-endpoint request set after
+the tap == exactly `{PUT /api/player/play?item_id=196176}` (no bare
+play/toggle/next/previous), rows stay, marker moves, failure → snackbar +
+marker unmoved; + `queue_api_test.dart` wire test. All three discriminators
+mutation-verified (revert handler → 3 new tests red; leak a bare `api.play()`
+→ only (a/b/c) red; fixture stops flipping → only marker test red),
+restored from the committed state (committed BEFORE mutating — PR #4
+lesson), re-green 463/463. Device: own disposable AVD `OwnToneNight_API_36`
+(android-36 google_apis arm64, created + deleted by this unit; `.night/21/
+adbown` wrapper probed avd_name before EVERY adb call — Pixel 6 received
+ZERO adb calls). **SERVER-STATE DEVIATION — the authorized mutation window
+was DECLINED**: the ledger snapshot said queue len 0; live it held **1432
+items** (other session), so the authorized restore (`queue/clear → len 0`)
+would have destroyed a foreign queue and any skip moves the shared
+`item_id` irreversibly → curl-add/probe/app-tap on the shared server NOT
+run (AGENTS 1+4), "hear the advance" + shared-server tap-through recorded
+BLOCKED-PENDING-SUPERVISION, the probe's pause-flip contingency never
+occurred (probe never ran — recorded, not worked around). Loopback fixture
+tap-through carries the device evidence (#23 pattern, `.night/21/
+fixture_server.py`, server-true skip semantics + mutating-request trap):
+row tap → fixture log delta = exactly `PUT /api/player/play?item_id=196176`
++ WS push + GETs, **zero MUTATING-ATTEMPT lines session-wide**, uiautomator
+semantics: all 3 rows kept in order, marker moved to `House Party, now
+playing`, frozen queue serve byte-identical pre/post (`4002f0514bd09943…`),
+0 E/flutter. Shared server GET-only kickoff+end, byte-identical
+(`pause 208437@38427`, queue `1cd8e2be…` = #23's serve). Tooling notes:
+fixture must serve JSON with `application/json` (text/plain → dio String →
+`Queue · 0`, fixed); monkey flaked, `am start -n dev.educoder.owntone_remote/
+.MainActivity` works. Gates green: analyze 0 · format 0/95 · test
+--exclude-tags live 463/463 · debug APK built; AVD deleted, own-qemu 0.
+Report: `.ai-dlc/night-2026-11-18/reports/21.md`.
