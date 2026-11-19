@@ -2169,3 +2169,59 @@ app's VM port + `flutter-agent-lens` connect (widget tree works there;
 available", #26's finding reproduced). Pixel 6 never touched; own qemu
 count 0 at teardown. Gates green: analyze 0 · format 0/95 · test 451/451 ·
 debug APK built. Report: `.ai-dlc/night-2026-11-18/reports/19.md`.
+
+## 2026-11-19 — overnight: issue #23 queue hide-played-earlier = pure visibility toggle (opencode)
+
+Branch `fix/issue-23-queue-hide-visibility` off develop (`59378d4`). Frozen
+spec `.ai-dlc/night-2026-11-18/issues/23.md`: the queue's
+"remove from queue after playback" must match the OwnTone web UI — a pure
+**visibility toggle** hiding everything before the currently playing track,
+zero queue mutation of any kind, and a WS `queue` event (new playing track)
+re-anchors the cut. The issue's "R-05 area" reads as **R-11** (Queue) —
+same misnumbering precedent as #19/#24; tests cite R-11. Code check (git
+history + API surface): the option **did not exist** — no mutation code was
+ever shipped to delete — so the fix builds the expected behaviour as the
+pure filter and still proves the zero-mutation contract.
+
+**What changed.** `queue_controller.dart`: session-only `hidePlayedItems`
+(flipping it only notifies — no persistence layer, the spec's "choose
+minimal" → session) plus the pure view model `indexOfNowPlaying` (entry-id
+match, which `findNowPlaying` now shares) and `visibleQueue` (sublist from
+the current entry; the SAME list when off, when the anchor is index 0, or
+when unanchorable — hiding without an anchor would hide arbitrary rows).
+`queue_screen.dart`: app-bar toggle (tooltip/icon visibility flip, left of
+Clear) and `_QueueList` renders a parent-computed `items` list — the cut is
+recomputed from the current queue + `itemId` on every build, so re-anchoring
+is structural, not an event handler; no stored index exists to go stale.
+SCREENS.md § Queue gained the toggle row + paragraph.
+
+**Evidence.** PRIMARY: `test/queue_screen_test.dart` group "R-11 hide items
+played earlier (pure visibility, issue #23)" — 5 tests on the in-repo fakes
+including `expect(adapter.requests, before)` request-log equality (the
+toggle fires NOTHING, mutation or otherwise) and the WS re-anchor test;
+`test/queue_api_test.dart` pure-function group. All three discriminators
+mutation-verified (filter removed → 5 fail; setter fires a refresh → the two
+request-equality tests fail; anchor cached at toggle time → only the
+re-anchor test fails), restored from `.night/23` backups, never
+`git checkout`. Device: own disposable AVD `OwnToneNight_API_36`
+(android-36 google_apis arm64, created + deleted by this unit; serial
+verified before every adb call via a wrapper that probes only `emulator-*`
+serials — Pixel 6 received ZERO adb calls). Loopback fixture (#24/#26
+pattern, `.night/23/fixture_server.py`: REST :3689 logging EVERY
+method+path+query, WS :3688 `notify`, control :9099 advance+push) behind
+`adb reverse`; app connected to `127.0.0.1`. uiautomator semantics showed:
+toggle on → `Skunk` (pre-current) row gone, current+after stay, tooltip
+flips, **fixture-log delta zero lines**; toggle off → restored, delta still
+zero; the whole session's app traffic was **GET-only** (fixture's
+mutating-request trap never fired) and the three `GET /api/queue` serves
+were byte-identical (sha256 `ec6ae3c6…`); WS `advance` to entry 3 → visible
+rows shrank to the new now-playing row alone (cut re-anchored), back to
+entry 1 → all rows returned (index-0 no-op). Shared server: GET-only +
+toggle tap only (`state pause 208437@38427` at every checkpoint, queue
+byte-identical `1cd8e2be…`; live queue held the current item at index 0 —
+hide a documented no-op there, visible-cut behaviour carried by the
+fixture). Tooling: byte-standard `FlutterSharedPreferences.xml` seeded via
+`run-as` was rejected by Android's parser (Missing attribute value, 2×) →
+drove the app's own Settings UI instead. Gates green: analyze 0 · format
+0/95 · test --exclude-tags live 461/461 · debug APK built; AVD deleted,
+own-qemu 0. Report: `.ai-dlc/night-2026-11-18/reports/23.md`.
