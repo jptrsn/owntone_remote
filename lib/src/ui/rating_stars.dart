@@ -88,10 +88,14 @@ class _RatingStarsState extends State<RatingStars> {
               key: ValueKey('rate-$s'),
               onTap: widget.enabled ? () => _tap(s) : null,
               child: Padding(
-                // Touch padding inside the row's own 8px vertical padding —
-                // ~20×28 logical px per star keeps the compact row layout
-                // while staying tappable on-device.
-                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+                // 2px horizontal / 4px vertical around the glyph — a
+                // 20×24 touch box per star on rows, 26×30 on now playing
+                // (iconSize 22). Trimmed from vertical: 6 (issue #25): the
+                // now-playing stars moved to their own row and the
+                // never-scrolls layout (R-03) only has a couple of pixels
+                // to give on a 360×560 surface; the 24px box still fully
+                // covers the 16px glyph with room to spare.
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
                 child: Icon(
                   s <= shown ? Icons.star : Icons.star_border,
                   size: widget.iconSize,

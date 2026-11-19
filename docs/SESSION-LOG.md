@@ -1998,3 +1998,33 @@ and `jptrsn/owntone_remote-reltest`. opencode global config gained
 (`gh repo create|fork`, `gh api` POST to `/user/repos` and
 `/orgs/*/repos`), and `~/.config/opencode/AGENTS.md` carries the hard
 rule. Do not create repos, ever, under any rationale.
+
+## 2026-11-19 — overnight: issue #25 own-row rating — branch built, device row skipped-play (opencode)
+
+Night run (`.ai-dlc/night-2026-11-18/`) completed issue #25 on
+`fix/issue-25-rating-own-row` (not merged — overnight runs PR to develop,
+merging is the orchestrator/human step). The interrupted attempt's commit
+`7653564` was verified line-by-line against the frozen spec and kept; the
+pass added `dbb7502` (dropped a non-discriminating geometry assertion that
+passed under the inline layout — the PR-11 tautology trap; fixed the
+touch-box comment arithmetic; updated SCREENS.md, which still *specified*
+the inline layout) and a final commit correcting the height-budget claim to
+the mutation-measured 6px (reverting the 32→24px entry-row tightening
+overflows a 360×560 surface by exactly that; the short-viewport test
+catches it). Gates green: analyze 0 · format 0/95 · `flutter test
+--exclude-tags live` 445/445 · debug APK built.
+
+**Device row: skipped-due-to-play.** The shared server was at `state ==
+play` (other session listening; item 209131→209193) on all ~12 polls across
+~28 min, so per the run config this session booted no device and started,
+touched, or risked no playback. The AVD `OwnToneNight_API_36` — left
+**booted** by the interrupted attempt at 21:19, holding the stale-serial
+`emulator-5554` (AGENTS' own warning: serials shift, never trust a
+remembered serial — tonight it was NOT the other session's Pixel_9_Pro;
+every other AVD's disk mtime predates the run, so no foreign emulator
+existed) — was killed and deleted before returning. The screenshot-diff half of
+the issue's verification is therefore **open for a fresh session** once the
+server pauses; the geometry itself is pinned by the two widget tests
+(stars below the artist·album line + centred, default and 360×560
+surfaces). No supervised steps in the issue; no rating write attempted
+against the real server.
