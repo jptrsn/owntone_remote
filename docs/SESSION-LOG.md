@@ -2335,3 +2335,57 @@ stop-vs-pause audibility" = **BLOCKED-PENDING-SUPERVISION** (no playing
 state created, per run config; fake tests (b)/(e) carry it). 0 E/flutter.
 AVD deleted, own-qemu 0, `adb devices` afterwards = only the untouched
 Pixel 6. Report: `.ai-dlc/night-2026-11-18/reports/20.md`.
+
+## 2026-11-19 — supervised verification session: closes the #20/#21 + #25/#26 device tails (opencode)
+
+**Why.** The overnight run merged #20/#21 with `BLOCKED-PENDING-SUPERVISION`
+rows (audible criteria) per the run config, and #25/#26 carried render-tree
+evidence with the screenshot closure open (server held `play` during those
+builds). User present → supervised window granted explicitly (pause of the
+other session's listening confirmed first; each audio-starting step
+confirmed per action).
+
+**Evidence (all on disposable AVD `OwnToneNight_API_36`, created+deleted by
+this session, serial verified via `ro.boot.qemu.avd_name` per adb call,
+Pixel 6 untouched; uiautomator + `input tap` on the emulator per #19/#24
+precedent; app connected to the live server 192.168.1.13:3689,
+`sync: live`).**
+
+- **#25 CLOSED on device** — now-playing semantics at 411 dp and 360 dp
+  (`wm density 480`): rating row `[345,1422][735,1512]` top == artist·album
+  bottom (1422), centred (mid 540) → stars render their own row BELOW the
+  names. PNGs `.night/sup/nowplaying_{411,360}dp.png` (local, uncommitted).
+- **#26 CLOSED on device** — one playhead row at BOTH widths:
+  360 dp `03:20[72,1626][180,1686]` · slider `[715,1584][859,1728]` ·
+  `03:35[900,1626][1008,1686]` — shared mid-y 1656, labels intrinsic
+  108 px, slider strictly between, no wrap/squeeze at a 78-char-length
+  title already proven in CI (test). 411 dp twin: mid-y 1749.
+- **#21 CLOSED on device (audible, user-confirmed)** — Queue tab tap on
+  "Mathematics, Mos Def" (entry 208744, pos 7 of 1432): `PUT
+  /api/player/play?item_id=208744` (`owntone_api.dart:294`) → server
+  `item_id → 208744`, progress → 0, transitioned `play` (progress
+  53460→57500 in 4 s), **queue 1432/version 2517 byte-stable before/after**
+  = in-place advance, no replacement. Ear-check: user confirmed the tapped
+  track was what played. (The immediate post-tap read showed
+  `pause@0` — OwnTone's async start-up race, not app behavior.)
+- **#20 CLOSED on device (audible, user-confirmed)** — while paused,
+  deselected ESP-68F8 (`PUT /api/outputs/{id}` 204) leaving Volumio Kitchen
+  sole; user-go'd `player/play`; in-app checkbox-zone tap on the sole row →
+  dialog appeared ("No outputs left selected", Cancel/Continue) with the
+  SERVER UNTOUCHED while open (still `play`, progress advancing);
+  Continue → **`state == stop`** (not pause), progress frozen 0 across two
+  reads, zero selected. Bonus live confirm of #19: every unselected row's
+  slider rendered `CLK OFF`, selected Volumio slider enabled. Server
+  restore verified byte-identical (both selections, vols 29/49, master 49);
+  player left `stop` (the tested end-state; queue intact). The only deltas
+  after Continue — current item → queue head, master reads 71 at zero
+  selected — are OwnTone server-side stop/aggregation behavior, not app.
+
+**Deviations:** none beyond the noted server-side races/quirks. No volume
+PUTs; no library mutations; the other session's queue (1432 items) never
+touched; no repo-code changes (docs only). AVD deleted, own-qemu 0.
+Morning-list status: supervised tails #20/#21 CLOSED here; #25/#26
+screenshot closures CLOSED here; remaining candidates are the PR-comment
+follow-ups (#20 post-dialog predicate re-check, failed-toggle test,
+checkbox ValueKey; #24 browse/queue nav; #19 mid-drag hardening; #26
+mm:ss formatter).
