@@ -119,6 +119,11 @@ volume (`PUT /api/player/volume?output_id=`). PIN dialog for
 - volume control rendered **disabled (but visible)** for every output where
   `selected == false` (OwnTone web-UI parity — issue #19), and enablement
   follows the live `outputs` websocket update, not just the initial fetch;
+- deselecting an output while **≥1 output stays selected** is **silent**
+  even during playback — audio simply continues on the remaining outputs
+  (OwnTone web-UI parity — issue #20); deselecting the **only** selected
+  output confirms first, and on confirm, while the server plays, playback
+  is **stopped** server-side (`PUT /api/player/stop`, not pause);
 - *(Changing which output is active while playing is a supervised action —
   R-N7.)*
 

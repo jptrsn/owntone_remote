@@ -2280,3 +2280,58 @@ fixture must serve JSON with `application/json` (text/plain → dio String →
 .MainActivity` works. Gates green: analyze 0 · format 0/95 · test
 --exclude-tags live 463/463 · debug APK built; AVD deleted, own-qemu 0.
 Report: `.ai-dlc/night-2026-11-18/reports/21.md`.
+
+---
+
+## 2026-11-19 — overnight run, issue #20 (build agent, LAST unit)
+
+**Scope:** issue #20 (frozen `.ai-dlc/night-2026-11-18/issues/20.md`) —
+deselecting an output warned unconditionally; expected (OwnTone web-UI
+parity): multi-deselect silent, LAST-selected deselect confirms and stops
+a playing server. Branch `fix/issue-20-conditional-output-deselect`.
+
+**What changed.** `outputs_controller.dart`: pure static
+`emptiesSelection` (is `id` the ONLY selected output). `outputs_screen.dart`:
+`_onCheckbox` three-way — multi-deselect → silent `toggle` (the web UI
+confirms nothing: `ControlOutputVolume` → `update(id,{selected:!selected})`,
+0 `confirm` in the served bundle — trap #3 honoured); last-deselect →
+`_lastDeselectFlow`: confirm in ANY state → toggle → on success fresh-read
+`player.refreshState()` (unit-004 contract) → `player.stop()` iff playing
+(`PUT /api/player/stop`, not pause — a playing server with zero outputs
+burns the queue emitting nothing); enable path keeps the unit-004 guard
+(minimal scope — the defect is deselect-only). REQUIREMENTS R-09 bullet +
+SCREENS.md bullets (#19/#21 precedent). Issue's "R-07 area" = **R-09**
+(same misnumbering precedent as #19/#21/#23/#24; R-07 is the notification).
+
+**Evidence.** PRIMARY: `test/outputs_screen_test.dart` group "R-09
+conditional deselect guard (issue #20)" — (a) multi-deselect while PLAYING
+silent (no dialog, one set call with remaining ids, no stop); (b) last
+deselect while playing: confirm → `set []` then stop; (c) cancel → zero
+calls, selection kept; (d) last deselect while PAUSED: confirm → `set []`,
+NO stop; (e) stop decision reads the FRESH slice. `outputs_selection_test`
+4 `emptiesSelection` pins. Existing playing-guard tests re-pointed to the
+enable path (Gamma) so the C3 stale-cache regression stays covered.
+463 → 472. Mutation-verified M1–M6 (revert-multi-guard→only (a) red; no
+stop→(b)(e) red; pause-vs-stop swap→(b)(e) red; cached read→(e) red;
+ignore-cancel→(c) red; predicate-const→4 widget+1 controller red, (a)
+green); restored from `.night/20/backup/` copies (committed first — PR #4
+lesson), suite re-green after each. Gates green: analyze 0 · format 0/95 ·
+test 472/472 · debug APK. Device (own disposable AVD `OwnToneNight_API_36`,
+created+deleted, `.night/20/adbown` wrapper probed avd_name before EVERY
+adb call — Pixel 6 received ZERO): server pause held all session (state
+re-curl-checked before every toggle); step1 two-selected deselect → no
+dialog (dump 45/1 nodes baseline) + server flipped live; step2 reselect;
+step3 last deselect → **widget tree `AlertDialog [outputs_screen.dart:162]`**
++ server blocked while open → Continue → zero selected, player STILL
+`pause 208437@38427` = NO stop fired (paused branch); step4 restore both →
+`/api/outputs` sha `13f24eea…` AND `/api/player` sha `2e4f3a97…` **byte-
+identical to the ledger 10:45Z snapshot**. **Incident (harness geometry,
+recorded per AGENTS):** first tap used row center = the live volume
+Slider's band → committed Volumio Kitchen volume 42→1; state verified
+pause before AND after (no audio possible); restored to 42 same minute
+(204), compare showed zero volume drift thereafter; later taps targeted
+the checkbox zone (row top +80 px). "Confirm-stops-while-playing /
+stop-vs-pause audibility" = **BLOCKED-PENDING-SUPERVISION** (no playing
+state created, per run config; fake tests (b)/(e) carry it). 0 E/flutter.
+AVD deleted, own-qemu 0, `adb devices` afterwards = only the untouched
+Pixel 6. Report: `.ai-dlc/night-2026-11-18/reports/20.md`.
