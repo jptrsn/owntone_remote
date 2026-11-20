@@ -40,7 +40,9 @@ lib/
 │   │       │                            #   reconnect/backoff, resubscribe
 │   │       ├── owntone_music_provider.dart  # implements MusicProvider
 │   │       └── mappers.dart            # JSON models → domain models
-│   └── settings_store.dart    # shared_preferences: host, port, rocker step
+│   └── settings_store.dart    # shared_preferences: host, port, rocker step,
+│                              #   theme mode (R-26; ThemePreference mirrors
+│                              #   it listenably for MaterialApp.themeMode)
 ├── presentation/
 │   ├── providers/             # ChangeNotifier controllers (package: provider)
 │   │   ├── connection_controller.dart

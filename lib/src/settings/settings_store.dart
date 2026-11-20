@@ -1,17 +1,19 @@
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/server_config.dart';
 
-/// Persisted user settings (R-01, R-14): the configured server and the
-/// volume-rocker step. The websocket port is discovered from `/api/config`
-/// each connect and deliberately not persisted (a server config change must
-/// not be cached).
+/// Persisted user settings (R-01, R-14, R-26): the configured server, the
+/// volume-rocker step, and the theme preference. The websocket port is
+/// discovered from `/api/config` each connect and deliberately not persisted
+/// (a server config change must not be cached).
 class SettingsStore {
   SettingsStore(this._prefs);
 
   static const _hostKey = 'server.host';
   static const _portKey = 'server.port';
   static const _rockerStepKey = 'rocker.step';
+  static const _themeModeKey = 'theme.mode';
 
   /// R-14 bounds for the volume-rocker step (server-volume delta per press
   /// while foregrounded — R-06/D20 keeps it foreground-only).
@@ -48,4 +50,25 @@ class SettingsStore {
 
   Future<void> saveRockerStep(int step) =>
       _prefs.setInt(_rockerStepKey, step.clamp(minRockerStep, maxRockerStep));
+
+  /// The theme preference (R-26): stored as a plain string, validated on
+  /// read — a corrupt, legacy, or wrongly-typed value degrades to
+  /// [ThemeMode.system], never a crash (same read-validate fallback pattern
+  /// as [rockerStep]).
+  ThemeMode get themeMode {
+    // Untyped read: getString would THROW on a wrongly-typed legacy value
+    // (type 'int' is not a subtype of type 'String?') — R-26 says corrupt
+    // degrades to system, never crashes.
+    switch (_prefs.get(_themeModeKey)) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      default:
+        return ThemeMode.system;
+    }
+  }
+
+  Future<void> saveThemeMode(ThemeMode mode) =>
+      _prefs.setString(_themeModeKey, mode.name);
 }
