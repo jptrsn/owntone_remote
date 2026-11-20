@@ -2456,3 +2456,17 @@ D-05/R-16) **declined by user at review** ("skip it, I don't care about
 this one") — R-16 withdrawn in REQUIREMENTS, diff-list D-05 marked
 SKIPPED, draft kept unposted for the record. retune-ux-capture fully
 closed; build work now tracked by #38–#42 (units off develop per GitFlow).
+
+**Inventory correction pass (2026-11-19, same session, user-prompted).**
+User challenged the navigation rows; reading `lib/src` falsified five
+v1 claims: there is **no bottom nav and no mini-player** (NP is the root
+route, everything else pushed — `root_screen.dart:11-20`), **no queue
+drag-reorder** (R-11 never required it), while browse counts and the
+smart-playlist text marker **do** exist. `feature-inventory.md` rewritten
+as v2 with file:line verification for every row; diff-list D-03/D-07
+corrected and **D-07 reopened**; new navigation-family rows **N-01
+(mini-player) N-02 (nav architecture) N-03 (queue reorder) N-04
+(remove item) N-05 (section headers)** added awaiting the user gate.
+Issue comments/edits: #38 (Songs rows must show artist + album), #40
+(BrowseScreenScaffold already supports `actions:` — `queue_screen.dart:111`).
+Lesson recorded: parity comparisons read the CODE, not unit-doc memory.

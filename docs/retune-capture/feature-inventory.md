@@ -1,97 +1,84 @@
-# ReTune 3.5.23 feature inventory (captured + static, 2026-11-19)
+# ReTune 3.5.23 feature inventory (2026-11-19) — **v2, code-verified**
 
-Status: **port** = already in new app (parity) · **variant** = both exist,
-differ (diff-list row) · **gap** = new app lacks it (diff-list row) ·
-**drop** = no JSON way / declined · **out** = itunes-only or scope.
-Evidence: `NN-*/notes.md` (walk), `static-notes.md` (APK),
-`docs/REQUIREMENTS.md` R-IDs for the new app.
+> **Correction pass 2026-11-19:** v1's "new-app today" column was written
+> from unit-doc memory and was wrong on at least five rows (no bottom
+> nav exists; no mini-player; no queue drag-reorder; browse counts DO
+> exist; smart playlists DO have a text marker). Every row below was
+> re-derived by reading `lib/src` (file:line as of HEAD `1d2e99e`). The
+> app's actual navigation model: **Now Playing is the root route;
+> Library/Queue/Outputs/Settings are pushed on top; "switch to NP" =
+> `popUntil(isFirst)`** (`root_screen.dart:11-20,34-42`).
+
+Status: **port** = parity · **variant** = both exist, differ · **gap** =
+lacks it (diff-list row) · **drop** = no JSON way / declined · **out** =
+itunes-only or scope. Evidence: `NN-*/notes.md` (ReTune), cited code (new
+app), `docs/REQUIREMENTS.md` R-IDs.
 
 ## Global chrome
-| Feature | JSON | Status |
+| ReTune feature | New app (verified) | Status |
 |---|---|---|
-| Persistent mini now-playing bar (2-line + 3 transport) on all browse/search | GET /api/player + ws | port (mini player, R-08) |
-| Global drawer: Now Playing · Up Next · Views | — | variant (new app: bottom nav; D-07) |
-| **Speakers action in every app bar** | GET/PUT /api/outputs | **gap (D-09)** — new app: outputs only from now-playing |
-| Search action in every app bar | GET /api/search | variant (new app: search from Library home only — viewport decision unit 004) |
-| Restore last-viewed screen on relaunch | — | drop (cold-start-home is fine; D-13) |
-| Section index / alphabetical headers | cc= params | port (paged browse w/ headers where relevant) |
+| Mini now-playing bar (metadata + 3 transport) on ALL browse/search screens | **Nothing persistent** — pushed screens have no player surface at all (`root_screen.dart`, `browse_screen_scaffold.dart`) | **gap (N-01)** |
+| Drawer: Now Playing · Up Next · Views, everywhere | No drawer/nav widget; the 3 entry buttons (Playing via · Queue · Library) exist ONLY on Now Playing (`now_playing_screen.dart:321-366`) | **variant (N-02)** |
+| Speakers action every app bar | Outputs entry on NP only (`now_playing_screen.dart:327`) | gap → **filed #40** (BrowseScreenScaffold already takes `actions:` — `queue_screen.dart:111`) |
+| Search action every app bar | Search from LibraryHome only (`browse_screens.dart:37,66`) | variant — N-02 covers |
+| Restore last screen on relaunch | Fixed: NP root (or Settings when disconnected) (`root_screen.dart:34-42`) | drop (D-13, user-confirmed) |
+| Alphabetical section headers (artists/genres/queue) | None in paged browse (`paged_browse_list.dart` — plain ListView) | **gap (N-05)** |
 
 ## Library home + browse
-| Feature | JSON | Status |
+| ReTune feature | New app (verified) | Status |
 |---|---|---|
-| Views: Playlists/Artists/Albums/**Songs**/Genres (+Composers out) | /api/library/* | **gap (D-02)** — Songs (all-tracks) tab missing |
-| Artist → **songs** (genre headers) | tracks?cc=artist | variant (new app: artist→albums→tracks — D-08) |
-| Genre → **artists** | artists?cc=genre | variant (new app: genre→albums) |
-| Playlist rows: **artwork + smart-playlist badge** | artwork_url, smart flag | **gap (D-05)** |
-| **Grid display mode** w/ artwork + "N album, M songs" counts | counts in cc= responses | **gap (D-03)** |
-| Row play accessory (replace queue + start) | POST /api/queue/items/add?clear=true&playback=start | port |
-| Detail overflow: Play All / **Shuffle** / **Play Next** / **Add to Up Next** | add w/ shuffle / no-clear | **gap (D-06)** (playUris exists; add-only + shuffle-first missing) |
-| Playlist Sort By (client cycling) | — | drop (server order is the contract; D-14) |
-| Long-press rows | — | n/a (= tap; nothing to port) |
+| Views: Playlists/Artists/Albums/Songs/Genres | LibraryHome has all but **Songs** (`browse_screens.dart:36-42`) | Songs gap → **filed #38** |
+| Row counts | Artist "N albums · M tracks" (`browse_rows.dart:163`), genre counts (228), playlist "kind · N items" (129), album artist·year (no count in secondary) | port (album count = nit) |
+| Smart-playlist marker | Text in secondary: "smart playlist · N items" (`browse_rows.dart:122-129`) — no chip/artwork | port-lite (D-05 declined by user) |
+| Artwork on rows / grid mode | Icon leading everywhere (`browse_rows.dart` — zero ArtworkBox) | D-03 **deferred** (user); D-05 declined |
+| Artist → songs · Genre → artists | Artist → **albums** → tracks; Genre → **albums** (`browse_screens.dart:170,305`) | variant (D-08, user: keep) |
+| Row play accessory | `_PlayButton` = `playUris` clear+start (`browse_rows.dart:91-106`); TrackRow tap = play, stars separate (276-296) | port |
+| Detail overflow Play All/Shuffle/Play Next/Add | Nothing (`paged_browse_screen.dart` full read) | gap → **filed #41** |
+| Playlist Sort By | Server order | drop (D-14, user-confirmed) |
+| TrackRow second line | `showArtist` → **artist only** (`browse_rows.dart:273-278`) — ReTune songs rows are "artist - album" | nit on **#38** (Songs rows should carry artist + album) |
 
 ## Search
-| Feature | JSON | Status |
+| ReTune feature | New app (verified) | Status |
 |---|---|---|
-| Live grouped results Albums→Artists→Songs (**no playlists**) | GET /api/search (incl. playlists) | port+ (new app superset, unit 007) |
-| Clear-query action | — | port |
+| Grouped live results, no playlists | 4 groups **incl. playlists**, per-group "Load more" paging, rows reused, tap→NP (`search_screen.dart:18-36,289-323`) | port+ (unit 007 + #24) |
+| Clear-query action | `ValueKey('search-clear')` (210) | port |
 
 ## Now playing
-| Feature | JSON | Status |
+| ReTune feature | New app (verified) | Status |
 |---|---|---|
-| Transport + shuffle/repeat (icon-only state) | PUT /api/player/* + shuffle/repeat | port |
-| Elapsed + **−remaining** (no total, no seek bar) | item_progress/length | variant (new app: elapsed/total + slider — strictly better; keep) |
-| Visualizer / peak meter | dacp.visualizer | **drop** (visual flourish; JSON way = none; D-15) |
-| Genius / Genius shuffle | — | out: itunes-only (removed 2026-11-19) |
-| Stars on np + half-stars pref (ratings_dialog trigger unidentified) | rating 0–100 | variant (new app: 5-tap stars; half-star display = optional D-16) |
-| Overflow: Go to Artist / Go to Album | library drilldowns | **gap (D-04)** |
-| Live external-state sync (~2 s) | ws (instant) | port+ (websocket = beats polling) |
-| Volume via rocker + toaster overlay | PUT volume?step | port (R-13/R-14 incl. step setting — exceeds) |
+| Transport prev/play/next | filledTonal/filled buttons (`now_playing_screen.dart:481-502`) | port |
+| shuffle/repeat modes | `_SelectableIconButton` w/ `Semantics(selected:)`, repeat_one variant (524-537) | port+ (a11y beats ReTune) |
+| Stop + consume (ReTune lacks both) | (539-549) | exceeds ✓ |
+| Progress: elapsed + −remaining, no slider | seek slider + elapsed/total (454) | variant (new app better; keep) |
+| Volume rocker + toaster | rocker via platform channel + app-rendered level (#22 suppresses system panel) + step setting (`settings_screen.dart:191-214`) | port+ (step exceeds ReTune's fixed 5) |
+| Artwork | ArtworkBox w/ probe verdict (unit 010) | port |
+| Stars on np | own row below artist/album (#25; issue #39 adds Go-to context) | port |
+| Go to Artist/Album | absent (`now_playing_screen.dart:122-152` app bar = settings icon only) | gap → **filed #39** |
+| Peak meter/visualizer | none | drop (D-12, user-confirmed) |
 
 ## Queue
-| Feature | JSON | Status |
+| ReTune feature | New app (verified) | Status |
 |---|---|---|
-| Up Next = post-current only; drag-reorder w/ confirm dialog | GET /api/queue, PUT move | variant (new app: full queue incl. current; reorder port — R-11) |
-| **History** ("Previously Played") | **no endpoint** | **drop (D-17)** — documented untestable via JSON |
-| "Up Next from Music" library grouping | — | n/a (single library) |
+| Post-current list / History | Full queue incl. current, highlight = primaryContainer + play icon + semantics (252-281); hide-played toggle (#23) | variant (R-11 as specified) |
+| History tab | n/a — no endpoint | drop (D-17, user-confirmed) |
+| **Drag-reorder** | **absent** (no move in `queue_controller.dart`; R-11 never required it — API PUT move exists, `docs/API.md:94` "if S8 queue-reorder is kept") | **gap (N-03)** |
+| **Remove single item** | **absent** (only clear-all w/ confirm, `queue_screen.dart:124-129`; DELETE endpoint exists, `docs/API.md:95`) | **gap (N-04)** |
+| Tap queued row = skip in place | `skipToQueueItem` (#21, `queue_screen.dart:137-140`) | port+ (matches web UI) |
 
 ## Outputs (Speakers)
-| Feature | JSON | Status |
+| ReTune feature | New app (verified) | Status |
 |---|---|---|
-| Master slider + per-output checkbox+slider(when selected) | /api/outputs family | port (parity w/ R-09 + CLK-OFF fix) |
-| Reachable globally | — | see D-09 |
+| Master + per-output sliders, checkboxes | per-output Slider(357) + Checkbox + PIN dialog + "no outputs left" guard; **no master slider on the screen** (master lives on NP) | port (master-on-outputs = nit) |
+| Global reach | NP only | #40 |
 
-## Settings
-| Feature | JSON | Status |
+## Settings / misc
+| ReTune feature | New app (verified) | Status |
 |---|---|---|
-| Run in Background (FGS + silent notification) | — | port (audio_service FGS always-on) |
-| Screen-off disconnect (Immediately..Never) | — | **drop** (DAAP-session concept; JSON app idles clean; D-18) |
-| Lockscreen controls | — | port (R-07 notification controls) |
-| Pause on incoming calls | — | variant→verify (audio_service interruption handling — D-19) |
-| Use volume buttons | — | port (R-14 + step setting exceeds) |
-| Reorder w/ artwork pref | — | n/a |
-| Default view upon connection / default library view | — | drop (D-13) |
-| Theme Light/Dark | — | **gap-lite (D-10)** — new app follows system only |
-| Show rating / half stars | — | see now-playing row |
-| Screen lock (keep awake charging) | — | drop (system setting) |
-| Donate/Licenses/Thanks/Version | — | variant (new app About screen w/ licenses — R-14b) |
-| Multi-library switch | — | drop (single-library server; D-20) |
-
-## Pairing
-| Feature | JSON | Status |
-|---|---|---|
-| mDNS auto-discovery (_dacp._tcp) | OwnTone: **_owntone-server._tcp** (check /api/config advertising) | **approved improvement (D-01)** — add discovery to server-config |
-| Manual pair code web-UI flow | — | out (new app: direct IP/port; no pairing ceremony in OwnTone JSON) |
-
-## ITUNES-ONLY-LISTED (one line each, D12)
-Radio · iTunes Radio · Movies · Rentals · TV Shows · Podcasts (+series) ·
-iTunes U/Classes · Audiobooks · Genius/Genius Mixes · iTunes Match rows ·
-Home-sharing browse — all `out: itunes-only`; zero JSON-equivalent
-attempts per D5/D12.
-
-## GAP-CANDIDATES (→ `diff-list.md`, user gate)
-D-01 discovery (approved) · D-02 Songs tab · D-03 grid mode · D-04 Go to
-Artist/Album · D-05 playlist artwork+smart badge · D-06 detail context
-actions · D-07 drawer vs bottom-nav note · D-08 artist drill path ·
-D-09 global outputs action · D-10 theme setting · D-16 half-stars ·
-D-19 pause-on-call verify. Drops: history, visualizer, disconnect pref,
-default-view prefs, screen lock, multi-library, sort-by, widgets.
+| Server host/port | Host + JSON port (`settings_screen.dart:145-159`) | port |
+| mDNS discovery | absent | gap → **filed #42** |
+| Rocker step | 1–10 stepper, persists (`settings_screen.dart:191-214`) | exceeds ✓ |
+| Disconnect | **exists** — Settings → Disconnect (185-186) (location differs from ReTune overflow) | port |
+| Theme Light/Dark | system-only (`main.dart:157` fromSeed, no themeMode) | D-10 **deferred** (user) |
+| Notification/FGS | audio_service silent channel (dv-004 verified) | port (D-19 ✓) |
+| Pause on incoming calls | **R-08 exists and specifies it** (REQUIREMENTS:100-102 — pause-on-call, resume-if-app-paused) — verify on device next dv pass (D-15 verify item stands) | port per spec |
+| About w/ licenses | about_screen (R-14b) | port |
