@@ -518,8 +518,11 @@ void main() {
         await pumpApp(tester, const QueueScreen());
         expect(find.byKey(_miniPlayer), findsOneWidget);
         await tester.tap(
+          // R-23 (issue #46) made the queue list a ReorderableListView —
+          // the R-22 finding (rows must still receive taps with the bar
+          // shown) follows the list widget, not its class name.
           find.descendant(
-            of: find.byType(ListView),
+            of: find.byType(ReorderableListView),
             matching: find.text('Test Item'),
           ),
         );
@@ -546,7 +549,12 @@ void main() {
         await pumpApp(tester, const QueueScreen());
         expect(find.byKey(_miniPlayer), findsOneWidget);
         final before = tester.getTopLeft(find.byKey(_miniPlayer));
-        await tester.drag(find.byType(ListView), const Offset(0, -400));
+        // (R-23 swapped QueueScreen's ListView for a ReorderableListView;
+        // a quick pan on a row body scrolls it — drag needs a hold.)
+        await tester.drag(
+          find.byType(ReorderableListView),
+          const Offset(0, -400),
+        );
         await tester.pumpAndSettle();
         expect(
           find.byKey(_miniPlayer),

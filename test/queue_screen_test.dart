@@ -510,6 +510,320 @@ void main() {
     });
   });
 
+  // Issue #46 (R-23): tap-and-hold drag reorder. The pure drop→position
+  // mapping has its own unit tests (queue_move_test.dart); these drive
+  // REAL long-press drags through ReorderableListView (Flutter 3.47.9:
+  // `ReorderableDelayedDragStartListener` = the ReTune "tap and hold"
+  // gesture, `onReorderItem` = already-adjusted indices) against the fake
+  // API, asserting the captured PUT line and the now-playing-row inertness.
+  group('R-23 drag reorder (issue #46)', () {
+    Finder handle(String title) => find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Reorder $title',
+    );
+
+    /// Titles currently on screen, top to bottom.
+    List<String> rowOrder(WidgetTester tester) {
+      const known = ['Skunk', 'Blues in the Attic', 'House Party', 'Mid Drag'];
+      final located = <String, double>{};
+      for (final t in known) {
+        final f = find.text(t);
+        if (f.evaluate().isNotEmpty) located[t] = tester.getCenter(f).dy;
+      }
+      final sorted = located.entries.toList()
+        ..sort((a, b) => a.value.compareTo(b.value));
+      return [for (final e in sorted) e.key];
+    }
+
+    /// Long-press the drag handle (ReorderableDelayedDragStartListener
+    /// starts the drag after the long-press timeout — hold past it without
+    /// moving), then move in 4 steps and release.
+    Future<void> dragFromHandleTo(
+      WidgetTester tester,
+      String title,
+      Offset target,
+    ) async {
+      final start = tester.getCenter(handle(title));
+      final g = await tester.startGesture(start);
+      await tester.pump(const Duration(milliseconds: 600));
+      for (var i = 1; i <= 4; i++) {
+        await g.moveTo(Offset.lerp(start, target, i / 4)!);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await g.up();
+      await tester.pump();
+    }
+
+    testWidgets('moveItem (controller): optimistic reorder, exactly one '
+        'mapped PUT new_position=2, then the GET /api/queue trailing '
+        'refresh — the _action pattern verbatim, no second refresh path', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      final before = adapter.requests.length;
+      final blues = queue.queue.firstWhere(
+        (e) => e.title == 'Blues in the Attic',
+      );
+      late bool ok;
+      await tester.runAsync(() async {
+        ok = await queue.moveItem(blues, 2);
+      });
+      await settle(tester);
+      expect(ok, isTrue);
+      final fired = adapter.requests.skip(before).toList();
+      expect(fired.where((r) => r.contains('/api/queue/items/')), [
+        'PUT /api/queue/items/196175?new_position=2',
+      ], reason: 'exactly ONE move with the server-absolute index (R-23)');
+      expect(
+        fired,
+        contains('GET /api/queue'),
+        reason: 'trailing post-commit refresh (unit-011)',
+      );
+      expect(queue.queue.map((e) => e.title), [
+        'Skunk',
+        'House Party',
+        'Blues in the Attic',
+      ]);
+    });
+
+    testWidgets('moveItem failure (fake 500): pre-action list restored + '
+        'typed _describeActionError (the clear-proven _action contract)', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      fx.failMove = true;
+      final blues = queue.queue.firstWhere(
+        (e) => e.title == 'Blues in the Attic',
+      );
+      late bool ok;
+      await tester.runAsync(() async {
+        ok = await queue.moveItem(blues, 2);
+      });
+      expect(ok, isFalse);
+      expect(
+        queue.actionError,
+        contains('Move failed — server answered HTTP 500.'),
+      );
+      expect(queue.queue.map((e) => e.title), [
+        'Skunk',
+        'Blues in the Attic',
+        'House Party',
+      ], reason: 'rollback to the pre-action list');
+    });
+
+    testWidgets('real drag (Blues below House): exactly ONE PUT with the '
+        'mapped new_position=2 — no other mutating call — and the rows '
+        'land the moved order', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(rowOrder(tester), ['Skunk', 'Blues in the Attic', 'House Party']);
+      final before = adapter.requests.length;
+      final target = Offset(
+        tester.getCenter(handle('Blues in the Attic')).dx,
+        tester.getRect(find.text('House Party')).bottom + 12,
+      );
+
+      await dragFromHandleTo(tester, 'Blues in the Attic', target);
+      await settle(tester);
+
+      final fired = adapter.requests.skip(before).toList();
+      expect(fired.where((r) => r.contains('/api/queue/items/')), [
+        'PUT /api/queue/items/196175?new_position=2',
+      ], reason: 'one drop commits exactly one PUT, server-absolute (R-23)');
+      expect(
+        fired.where(
+          (r) =>
+              r.contains('/items/add') ||
+              r.contains('/api/queue/clear') ||
+              r.startsWith('DELETE') ||
+              r.contains('/api/player/play'),
+        ),
+        isEmpty,
+        reason: 'drag must not transport or replace anything',
+      );
+      expect(fired, contains('GET /api/queue'));
+      expect(rowOrder(tester), ['Skunk', 'House Party', 'Blues in the Attic']);
+    });
+
+    testWidgets('hide-played ON: the drop maps THROUGH the cut — display 0 '
+        '→ PUT new_position=1, never the raw display 0 (issue #23 window)', (
+      tester,
+    ) async {
+      await tester.runAsync(() => wireUp(configure: (f) => f.itemId = 196175));
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+      expect(rowOrder(tester), ['Blues in the Attic', 'House Party']);
+      final before = adapter.requests.length;
+      final target = Offset(
+        tester.getCenter(handle('House Party')).dx,
+        tester.getRect(find.text('Blues in the Attic')).top + 2,
+      );
+
+      await dragFromHandleTo(tester, 'House Party', target);
+      await settle(tester);
+
+      final fired = adapter.requests.skip(before).toList();
+      expect(
+        fired.where((r) => r.contains('/api/queue/items/')),
+        ['PUT /api/queue/items/196176?new_position=1'],
+        reason:
+            'display 0 + cut 1 = absolute 1 — an unmapped index would '
+            'send new_position=0 into the hidden already-played region',
+      );
+      expect(fired.where((r) => r.contains('new_position=0')), isEmpty);
+    });
+
+    testWidgets('the now-playing row is INERT: no handle at all, a '
+        'long-press-drag across it fires NO queue PUT and NO skip — the '
+        'current entry stays fixed (R-23 client rule; server behaviour '
+        'deliberately unprobed on the shared fixture)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(
+        handle('Skunk'),
+        findsNothing,
+        reason: 'the current row gets no drag handle (R-23)',
+      );
+      expect(handle('Blues in the Attic'), findsOneWidget);
+      final before = List.of(adapter.requests);
+      final house = tester.getRect(find.text('House Party'));
+      final start = tester.getCenter(row('Skunk', nowPlaying: true));
+      final g = await tester.startGesture(start);
+      await tester.pump(const Duration(milliseconds: 600));
+      for (var i = 1; i <= 4; i++) {
+        await g.moveTo(
+          Offset.lerp(start, Offset(start.dx, house.bottom + 12), i / 4)!,
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await g.up();
+      await settle(tester);
+
+      expect(
+        adapter.requests
+            .skip(before.length)
+            .where((r) => r.contains('/api/queue/items/')),
+        isEmpty,
+        reason: 'no move request may fire from the current row',
+      );
+      expect(
+        adapter.requests
+            .skip(before.length)
+            .where((r) => r.contains('PUT /api/player/play')),
+        isEmpty,
+        reason: 'and the hold-drag is not a tap either',
+      );
+      expect(rowOrder(tester), ['Skunk', 'Blues in the Attic', 'House Party']);
+    });
+
+    testWidgets('drag handles carry the "Reorder <title>" semantics label '
+        "(ReTune's drag is a11y-invisible — R-23 does better)", (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(handle('Blues in the Attic'), findsOneWidget);
+      expect(handle('House Party'), findsOneWidget);
+      expect(handle('Skunk'), findsNothing);
+    });
+
+    testWidgets('WS queue event MID-DRAG: the drag keeps its local order, '
+        'commits exactly one PUT, and the post-commit refresh lands the '
+        'SERVER order (reconciliation contract)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      final before = adapter.requests.length;
+      final start = tester.getCenter(handle('Blues in the Attic'));
+      final g = await tester.startGesture(start);
+      await tester.pump(const Duration(milliseconds: 600));
+
+      // An external client (web UI) changes the queue while the finger is
+      // held: the refetch rebuilds the list UNDER the live overlay.
+      await tester.runAsync(() async {
+        fx.items.insert(0, Fixture.track(200005, 0, 'Mid Drag', 1205, 330000));
+        fx.renumber();
+        channels.last.serverSend('{"notify":["queue"]}');
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await settle(tester);
+      // R-23 mid-drag contract: the refetch must NOT yank the rows — the
+      // list stays at the LOCAL (frozen) order while the finger is down
+      // (the server's new row lands only after the post-commit refresh,
+      // asserted at the end). Mutation-verified: a list that rebuilds
+      // mid-drag shows 'Mid Drag' here (and trips Flutter's duplicate-
+      // GlobalKey assertion under the overlay).
+      expect(
+        find.text('Mid Drag'),
+        findsNothing,
+        reason: 'the drag keeps its local order (R-23)',
+      );
+
+      final house = tester.getRect(find.text('House Party'));
+      for (var i = 1; i <= 4; i++) {
+        await g.moveTo(
+          Offset.lerp(start, Offset(start.dx, house.bottom + 12), i / 4)!,
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await g.up();
+      for (var k = 0; k < 6; k++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      final fired = adapter.requests.skip(before).toList();
+      expect(
+        fired.where((r) => r.startsWith('PUT /api/queue/items/')),
+        hasLength(1),
+        reason:
+            'the drag commits exactly ONE move (unit-011: no second '
+            'refresh path — the trailing _action refresh reconciles)',
+      );
+      // Whatever index the mid-drag insert shifted the drop to, the truth
+      // after commit is the server's: rows match GET /api/queue order.
+      expect(rowOrder(tester), [
+        for (final e in fx.items) e['title'],
+      ], reason: 'post-commit refresh reconciles the list (R-23)');
+    });
+
+    testWidgets('failed drag (fake 500): rows roll back + typed snackbar', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      fx.failMove = true;
+      final target = Offset(
+        tester.getCenter(handle('Blues in the Attic')).dx,
+        tester.getRect(find.text('House Party')).bottom + 12,
+      );
+
+      await dragFromHandleTo(tester, 'Blues in the Attic', target);
+      await settle(tester);
+
+      expect(
+        adapter.requests.where((r) => r.startsWith('PUT /api/queue/items/')),
+        hasLength(1),
+      );
+      expect(
+        find.textContaining('Move failed'),
+        findsOneWidget,
+        reason: 'typed _describeActionError snackbar (R-23)',
+      );
+      expect(rowOrder(tester), [
+        'Skunk',
+        'Blues in the Attic',
+        'House Party',
+      ], reason: 'the pre-action list is restored');
+    });
+  });
+
   group('R-11 refresh (R-02)', () {
     testWidgets('WS queue event (external change) refetches', (tester) async {
       await tester.runAsync(wireUp);
@@ -836,6 +1150,10 @@ class Fixture {
   /// ?item_id=…`) fails, so the snackbar path can be asserted.
   bool failSkip = false;
 
+  /// R-23 (issue #46): when true, the drag-reorder PUT fails, so the
+  /// rollback + snackbar path can be asserted.
+  bool failMove = false;
+
   /// While true, REST calls fail and new WS handshakes fail — the app stays
   /// in its offline state until this is cleared (the unit 002 dropServer
   /// pattern), so a test can observe the offline window before the backoff
@@ -888,6 +1206,32 @@ class Fixture {
         type: DioExceptionType.badResponse,
         response: Response(requestOptions: o, statusCode: 500),
       );
+    }
+    // R-23 (issue #46): drag-reorder. Server-true semantics per the
+    // official json-api docs (verified 2026-11-20): `new_position` is the
+    // entry's FINAL index — a MOVE (remove + insert), not a swap — and
+    // 204 on success.
+    final moveMatch = RegExp(r'^/api/queue/items/(\d+)$').firstMatch(p);
+    if (moveMatch != null) {
+      if (o.method != 'PUT') {
+        return Response(requestOptions: o, statusCode: 405);
+      }
+      if (failMove) {
+        throw DioException(
+          requestOptions: o,
+          type: DioExceptionType.badResponse,
+          response: Response(requestOptions: o, statusCode: 500),
+        );
+      }
+      final id = int.parse(moveMatch.group(1)!);
+      final from = items.indexWhere((e) => e['id'] == id);
+      if (from == -1) return Response(requestOptions: o, statusCode: 404);
+      final to = int.tryParse(o.uri.queryParameters['new_position'] ?? '');
+      if (to == null) return Response(requestOptions: o, statusCode: 400);
+      final moved = items.removeAt(from);
+      items.insert(to.clamp(0, items.length), moved);
+      renumber();
+      return Response(requestOptions: o, statusCode: 204);
     }
     switch (p) {
       case '/api/config':

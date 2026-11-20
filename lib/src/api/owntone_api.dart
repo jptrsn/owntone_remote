@@ -339,6 +339,20 @@ class OwntoneApi {
   Future<void> skipToQueueItem(String entryId) =>
       _put('/api/player/play', {'item_id': entryId});
 
+  /// Drag-reorder (R-23, issue #46): move a queue entry to an absolute
+  /// position — `PUT /api/queue/items/{id}?new_position=N` (`docs/API.md:94`;
+  /// param name + QUERY placement verified 2026-11-20 against the official
+  /// ownTone-server json-api docs via docs-mcp — `new_position` is the
+  /// entry's FINAL 0-based index, the server move is remove + insert-at-N,
+  /// not a delta and not a swap; the optimistic reorder in
+  /// `QueueController.moveItem` mirrors exactly that). 204 on success. A
+  /// queue edit WITHOUT `playback=start` — safe while paused (AGENTS safe
+  /// list). The now-playing entry is pinned client-side (R-23: the web UI
+  /// never drags it; server-side behaviour deliberately unprobed on the
+  /// shared fixture — issue-46 report ASSUMPTIONS).
+  Future<void> moveQueueItem(String entryId, int newPosition) =>
+      _put('/api/queue/items/$entryId', {'new_position': newPosition});
+
   Future<void> play() => _put('/api/player/play');
   Future<void> pause() => _put('/api/player/pause');
   Future<void> stop() => _put('/api/player/stop');

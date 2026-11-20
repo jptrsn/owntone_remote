@@ -211,6 +211,31 @@ class QueueController extends ChangeNotifier {
   Future<bool> skipToQueueItem(QueueItem item) =>
       _action('Skip to track', (api) => api.skipToQueueItem(item.id));
 
+  /// R-23 (issue #46) — drag reorder: `PUT /api/queue/items/{id}
+  /// ?new_position=N` (docs/API.md:94) with an optimistic reorder.
+  /// [newIndex] is the **absolute** destination in the FULL queue — the
+  /// screen maps drop indices through the hide-cut with
+  /// [queueMoveNewPosition]. The server MOVE is remove + insert-at-N (the
+  /// entry ends up AT N) — the optimistic move below mirrors that exactly;
+  /// a swap would diverge from the server the moment the trailing refresh
+  /// lands. Verbatim [_action] participation (rollback + typed snackbar +
+  /// trailing post-commit refresh) — do NOT add a second refresh path
+  /// (unit-011 stale-clobber warnings above). Queue edit without
+  /// `playback=start`: safe unattended while paused.
+  Future<bool> moveItem(QueueItem item, int newIndex) => _action(
+    'Move',
+    (api) => api.moveQueueItem(item.id, newIndex),
+    optimistic: (before) {
+      final from = before.indexWhere((e) => e.id == item.id);
+      if (from == -1) return before;
+      final to = newIndex.clamp(0, before.length - 1);
+      if (to == from) return before;
+      final list = List<QueueItem>.of(before)..removeAt(from);
+      list.insert(to, item);
+      return list;
+    },
+  );
+
   Future<bool> _action(
     String label,
     Future<void> Function(OwntoneApi) fn, {
@@ -286,6 +311,20 @@ int? indexOfNowPlaying(List<QueueItem> queue, int? itemId) {
   return null;
 }
 
+/// The hide-cut start (issue #23 + R-23, pure): 0 = no cut. [visibleQueue]
+/// and [queueMoveNewPosition] share this ONE definition — a drop mapping
+/// that disagreed with the rendered cut would move the WRONG entry.
+int _hideCutStart(
+  List<QueueItem> queue,
+  int? itemId, {
+  required bool hidePlayed,
+}) {
+  if (!hidePlayed) return 0;
+  final index = indexOfNowPlaying(queue, itemId);
+  if (index == null || index == 0) return 0;
+  return index;
+}
+
 /// The queue as displayed (issue #23, pure view-model filter — the ONLY
 /// thing the hide toggle does): with [hidePlayed] on, everything before the
 /// now-playing entry is cut; the list is NOT mutated in any way. Unanchorable
@@ -298,8 +337,34 @@ List<QueueItem> visibleQueue(
   int? itemId, {
   required bool hidePlayed,
 }) {
-  if (!hidePlayed) return queue;
-  final index = indexOfNowPlaying(queue, itemId);
-  if (index == null || index == 0) return queue;
-  return queue.sublist(index);
+  final cut = _hideCutStart(queue, itemId, hidePlayed: hidePlayed);
+  if (cut == 0) return queue;
+  return queue.sublist(cut);
+}
+
+/// R-23 (issue #46), pure: maps a drop on the [visibleQueue] window to the
+/// absolute `new_position` for `PUT /api/queue/items/{id}` (docs/API.md:94 —
+/// the entry ENDS UP at that index). `ReorderableListView`'s `onReorderItem`
+/// delivers `(oldIndex, newIndex)` already adjusted for the removed item
+/// (Flutter 3.41+ convention — `newIndex` IS the post-removal insert index;
+/// do NOT re-decrement it for `oldIndex < newIndex`, that was the OLD
+/// `onReorder` contract and double-shifting would land every downward drag
+/// one slot short of what the user dropped). The indices are DISPLAY
+/// coordinates: under the hide-cut the window starts at the now-playing
+/// anchor, so each needs the cut offset added to become a server position.
+/// Returns null for indices that cannot address the visible window (a
+/// stale-callback defence — the drop then no-ops and the post-commit
+/// refresh reconciles).
+int? queueMoveNewPosition(
+  List<QueueItem> queue,
+  int? itemId, {
+  required bool hidePlayed,
+  required int displayFromIndex,
+  required int displayToIndex,
+}) {
+  final cut = _hideCutStart(queue, itemId, hidePlayed: hidePlayed);
+  final visibleLength = queue.length - cut;
+  if (displayFromIndex < 0 || displayFromIndex >= visibleLength) return null;
+  if (displayToIndex < 0 || displayToIndex >= visibleLength) return null;
+  return cut + displayToIndex;
 }

@@ -2776,3 +2776,52 @@ check. BLOCKED-PENDING-SUPERVISION (pre-declared, audible, never tapped):
 Play All and Shuffle LIVE rows — substitute proofs are the named
 captured-request tests in the report. Report
 `.ai-dlc/night-2026-11-19/reports/41.md`.
+
+## 2026-11-20 — overnight: issue #46 queue drag-reorder (opencode)
+
+Branch `fix/issue-46-queue-drag-reorder` off develop (`431971a`). Frozen
+spec `.ai-dlc/night-2026-11-19/issues/46.md`: R-23 tap-and-hold drag
+reorder. `ReorderableListView.builder` in `_QueueList` with
+**`ReorderableDelayedDragStartListener`** handles (the plain listener is
+IMMEDIATE-drag in 3.47.9 — wrong gesture), `buildDefaultDragHandles:
+false`, `onReorderItem` (the `onReorder` param is deprecated in this
+Flutter — adjusted-index contract; `queueMoveNewPosition` must NOT
+re-decrement, pinned by tests), handle semantics `Reorder <title>`,
+8px separators baked into rows (no `separatorBuilder` on
+ReorderableListView in 3.47.9). `QueueController.moveItem(item,newIndex)`
+= `_action` VERBATIM (optimistic remove+insert-at-N mirroring the
+server MOVE, rollback + typed snackbar, unit-011 trailing refresh, no
+second refresh path). `OwntoneApi.moveQueueItem` =
+`PUT /api/queue/items/{id}?new_position=N` — param + QUERY placement
+verified live via docs-mcp json-api docs 2026-11-20; captured request
+lines in tests. **Hide-played: drops MAP through the cut** (pure fn
+sharing `_hideCutStart` with `visibleQueue`) — adjudicated over
+disable-drag; the honest corner (drop above the anchor ⇒ row enters the
+hidden region) is pinned by the equivalence test. Now-playing row gets
+NO handle (inert rule; server-side current-move probe deliberately
+UNPROBED on the shared fixture). Mid-drag WS event: list FREEZES
+(identical cached list widget + frozen items closure — a rebuild under
+the live overlay trips Flutter 3.47.9's duplicate-GlobalKey assertion,
+reproduced; unfreeze on `onReorderItem`'s NEXT frame + 500 ms timer —
+the framework tears the overlay down AFTER the callback, same-frame
+collision reproduced); drag keeps local order, post-commit refresh
+reconciles (widget test pins freeze + one PUT + server order). 18 new
+R-23 tests (`test/queue_move_test.dart` 10 pure + R-23 group 8 real
+gestures); two R-22 mini_player finders followed the ListView→
+ReorderableListView swap. Gates: analyze 0, format clean, **575/575**
+(+18), debug APK builds. Device pass on the unit's own AVD
+`OwnToneNight_API_36` (created+deleted, 0 qemu after, serial by
+avd_name, Pixel 6 never targeted; fallback harness — motionevent
+hold+drag + uiautomator content-desc + server version/digest oracles;
+0 E/flutter; known a11y-bridge relaunch bug hit and worked around via
+force-stop+cold start): drag Monkeys abs 1→3 (server order verified,
+app rows match), INVERSE drag → id-sequence **byte-identical** to the
+snapshot (`bcf08bfc7b56bb99`, v2617→2619 = exactly the two moves — no
+incident); now-playing row (reached via the app's hide-cut anchor)
+dumps NO_HANDLE while neighbours HAVE it and hold-drags from the handle
+position AND the body fire NOTHING at the server (version/id-seq frozen
+at 2619); hide ON/OFF server-silent; `pause`/shuffle=true/60/211696/1490
+byte-identical at every checkpoint. BLOCKED-PENDING-SUPERVISION
+(pre-declared, run config): **Drag while PLAYING** — audible class,
+substitute proof = the pause-state server-verified drags + fake-API
+tests. Report `.ai-dlc/night-2026-11-19/reports/46.md`.
