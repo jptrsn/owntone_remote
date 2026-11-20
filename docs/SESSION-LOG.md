@@ -2880,3 +2880,46 @@ the pause-state server-verified round-trips + fake-API captured-request
 tests. On-device row-tap skip deliberately NOT run (play-class endpoint;
 widget test substitutes). Report
 `.ai-dlc/night-2026-11-19/reports/47.md`.
+
+## 2026-11-20 — overnight run (LAST unit): remote-app fix/issue-42-mdns-discovery DONE (R-20 mDNS auto-discovery)
+
+Unit #42 of the 2026-11-19/20 night pipeline, branch off develop @ 886ff3c
+(commits 68ac181 → 7a4d5e3 → aebce1b, all pushed). Pre-flight FIRST (host
+dns-sd, pty-probed): the server advertises **nothing** under
+`_owntone-server._tcp`/`_owntone._tcp`; it publishes its web interface as
+**`_http._tcp`** — instance = `/api/config` library_name
+("My Music on hp-server"), SRV `hp-server.local.:3689` (port == the JSON
+API, cross-checked), TXT `ffid=…/mtd-version=…`; `_dacp._tcp`/`_daap._tcp`
+exist (DAAP — never browsed, AGENTS §5). So the scan browses `_http._tcp`
+and keeps TXT-fingerprinted hits (`ffid`/`mtd-version`/`owntone-version`).
+Plugin: **multicast_dns 0.3.3+1** (flutter.dev verified publisher, BSD-3,
+pure Dart, zero native deps); `mdns_query` recorded as NOT EXISTING on
+pub.dev (API NoSuchKey); platform-NSD plugins rejected (native/unmaintained).
+**No new Android permission** — QU (unicast-response) queries + ephemeral
+source port ⇒ no MulticastLock/CHANGE_WIFI_MULTICAST_STATE needed (docs
+verified). Three measured transport findings (in code + report): no
+trailing dot on the browse domain (resolver mismatch → silent zero),
+ephemeral-port+QU because adb/Chrome 5353 SO_REUSEPORT co-binds starve
+multicast listeners (measured 13/9/0 hits), and the TXT newline-join
+(separator set must include \n). UI: Scan is a side panel below the form
+own loading/empty/error/timeout states (12 s ceiling); one-tap hit
+pre-fills the fields and calls the EXISTING `_saveAndConnect` (R-01, no
+bypass); manual entry asserted usable during/after scan failure. +17
+R-20 tests (607 total); live test on the host PASSES: `R-20 discovered:
+[My Music on hp-server (192.168.1.13:3689)]` + /api/config equality.
+Gates: analyze 0, format 0 (334/0 changed), 607/607, apk ✓, live ✓.
+Device (own AVD OwnToneNight_API_36, avd_name-verified emulator-5554,
+DELETED after, 0 qemu; Pixel 6 untouched): **scan UI present; real scan
+WORKED on the emulator (GOLD — hit `My Music on hp-server
+192.168.1.13:3689` despite the QEMU-NAT mDNS risk); one-tap → logcat
+`idle → connecting → connected`, `ws: none → open`, NowPlaying renders**;
+forced-degradation (own-AVD iptables drop sport 5353, later removed) →
+empty state "…enter the address manually" + manual retype+Connect
+connected (`connecting → connected`) — the full proof standard. Server:
+GETs only; a FOREIGN session was streaming (play, item 211750) during the
+device phase — left untouched, no play-capable action taken. Harness
+notes: evaluate_expression unavailable under am start (used
+debugDumpRenderTree/debugDumpApp + logcat + uiautomator; first dump inert,
+alive after a semantics request; idle-trap under now-playing animation).
+Morning supervised row: **Pixel 6 real-hardware same-LAN scan re-check**.
+Report `.ai-dlc/night-2026-11-19/reports/42.md`.
