@@ -2609,3 +2609,34 @@ flutter-agent-lens `widget.get_tree` returned null and the driver
 extension is absent → #43/#40/#39 fallback (am start via flutter run
 install + uiautomator + screencap) carried the evidence. Report
 `.ai-dlc/night-2026-11-19/reports/48.md`.
+
+## 2026-11-20 — overnight: issue #38 Songs browse view (opencode)
+
+Branch `fix/issue-38-songs-browse` off develop (`fd24c06`). Frozen spec
+`.ai-dlc/night-2026-11-19/issues/38.md` (R-15, D-02): library home gains
+**Songs** (between Albums and Genres) → `TracksScreen`, a thin
+`PagedBrowseScreen` of the whole library with two-line `TrackRow`s
+(`title` / `artist - album`, new additive `showAlbum` flag) + the R-12
+stars + R-10 row-tap play; the #48 `groupKeyOf` clause **enabled on
+Songs** (orchestrator adjudication). **Spec correction (verified first):**
+`GET /api/library/tracks` has no collection route on 29.3 (upstream
+`httpd_jsonapi.c` route table + live 400 for every param combination) —
+`api.tracks()` rides `GET /api/search?type=tracks&query=` (server's
+`title LIKE '%%'` branch, `title_sort` order; source `search_tracks`;
+live: total 3265, paged, distinct page-2); do-not-revert warning in code
++ API.md. `Track` gains `titleSort`/`sortTitle` (#48 pattern). 14 new
+R-15-cited fake-provider tests (frozen repro incl. playUris-with-track-
+uri, page-2-at-boundary, reconnect refetch, two-line rows, per-row star
+values, A-header-by-title_sort-not-T, B boundary header once). Gates:
+analyze 0, format clean, 520/520 (+14), debug APK. Device pass on own
+disposable AVD `OwnToneNight_API_36` (created+deleted, serial by
+avd_name, Pixel 6 never targeted): Songs section on home; rows
+`<title>, <artist> - <album>, M:SS, N stars`; scroll renders items past
+the 50-page (pages 2–3 fetched — bottom rows title-sort index >103); the
+curl-pinned live A→B boundary (`Avf` → one `B` header → `B for My Name`)
+renders exactly one header; stars + play rows visually present —
+play-accessory tap AUDIO-SAFETY withheld, star tap NO-MUTATION withheld
+(playUris/star-value proven by widget tests). `player=pause` at all six
+checks, reads only. Harness: uiautomator + input + screencap
+(build/issue38/), the #43/#40/#39/#48 fallback. Report
+`.ai-dlc/night-2026-11-19/reports/38.md`.
