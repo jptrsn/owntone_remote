@@ -14,6 +14,7 @@ import '../player/player_state.dart';
 import '../queue/queue_controller.dart';
 import '../rating/rating_controller.dart';
 import '../settings/settings_store.dart';
+import 'app_drawer.dart';
 import 'browse_screens.dart';
 import 'connection_banner.dart';
 import 'outputs_screen.dart';
@@ -151,18 +152,23 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
     };
 
     return Scaffold(
+      // R-21 (issue #44): the drawer on the root screen. NP is not pushed,
+      // so drawerAwareLeading collapses to the bare hamburger (no back
+      // arrow on the root — AppBar would otherwise swap in its own
+      // DrawerButton, same result; the helper keeps all Scaffolds on one
+      // leading path).
       appBar: AppBar(
         title: const Text('OwnTone Remote'),
+        leading: drawerAwareLeading(context),
+        leadingWidth: drawerAwareLeadingWidth(context),
         actions: [
-          if (conn.serverVersion != null) ...[
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Text(
-                'OwnTone ${conn.serverVersion}',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-            ),
-          ],
+          // The 'OwnTone <version>' label moved to the drawer header with
+          // the R-21 hamburger: the app bar must fit the narrowest
+          // supported viewport (360 logical px — unit-004's overflow
+          // budget) once the 56-px leading slot is taken, and server
+          // identity belongs next to "Connected To" (it is also on the
+          // About screen). Do not move it back — mutation-verified
+          // overflow (test/app_drawer_test.dart takeException checks).
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Text(
@@ -212,6 +218,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
             ),
         ],
       ),
+      drawer: const AppDrawer(selected: DrawerDestination.nowPlaying),
       body: Column(
         children: [
           if (!enabled)
