@@ -2576,3 +2576,36 @@ tool-side at Installing (manual `adb install -r` of the same APK: 0.5 s) —
 fallback `am start` + VM-service connect + uiautomator content-desc +
 screencap (build/devshots/, no model image input) carried the evidence, the
 same channel as #43/#40. Report `.ai-dlc/night-2026-11-19/reports/39.md`.
+
+## 2026-11-20 — overnight: issue #48 alphabetical section headers (opencode)
+
+Branch `fix/issue-48-section-headers` off develop (`db5b624`). Frozen spec
+`.ai-dlc/night-2026-11-19/issues/48.md` (R-25, N-05): opt-in disabled
+alphabetical header rows in `PagedBrowseList`'s loaded branch (ReTune
+`basic_header`), enabled on **Artists + Genres only** (Songs deferred to
+#38 per orchestrator; Playlists/Albums off per spec). Header emits when an
+item's normalized group key changes vs the **previous loaded item** — once
+across page boundaries (both directions) and across `PagedList.reload`;
+style `labelLarge` + `colorScheme.secondary`, 8 px padding;
+`Semantics(header: true, label)` + `ExcludeSemantics(Text)` — structure not
+control (no tap action, not focusable) with the label kept.
+**Sort verified live before deriving** (GETs only): the artists/genres
+endpoints order by the wire `name_sort` ("Daniela Andrade" → "Andrade,
+Daniela"), the `order` param is ignored (asc/desc/name identical), and
+display-name grouping yields 103 broken groups vs 24 contiguous under
+name_sort — so `browseSectionKey` takes `nameSort` (fallback `name`),
+first char uppercased, non-letter → `#`; `nameSort` added to the
+`Artist`/`Genre` models (docs/API.md already documents the field). 12 new
+R-25 tests in `test/paged_browse_headers_test.dart` (frozen repro cases +
+semantics/inertness + derivation). Gates: analyze 0, format clean,
+506/506 (+12), debug APK builds. Device pass on the unit's own disposable
+AVD `OwnToneNight_API_36` (created + deleted, serial resolved by
+avd_name; Pixel 6 present but never targeted): Artists shows one `A`
+header, the real A→B boundary (…`Iggy Azalea` → one `B` → `Bad Religion`)
+renders exactly one header between groups, header taps inert (uiautomator
+content-desc + bounds, screenshots), Genres spot-checks the same at S→T;
+server `pause` at every re-check, reads only. Harness:
+flutter-agent-lens `widget.get_tree` returned null and the driver
+extension is absent → #43/#40/#39 fallback (am start via flutter run
+install + uiautomator + screencap) carried the evidence. Report
+`.ai-dlc/night-2026-11-19/reports/48.md`.
