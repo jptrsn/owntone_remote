@@ -111,7 +111,7 @@ Future<void> _shufflePlaySet(
     }
     return <String>[];
   });
-  if (uris.isEmpty) return;
+  if (uris.isEmpty || !context.mounted) return;
   await context.read<QueueController>().playUrisShuffled(uris);
 }
 
@@ -247,10 +247,9 @@ class PlaylistTracksScreen extends StatelessWidget {
             }),
           ),
           onPlayNext: () => unawaited(
-            context.read<QueueController>().addUris(
-              [playlist.uri],
-              ahead: true,
-            ),
+            context.read<QueueController>().addUris([
+              playlist.uri,
+            ], ahead: true),
           ),
           onAddToUpNext: () => unawaited(
             context.read<QueueController>().addUris([playlist.uri]),
@@ -356,10 +355,9 @@ class ArtistAlbumsScreen extends StatelessWidget {
             }),
           ),
           onPlayNext: () => unawaited(
-            context.read<QueueController>().addUris(
-              ['library:artist:${artist.id}'],
-              ahead: true,
-            ),
+            context.read<QueueController>().addUris([
+              'library:artist:${artist.id}',
+            ], ahead: true),
           ),
           onAddToUpNext: () => unawaited(
             context.read<QueueController>().addUris([
@@ -491,11 +489,7 @@ class AlbumTracksScreen extends StatelessWidget {
               unawaited(context.read<QueueController>().playUris([album.uri])),
           onShuffle: () => unawaited(
             _shufflePlaySet(context, (api) async {
-              final all = await api.albumTracks(
-                album.id,
-                offset: 0,
-                limit: -1,
-              );
+              final all = await api.albumTracks(album.id, offset: 0, limit: -1);
               return [for (final t in all.items) t.uri];
             }),
           ),

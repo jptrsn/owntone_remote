@@ -316,10 +316,7 @@ class OwntoneApi {
   Future<List<QueueItem>> addUris(List<String> uris, {int? position}) async {
     final query = <String, dynamic>{'uris': uris.join(','), 'playback': 'add'};
     if (position != null) query['position'] = position;
-    final res = await _dio.post(
-      '/api/queue/items/add',
-      queryParameters: query,
-    );
+    final res = await _dio.post('/api/queue/items/add', queryParameters: query);
     final data = res.data as Map<String, dynamic>;
     final items = data['items'] as List<dynamic>? ?? const [];
     return [
