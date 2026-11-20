@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../connection/connection_controller.dart';
 import 'app_drawer.dart';
 import 'connection_banner.dart';
+import 'mini_player.dart';
 import 'outputs_screen.dart';
 
 /// The shell shared by every browse screen (R-10, unit 005a): app bar with
@@ -104,6 +105,13 @@ class _BrowseScreenScaffoldState extends State<BrowseScreenScaffold> {
           Expanded(child: widget.body),
         ],
       ),
+      // R-22 (issue #45): the mini transport bar on every browse screen
+      // (Library/Search/Queue and all paged views). bottomNavigationBar is
+      // Scaffold's own layer: it never scrolls with the list and never
+      // overlaps row hit-tests. The offline banner sits at the body's top,
+      // the bar at the bottom — they coexist; the bar itself goes inert
+      // with the connection (MiniPlayer reads the phase).
+      bottomNavigationBar: const MiniPlayer(),
     );
   }
 
