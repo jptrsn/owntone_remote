@@ -37,40 +37,36 @@ void main() {
     baseUrl: Uri.parse('http://$h:$p'),
   );
 
-  test(
-    'R-20 LAN scan finds the OwnTone server; the discovered host:port '
-    'answers /api/config identically to the direct one',
-    () async {
-      final direct = await apiAt(host, port).getConfig();
-      expect(direct['version'], isNotNull, reason: 'server must be up');
+  test('R-20 LAN scan finds the OwnTone server; the discovered host:port '
+      'answers /api/config identically to the direct one', () async {
+    final direct = await apiAt(host, port).getConfig();
+    expect(direct['version'], isNotNull, reason: 'server must be up');
 
-      final hits = await MdnsOwnToneDiscovery(
-        browseWindow: const Duration(seconds: 4),
-        answerWindow: const Duration(seconds: 3),
-      ).discover();
-      // Verbatim evidence for the run report.
-      // ignore: avoid_print
-      print('R-20 discovered: $hits');
+    final hits = await MdnsOwnToneDiscovery(
+      browseWindow: const Duration(seconds: 4),
+      answerWindow: const Duration(seconds: 3),
+    ).discover();
+    // Verbatim evidence for the run report.
+    // ignore: avoid_print
+    print('R-20 discovered: $hits');
 
-      final matches = hits.where((h) => h.port == port).toList();
-      expect(
-        matches,
-        isNotEmpty,
-        reason:
-            'no OwnTone hit on :$port — pre-flight (dns-sd) recorded the '
-            'instance "My Music on hp-server" on _http._tcp :3689 with '
-            'TXT ffid=/mtd-version=; hits: $hits',
-      );
-      final hit = matches.first;
+    final matches = hits.where((h) => h.port == port).toList();
+    expect(
+      matches,
+      isNotEmpty,
+      reason:
+          'no OwnTone hit on :$port — pre-flight (dns-sd) recorded the '
+          'instance "My Music on hp-server" on _http._tcp :3689 with '
+          'TXT ffid=/mtd-version=; hits: $hits',
+    );
+    final hit = matches.first;
 
-      // The instance name is the advertised library_name (dns-sd pre-flight
-      // cross-check) — and the discovered endpoint must BE the API server.
-      expect(hit.name, direct['library_name']);
-      final viaHit = await apiAt(hit.host, hit.port).getConfig();
-      expect(viaHit['version'], direct['version']);
-      expect(viaHit['websocket_port'], direct['websocket_port']);
-      expect(viaHit['library_name'], direct['library_name']);
-    },
-    timeout: const Timeout(Duration(seconds: 90)),
-  );
+    // The instance name is the advertised library_name (dns-sd pre-flight
+    // cross-check) — and the discovered endpoint must BE the API server.
+    expect(hit.name, direct['library_name']);
+    final viaHit = await apiAt(hit.host, hit.port).getConfig();
+    expect(viaHit['version'], direct['version']);
+    expect(viaHit['websocket_port'], direct['websocket_port']);
+    expect(viaHit['library_name'], direct['library_name']);
+  }, timeout: const Timeout(Duration(seconds: 90)));
 }

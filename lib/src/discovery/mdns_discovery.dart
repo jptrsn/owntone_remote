@@ -91,13 +91,8 @@ typedef MDnsClientFactory = MDnsClient Function();
 ///    QU with the full PTR+SRV+TXT+A response.
 MDnsClient _defaultClient() => MDnsClient(
   rawDatagramSocketFactory:
-      (
-        host,
-        port, {
-        reuseAddress = true,
-        reusePort = false,
-        ttl = 1,
-      }) async => RawDatagramSocket.bind(host, 0, reuseAddress: true, ttl: 255),
+      (host, port, {reuseAddress = true, reusePort = false, ttl = 1}) async =>
+          RawDatagramSocket.bind(host, 0, reuseAddress: true, ttl: 255),
 );
 
 /// Production [DiscoverySource]: one-shot mDNS browse of [_http._tcp] over
@@ -195,7 +190,10 @@ class MdnsOwnToneDiscovery implements DiscoverySource {
     MDnsClient client,
     ResourceRecordQuery query,
   ) async {
-    await for (final record in client.lookup<T>(query, timeout: _answerWindow)) {
+    await for (final record in client.lookup<T>(
+      query,
+      timeout: _answerWindow,
+    )) {
       return record; // first answer wins (duplicates are common on 5353)
     }
     return null;

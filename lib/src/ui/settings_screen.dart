@@ -184,9 +184,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
               SizedBox(width: 12),
-              Expanded(
-                child: Text('Searching the local network…'),
-              ),
+              Expanded(child: Text('Searching the local network…')),
             ],
           ),
         ],
@@ -200,10 +198,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.wifi_off,
-                color: Theme.of(context).colorScheme.error,
-              ),
+              Icon(Icons.wifi_off, color: Theme.of(context).colorScheme.error),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(

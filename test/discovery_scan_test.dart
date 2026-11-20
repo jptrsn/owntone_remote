@@ -58,20 +58,19 @@ void main() {
   /// R-01 path runs for real without a wire. `websocket_port: 0` keeps the
   /// WsClient out of the picture (R-02 REST-only mode).
   ConnectionController scriptedConn() => ConnectionController(
-    dioFactory: (options) =>
-        Dio(options)
-          ..httpClientAdapter = ScriptedAdapter(
-            responder: (o) async => o.uri.path == '/api/config'
-                ? Response(
-                    requestOptions: o,
-                    data: const {
-                      'version': '29.3',
-                      'websocket_port': 0,
-                      'library_name': 'My Music on hp-server',
-                    },
-                  )
-                : Response(requestOptions: o, data: null, statusCode: 404),
-          ),
+    dioFactory: (options) => Dio(options)
+      ..httpClientAdapter = ScriptedAdapter(
+        responder: (o) async => o.uri.path == '/api/config'
+            ? Response(
+                requestOptions: o,
+                data: const {
+                  'version': '29.3',
+                  'websocket_port': 0,
+                  'library_name': 'My Music on hp-server',
+                },
+              )
+            : Response(requestOptions: o, data: null, statusCode: 404),
+      ),
   );
 
   late List<ConnectionController> opened;
@@ -101,7 +100,11 @@ void main() {
           ChangeNotifierProvider<ConnectionController>.value(value: conn),
         ],
         child: MaterialApp(
-          home: SettingsScreen(key: ValueKey(tag), initial: null, discovery: discovery),
+          home: SettingsScreen(
+            key: ValueKey(tag),
+            initial: null,
+            discovery: discovery,
+          ),
         ),
       ),
     );
@@ -112,7 +115,10 @@ void main() {
   // The label text is unique per field; the EditableText under it is the
   // editable surface (TextFormField exposes no decoration getter in 3.47).
   Finder editable(String label) => find.descendant(
-    of: find.ancestor(of: find.text(label), matching: find.byType(TextFormField)),
+    of: find.ancestor(
+      of: find.text(label),
+      matching: find.byType(TextFormField),
+    ),
     matching: find.byType(EditableText),
   );
 
@@ -207,9 +213,8 @@ void main() {
       tester,
     ) async {
       final discovery = FakeDiscovery(
-        () async => throw const DiscoveryException(
-          'Could not start the network scan.',
-        ),
+        () async =>
+            throw const DiscoveryException('Could not start the network scan.'),
       );
       final (store, conn) = await pumpScreen(tester, discovery);
 
@@ -217,7 +222,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('scan-error')), findsOneWidget);
-      expect(find.textContaining('Could not start the network scan.'), findsOneWidget);
+      expect(
+        find.textContaining('Could not start the network scan.'),
+        findsOneWidget,
+      );
       expect(find.byKey(const ValueKey('scan-retry')), findsOneWidget);
 
       // Manual entry fully usable after the failure (R-20: never blocked).
@@ -232,15 +240,19 @@ void main() {
     testWidgets('scan TIMEOUT → timeout error state; manual entry still '
         'works (panel resolves within kScanTimeout even if the source '
         'hangs)', (tester) async {
-      final discovery = FakeDiscovery(() => Completer<List<DiscoveredServer>>().future);
+      final discovery = FakeDiscovery(
+        () => Completer<List<DiscoveredServer>>().future,
+      );
       await pumpScreen(tester, discovery);
 
       await tapScan(tester);
       expect(find.text('Searching the local network…'), findsOneWidget);
       expect(
-        tester.widget<OutlinedButton>(
-          find.byKey(const ValueKey('server-scan-button')),
-        ).onPressed,
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('server-scan-button')),
+            )
+            .onPressed,
         isNull,
         reason: 'no double-scan while one is in flight',
       );

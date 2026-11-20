@@ -107,17 +107,23 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       final store = await pumpScreen(tester);
 
-      await tester.tap(find.byKey(const ValueKey('rocker-step-increase')));
-      await tester.pump();
+      // The R-20 scan row (issue #42) pushes the rocker row below the
+      // 600-px fold — same off-screen-tap rule as the about-entry test.
+      Future<void> stepTap(String key) async {
+        await tester.ensureVisible(find.byKey(ValueKey(key)));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey(key)));
+        await tester.pump();
+      }
+
+      await stepTap('rocker-step-increase');
       expect(find.text('6'), findsOneWidget);
       expect(store.rockerStep, 6, reason: 'store already at 6 (keypress read)');
       // Survives a "relaunch" (fresh store over the same prefs).
       expect((await SettingsStore.create()).rockerStep, 6);
 
-      await tester.tap(find.byKey(const ValueKey('rocker-step-decrease')));
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('rocker-step-decrease')));
-      await tester.pump();
+      await stepTap('rocker-step-decrease');
+      await stepTap('rocker-step-decrease');
       expect(find.text('4'), findsOneWidget);
       expect(store.rockerStep, 4);
     });
