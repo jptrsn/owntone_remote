@@ -296,6 +296,35 @@ class OwntoneApi {
     ];
   }
 
+  /// Queue add WITHOUT playback change (R-19, issue #41): `POST
+  /// /api/queue/items/add` with `playback=add` and **no `clear`** — Play
+  /// Next / Add to Up Next. `playback=add` verified live 2026-11-20:
+  /// accepted (200), player state stays `pause`.
+  ///
+  /// [position] is sent ONLY when non-null and must be the CURRENT queue
+  /// length (tail append) or 0 (insert at list head): live-verified
+  /// 2026-11-20, a position beyond the real length is treated like an
+  /// omitted one — and with the server's shuffle mode on, an omitted/
+  /// out-of-range position inserts at a RANDOM slot inside the unplayed
+  /// region (observed 640/597/1061 in a 1396-item queue), not the tail.
+  /// The caller (QueueController.addUris) passes its live queue length;
+  /// do not "simplify" the tail case to omitting the position.
+  /// The add-time `shuffle` param is deliberately never sent: it is the
+  /// GLOBAL shuffle-mode setter (live-verified 2026-11-20 — `shuffle=false`
+  /// on an add flipped `/api/player`'s shuffle), so using it would mutate
+  /// the server-wide flag R-19 says to leave alone.
+  Future<List<QueueItem>> addUris(List<String> uris, {int? position}) async {
+    final query = <String, dynamic>{'uris': uris.join(','), 'playback': 'add'};
+    if (position != null) query['position'] = position;
+    final res = await _dio.post('/api/queue/items/add', queryParameters: query);
+    final data = res.data as Map<String, dynamic>;
+    final items = data['items'] as List<dynamic>? ?? const [];
+    return [
+      for (final e in items)
+        QueueItem.fromJson(e as Map<String, dynamic>, _baseUrl),
+    ];
+  }
+
   /// Queue-skip (issue #21, R-11): make an already-queued entry the current
   /// track, IN PLACE — the queue content is untouched (no add, no clear),
   /// only the current item moves. This is the OwnTone web UI's own queue-row
