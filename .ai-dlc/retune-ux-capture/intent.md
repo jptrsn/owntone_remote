@@ -9,7 +9,7 @@ passes: []
 active_pass: ""
 iterates_on: ""
 created: 2026-10-08
-status: planned
+status: done
 epic: ""
 quality_gates: []   # gates are the DoD checklist in each unit + the intent DoD below
 ---

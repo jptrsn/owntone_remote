@@ -1,0 +1,1 @@
+com.squallydoc.retune/com.squallydoc.retune.LibraryViewActivity

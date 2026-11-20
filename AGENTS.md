@@ -175,7 +175,7 @@ unexpectedly.
 | Role | AVD / device | Serial |
 |---|---|---|
 | Other session — HANDS OFF | `Pixel_9_Pro_API_36` | `emulator-5554` (verified 2026-10-26 via `ro.boot.qemu.avd_name`; was `-5556` on 2026-10-09 — **serials shift when other emulators start; always re-verify via `adb shell getprop ro.boot.qemu.avd_name`, never trust a remembered serial**) |
-| Capture | `Retune_API_33` | _record on creation_ |
+| Capture — **retired AVD, use Pixel 6** (2026-11-19: `Retune_API_33` AVD's NAT never bridges mDNS 5353 → JmDNS discovery dead; AVD deleted). ReTune 3.5.23 (`com.squallydoc.retune`) is installed + **paired** on the Pixel 6 via `adb install --bypass-low-target-sdk-block`; treat as read-only reference — no `pm clear`/uninstall/settings changes | Pixel 6 (same device) | `25071FDF600953` |
 | Dev / test / QA | `RemoteDev_API_36` | _not running as of 2026-10-26 — `emulator-5556` is now `OwnTone_U2_API_36` (other session, HANDS OFF). Unit 005b verified on the physical Pixel 6 instead (user instruction: emulators off-limits this session); on-device sessions on the Pixel 6 must keep the screen awake — the background-networking firewall blocks the app uid when the screen is off (see SESSION-LOG 2026-10-26, item 2)_ |
 | Verification (per-unit) | `OwnToneVerify_API_36` — **created and deleted by
   each verification unit itself** (unit 001's copy was deleted after the pass);

@@ -2389,3 +2389,109 @@ screenshot closures CLOSED here; remaining candidates are the PR-comment
 follow-ups (#20 post-dialog predicate re-check, failed-toggle test,
 checkbox ValueKey; #24 browse/queue nav; #19 mid-drag hardening; #26
 mm:ss formatter).
+
+## 2026-11-19 — retune-ux-capture: ReTune revived on Pixel 6 + screen walk (opencode)
+
+**Why.** Capture units (retune-ux-capture 001–004) never ran; user wants a
+UX diff list vs owntone_remote. ReTune (com.squallydoc.retune 3.5.23,
+targetSdk 19) is blocked on modern Android by the targetSdk<24 install
+floor — **`adb install --bypass-low-target-sdk-block` installs it on the
+Pixel 6 (Android 17)**; user had used it pre-OTA (installs pre-dating the
+floor survive). Retune_API_33 AVD was tried first but emulator NAT drops
+mDNS multicast (JmDNS discovery dead) → killed; real LAN on Pixel 6
+discovers OwnTone in 0.4 s and pairing completes (code entered in OwnTone
+web UI). Pairing intact — device is now the read-only ReTune reference.
+
+**INCIDENT (audio safety).** During now-playing capture, an `input tap
+350 2070` intended as a mini-player-bar tap hit the **previous-track
+button** (its bounds [222,1969][390,2137] overlap x=350; button bounds
+were read from the hierarchy but the tap was aimed at the mini-bar
+geometry assumed from the library screen). OwnTone transitioned `pause →
+play` — item 210493 played ~35 s through selected outputs
+(ESP-68F8/ESP-CAAC64/Volumio Kitchen) before `PUT /api/player/pause`
+(204). What played: item 210493 (queue entry, The Flatliners album
+context), first ~35 s. Contained at 21:02:10Z. No unattended risk (user
+present). Restores: volume 41→31 (204; ReTune rocker step = **5** per
+press, R-14 parity datum), shuffle/repeat/visualizer reverted during walk,
+queue untouched (1432 items; read-only walk). Player current-item restore
+(210493→209359@145947) needs `play?item_id` = SUPERVISED — requested, see
+below. Lesson logged: tap coordinates must come from the CURRENT
+screen's hierarchy, never remembered geometry.
+
+**Second playback observation (external, not harness-caused).** While
+restoring device settings (stayon), the player was found `play` on a NEW
+item (211169, 54.5 s) with ESP-CAAC64 deselected — no ReTune transport
+input had been issued; this matches the AGENTS-noted concurrent session
+driving the server. Paused via API at 21:16:48Z (204; ~9 s audible on the
+other session's cue before detection). Outputs left as the other session
+set them (their change — not "restored").
+
+**Units 003+004/005 done-in-progress (2026-11-19, same session).** REA
+(`rea-agents` 6.7.0, global npm) + apktool 3.0.3 static pass →
+`docs/retune-capture/static-notes.md` (manifest/prefs/132-layout
+reconciliation, zero unexplained). Inventory →
+`docs/retune-capture/feature-inventory.md`; actionable proposals →
+`docs/retune-capture/diff-list.md` (D-01…D-19). **Gate: user to prune
+diff list** — unit 004 stays in_progress until then; REQUIREMENTS.md
+scope notes update on that pass. Shortlist rec: D-02 (Songs tab), D-05
+(playlist artwork+smart badge), D-04 (Go to Artist/Album), D-09 (global
+outputs action) — all S; then D-06 (detail Play All/Shuffle/Play Next/Add
+to Up Next — needs QueueController add-only + shuffle-first), D-01
+(discovery, pre-approved), D-03/D-10 taste calls.
+
+**retune-ux-capture GATE CLOSED 2026-11-19 (user).** Verbatim: "confirm
+drops, save everything to the project using the ai-dlc approach, then we
+need to draft a series of github issues that report each change that is
+required to the existing project." → diff-list decisions recorded
+(D-01/02/04/05/06/09 accepted → R-15…R-20 in REQUIREMENTS.md; drops
+confirmed; D-03/D-10 deferred as taste); mDNS moved INTO scope (R-20 —
+was listed out-of-scope pre-gate); unit 004 done — **intent complete**.
+Issue drafts: `.ai-dlc/retune-ux-capture/issues/` (6, repo issue style;
+publish pending user go).
+
+**Issues published (2026-11-19):** #38 Songs view (R-15), #39 Go to
+Artist/Album (R-17), #40 global outputs action (R-18), #41 detail context
+actions (R-19), #42 mDNS discovery (R-20). #02 draft (playlist artwork,
+D-05/R-16) **declined by user at review** ("skip it, I don't care about
+this one") — R-16 withdrawn in REQUIREMENTS, diff-list D-05 marked
+SKIPPED, draft kept unposted for the record. retune-ux-capture fully
+closed; build work now tracked by #38–#42 (units off develop per GitFlow).
+
+**Inventory correction pass (2026-11-19, same session, user-prompted).**
+User challenged the navigation rows; reading `lib/src` falsified five
+v1 claims: there is **no bottom nav and no mini-player** (NP is the root
+route, everything else pushed — `root_screen.dart:11-20`), **no queue
+drag-reorder** (R-11 never required it), while browse counts and the
+smart-playlist text marker **do** exist. `feature-inventory.md` rewritten
+as v2 with file:line verification for every row; diff-list D-03/D-07
+corrected and **D-07 reopened**; new navigation-family rows **N-01
+(mini-player) N-02 (nav architecture) N-03 (queue reorder) N-04
+(remove item) N-05 (section headers)** added awaiting the user gate.
+Issue comments/edits: #38 (Songs rows must show artist + album), #40
+(BrowseScreenScaffold already supports `actions:` — `queue_screen.dart:111`).
+Lesson recorded: parity comparisons read the CODE, not unit-doc memory.
+
+**Supervised navigation audit + N-rows gate (2026-11-19, user present).**
+User: do all N-rows; **N-02 = option B (drawer + bottom bar when
+playing)**; audit ReTune on the Pixel 6 for anything unsure, mind
+auto-hiding transitions. Findings (evidence `23-playing-audit/notes.md`):
+mini bar on every activity (playing/paused/stopped states byte-diffed;
+stopped = transport only, metadata hidden); drawer sections Connected To/
+Playing/Libraries/Views, **no a11y selected state**, no drawer on
+UpNextActivity; volume keys app-wide with center toaster **auto-hide
+~1–2.5 s** (machine-verified via band diffs — 22-volume-toaster regraded
+from deferred to verified); queue row accessory = **Play Next · Remove**
+popup, header accessory = Clear; long-press drag visual-only. **Third
+external-playback observation**: found play 211617@183.8 s vol 100
+(concurrent session), paused ~15 s audible; supervised window (user
+"proceed") then restored pause@199001 + vol 100. Device stayon restored.
+R-21…R-25 written into REQUIREMENTS; issue drafts 07–11 pending user
+review one-by-one (same flow as #38–#42).
+
+**N-issues published (2026-11-19):** #44 drawer (R-21, option B), #45
+mini transport bar (R-22), #46 queue drag-reorder (R-23), #47 queue
+remove/play-next (R-24), #48 section headers (R-25) — all reviewed
+one-by-one at the CLI and approved verbatim. retune-ux-capture closed
+again, this time with the navigation family properly captured (the v1
+inventory's false "bottom nav / mini player / reorder" claims corrected
+the same day). Open build queue now: #38–#42, #44–#48.
