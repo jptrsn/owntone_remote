@@ -9,6 +9,7 @@ import '../settings/settings_store.dart';
 import '../settings/theme_preference.dart';
 import 'about_screen.dart';
 import 'app_drawer.dart';
+import 'mini_player.dart';
 
 /// Settings (R-01, R-14, R-26): manual host + JSON-port entry persisted via
 /// [SettingsStore], the volume-rocker step (1–10, applied to the next
@@ -293,6 +294,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
+      // R-22 (issue #45): mini transport bar (own Scaffold — see
+      // browse_screen_scaffold.dart for the layering contract). At first
+      // launch (idle phase) there is no current item, so MiniPlayer
+      // collapses to SizedBox.shrink and the screen renders unchanged.
+      bottomNavigationBar: const MiniPlayer(),
     );
   }
 }

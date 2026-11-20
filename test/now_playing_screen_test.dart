@@ -1122,8 +1122,17 @@ void main() {
         expect(tester.takeException(), isNull);
         final albumRoute = find.byType(AlbumTracksScreen);
         expect(albumRoute, findsOneWidget, reason: 'route by widget type');
+        // Scoped to the list: the R-22 mini transport bar (issue #45) also
+        // renders the current item's title ('Test Track' is the loaded
+        // fixture) — this assertion is about the album's ROW rendering.
         expect(
-          find.descendant(of: albumRoute, matching: find.text('Test Track')),
+          find.descendant(
+            of: albumRoute,
+            matching: find.descendant(
+              of: find.byType(ListView),
+              matching: find.text('Test Track'),
+            ),
+          ),
           findsOneWidget,
           reason: "the album's real track renders",
         );

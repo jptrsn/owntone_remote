@@ -9,6 +9,7 @@ import '../outputs/outputs_controller.dart';
 import '../player/player_controller.dart';
 import 'app_drawer.dart';
 import 'connection_banner.dart';
+import 'mini_player.dart';
 
 /// R-09 outputs / speakers screen (unit 004, SCREENS.md "Outputs").
 ///
@@ -232,6 +233,9 @@ class _OutputsScreenState extends State<OutputsScreen> {
           Expanded(child: _buildBody(enabled, outputs)),
         ],
       ),
+      // R-22 (issue #45): mini transport bar here too (own Scaffold — see
+      // browse_screen_scaffold.dart for the layering contract).
+      bottomNavigationBar: const MiniPlayer(),
     );
   }
 
