@@ -47,6 +47,8 @@ class LibraryHomeScreen extends StatelessWidget {
     final enabled = conn.phase == ConnectionPhase.connected;
     return BrowseScreenScaffold(
       title: 'Library',
+      // R-18: outputs one tap away from every browse screen (D-09).
+      actions: const [OutputsAppBarAction()],
       body: ListView.separated(
         padding: const EdgeInsets.all(8),
         itemCount: _sections.length,

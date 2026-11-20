@@ -74,6 +74,11 @@ class _PagedBrowseScreenState<T> extends State<PagedBrowseScreen<T>> {
     final enabled = conn.phase == ConnectionPhase.connected;
     return BrowseScreenScaffold(
       title: widget.title,
+      // R-18: outputs one tap away from every browse screen (D-09). The
+      // paged app bar carries at most title + back + this icon — the
+      // 360-logical-px overflow constraint (unit 004 finding) is pinned by
+      // test/outputs_appbar_test.dart.
+      actions: const [OutputsAppBarAction()],
       onReconnect: _onReconnect,
       onLibraryChanged: _list.started ? () => unawaited(_list.reload()) : null,
       body: PagedBrowseList(
