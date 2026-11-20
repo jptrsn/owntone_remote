@@ -2640,3 +2640,49 @@ play-accessory tap AUDIO-SAFETY withheld, star tap NO-MUTATION withheld
 checks, reads only. Harness: uiautomator + input + screencap
 (build/issue38/), the #43/#40/#39/#48 fallback. Report
 `.ai-dlc/night-2026-11-19/reports/38.md`.
+
+## 2026-11-20 — overnight: issue #44 navigation drawer (opencode)
+
+Branch `fix/issue-44-nav-drawer` off develop (`baa0d4e`). Frozen spec
+`.ai-dlc/night-2026-11-19/issues/44.md` (R-21, N-02 option B): M3 drawer
+behind a hamburger on **every** main screen — new `lib/src/ui/app_drawer.dart`
+(header `Connected To — <library_name from /api/config>` + server version,
+sections Playing/Library/Settings, ten destinations incl. Songs deep link);
+`drawer:` wired into the NP Scaffold, `BrowseScreenScaffold` (new `drawer`
+param mirroring `actions:`, defaults to a plain `AppDrawer()` so no browse
+screen can lack a hamburger) and the standalone Outputs/Settings Scaffolds;
+`showDrawerDestination` (popUntil(isFirst)-then-push) beside
+`showNowPlaying`. Selected destination via `ListTile.selected` →
+`Semantics(selected:)`; offline: drawer opens, server-touching rows inert
+through ListTile's explicit `enabled` flag (a null `onTap` alone does NOT
+disable its semantics — caught by the tests); Now Playing + Settings stay
+live; the drawer's Outputs row is inert offline per the frozen repro while
+the #40 app-bar Outputs action keeps its pressable-while-offline contract
+(separate frozen adjudications — documented, not unified). Two traps,
+pinned in code + tests: AppBar's auto-leading shows DrawerButton
+*instead of* BackButton once a Scaffold has a drawer (→
+`drawerAwareLeading` + paired `drawerAwareLeadingWidth`: the 56-px leading
+slot otherwise overflows the pair by exactly 40 px), and the NP app bar
+overflowed by 65 px at 360 logical px once the hamburger took its slot
+(overflowing actions painted over and swallowed the hamburger's taps) —
+`OwnTone <version>` label moved app bar → drawer header (About still shows
+it). `ConnectionController.serverName` (`library_name`, kept while
+offline). ReTune's UpNext-no-drawer quirk NOT copied. 8 new R-21 tests
+(`test/app_drawer_test.dart`): per-screen hamburger loop, drawer content +
+`serverName`, Queue-from-two-deep **stack-depth-2** regression (Navigator
+observer + popped-stack + back-to-root + no Queue-duplicate),
+selected-semantics pairs, back-closes-drawer-first (local-history
+`maybePop`), offline inert/enabled split + behavioural no-op tap. Gates:
+analyze 0, format clean, **528/528** (+8), debug APK builds. Device pass
+on the unit's own disposable AVD `OwnToneNight_API_36` (created+deleted,
+serial by avd_name, Pixel 6 never targeted): header shows the real
+`My Music on hp-server`, `selected="true"` follows the hosting screen
+(NP/Artists/Settings), Queue-from-two-deep → one back = root, back closes
+the drawer first, offline (airplane mode) rows `enabled=false` + inert
+taps, reconnect clears the banner; `player=pause` item 211696@1490 vol 60
+byte-identical at every check, outputs unchanged, GETs only, zero
+playback/rating/mutation actions. Harness: uiautomator content-desc +
+input + screencap (build/night44/), the #43/#40/#39/#48/#38 fallback —
+the Flutter a11y bridge went quiet after a late background/relaunch
+(documented trap); all drawer assertions captured while alive. Report
+`.ai-dlc/night-2026-11-19/reports/44.md`.
