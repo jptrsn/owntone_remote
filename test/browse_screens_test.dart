@@ -722,11 +722,17 @@ void main() {
   });
 
   group('R-10 navigation', () {
-    testWidgets('home: the four sections', (tester) async {
+    testWidgets('home: the sections (Songs added by R-15)', (tester) async {
       await tester.runAsync(wireUp);
       await pumpScreen(tester, const LibraryHomeScreen());
       await tester.pump();
-      for (final label in ['Playlists', 'Artists', 'Albums', 'Genres']) {
+      for (final label in [
+        'Playlists',
+        'Artists',
+        'Albums',
+        'Songs',
+        'Genres',
+      ]) {
         expect(find.text(label), findsOneWidget);
       }
     });

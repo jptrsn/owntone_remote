@@ -276,10 +276,11 @@ One screen per list, all sharing `BrowseScreenScaffold` + `PagedBrowseList`
 
 | Screen | Row fields (secondary) |
 |---|---|
-| Library home | Search / Playlists / Artists / Albums / Genres (section rows, chevron) |
+| Library home | Search / Playlists / Artists / Albums / Songs / Genres (section rows, chevron) |
 | Playlists | `smart playlist` / `playlist` / `folder` · `N items` |
 | Artists | `N albums · M tracks` |
 | Albums | `artist · year` (each omitted when absent/0) |
+| Songs (R-15) | `artist - album` · `M:SS` (two-line rows; alphabetical section headers per R-25, grouped by `title_sort`) |
 | Genres | `N tracks · M albums` |
 | Artist → albums | album fields (as Albums) |
 | Genre → albums | album fields (as Albums) |
@@ -301,6 +302,7 @@ Rows carry a compound semantics label
 | Album tracks | `GET /api/library/albums/{id}/tracks` |
 | Genres | `GET /api/library/genres` (server ignores `offset`/`limit` — none sent) |
 | Genre albums | `GET /api/search?type=albums&expression=genre%20is%20%22<name>%22` |
+| Songs (R-15) | `GET /api/search?type=tracks&query=` (the empty query is the server's `title LIKE '%%'` branch — every track, `title_sort` order; `GET /api/library/tracks` has **no collection route** on this server — source + live 400, 2026-11-20) |
 
 - **Pagination:** `offset`/`limit=50`; a scroll position within
   `300px` of the end fetches the next page; items de-duplicate on stable
