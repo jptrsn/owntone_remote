@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:provider/provider.dart';
 
+import '../api/owntone_api.dart';
 import '../connection/connection_controller.dart';
 import '../queue/queue_controller.dart';
 import '../rating/rating_controller.dart';
@@ -26,6 +27,93 @@ Future<String?> Function(int newRating) rateTrack(
   final ok = await rating.setRating(trackId, newRating);
   return ok ? null : (rating.actionError ?? 'Rating failed.');
 };
+
+/// R-19 (issue #41) — the app-bar overflow ReTune's detail screens carry
+/// (`09-album-detail`, `18b-overflow-playlist`): **Play All · Shuffle ·
+/// Play Next · Add to Up Next** for the whole set the screen shows.
+///
+/// The two playback-starting entries (Play All, Shuffle) keep [QueueController]'s
+/// replace-and-start contract — **supervised** actions, never triggered in
+/// tests against the real server or on device unattended. Play Next / Add
+/// to Up Next are the no-clear `playback=add` path.
+///
+/// Empty-set rule (minimal, chosen for the issue): while the list has not
+/// loaded or is empty the WHOLE button is disabled — every entry would be
+/// a no-op, and a stable (disabled) app bar beats a menu of dead entries.
+class SetPlaybackOverflow extends StatelessWidget {
+  const SetPlaybackOverflow({
+    super.key,
+    required this.empty,
+    required this.onPlayAll,
+    required this.onShuffle,
+    required this.onPlayNext,
+    required this.onAddToUpNext,
+  });
+
+  final bool empty;
+  final VoidCallback onPlayAll;
+  final VoidCallback onShuffle;
+  final VoidCallback onPlayNext;
+  final VoidCallback onAddToUpNext;
+
+  static const _entries = [
+    ('play-all', 'Play All'),
+    ('shuffle', 'Shuffle'),
+    ('play-next', 'Play Next'),
+    ('add', 'Add to Up Next'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      key: const ValueKey('detail-overflow'),
+      tooltip: 'Playback options',
+      enabled: !empty,
+      onSelected: (value) {
+        switch (value) {
+          case 'play-all':
+            onPlayAll();
+          case 'shuffle':
+            onShuffle();
+          case 'play-next':
+            onPlayNext();
+          case 'add':
+            onAddToUpNext();
+        }
+      },
+      itemBuilder: (context) => [
+        for (final (value, label) in _entries)
+          PopupMenuItem<String>(value: value, child: Text(label)),
+      ],
+    );
+  }
+}
+
+/// R-19: the Shuffle entry's client-side pre-shuffle path. The full set is
+/// materialized as item URIs first (one unbounded `limit=-1` page —
+/// verified live against this server 2026-11-20), shuffled by
+/// [QueueController.playUrisShuffled], then replace-and-started. The
+/// add-time `?shuffle` param is NOT used: it is the server's GLOBAL
+/// shuffle-mode setter (live-verified 2026-11-20), and R-19 requires
+/// leaving that flag untouched. A load failure gets a snackbar — no
+/// silent no-op.
+Future<void> _shufflePlaySet(
+  BuildContext context,
+  Future<List<String>> Function(OwntoneApi api) loadUris,
+) async {
+  final api = context.read<ConnectionController>().api;
+  if (api == null) return;
+  final uris = await loadUris(api).catchError((e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load the tracks to shuffle.')),
+      );
+    }
+    return <String>[];
+  });
+  if (uris.isEmpty) return;
+  await context.read<QueueController>().playUrisShuffled(uris);
+}
 
 /// R-10 (unit 005a): the library home — the browse menu (Search, Playlists,
 /// Artists, Albums, Genres), reached from the now-playing app bar. Search
@@ -139,6 +227,36 @@ class PlaylistTracksScreen extends StatelessWidget {
         },
         keyOf: (track) => track.id.toString(),
       ),
+      // R-19 (issue #41): whole-set actions. Play All / Play Next / Add
+      // ride the CONTAINER uri (server expands it, order preserved);
+      // Shuffle expands to track URIs client-side (see _shufflePlaySet).
+      appActions: (context, list) => [
+        SetPlaybackOverflow(
+          empty: !list.hasLoaded || list.total == 0,
+          onPlayAll: () => unawaited(
+            context.read<QueueController>().playUris([playlist.uri]),
+          ),
+          onShuffle: () => unawaited(
+            _shufflePlaySet(context, (api) async {
+              final all = await api.playlistTracks(
+                playlist.id,
+                offset: 0,
+                limit: -1,
+              );
+              return [for (final t in all.items) t.uri];
+            }),
+          ),
+          onPlayNext: () => unawaited(
+            context.read<QueueController>().addUris(
+              [playlist.uri],
+              ahead: true,
+            ),
+          ),
+          onAddToUpNext: () => unawaited(
+            context.read<QueueController>().addUris([playlist.uri]),
+          ),
+        ),
+      ],
       itemBuilder: (context, i, track, enabled) => TrackRow(
         track: track,
         enabled: enabled,
@@ -213,6 +331,43 @@ class ArtistAlbumsScreen extends StatelessWidget {
         },
         keyOf: (album) => album.id,
       ),
+      // R-19 (issue #41): the whole-set uri is the artist container
+      // (`library:artist:…`, same as ArtistsScreen's row play). Shuffle
+      // here shuffles the ALBUM URIs — a block shuffle (album order),
+      // not a per-track shuffle across the discography: expanding every
+      // album's tracks would be an N+1 fetch for a judgement call the
+      // issue does not ask for (recorded as an assumption).
+      appActions: (context, list) => [
+        SetPlaybackOverflow(
+          empty: !list.hasLoaded || list.total == 0,
+          onPlayAll: () => unawaited(
+            context.read<QueueController>().playUris([
+              'library:artist:${artist.id}',
+            ]),
+          ),
+          onShuffle: () => unawaited(
+            _shufflePlaySet(context, (api) async {
+              final all = await api.artistAlbums(
+                artist.id,
+                offset: 0,
+                limit: -1,
+              );
+              return [for (final a in all.items) a.uri];
+            }),
+          ),
+          onPlayNext: () => unawaited(
+            context.read<QueueController>().addUris(
+              ['library:artist:${artist.id}'],
+              ahead: true,
+            ),
+          ),
+          onAddToUpNext: () => unawaited(
+            context.read<QueueController>().addUris([
+              'library:artist:${artist.id}',
+            ]),
+          ),
+        ),
+      ],
       itemBuilder: (context, i, album, enabled) => AlbumRow(
         album: album,
         enabled: enabled,
@@ -326,6 +481,31 @@ class AlbumTracksScreen extends StatelessWidget {
         },
         keyOf: (track) => track.id.toString(),
       ),
+      // R-19 (issue #41): see PlaylistTracksScreen — same contract,
+      // container uri for the ordered actions, track uri expansion for
+      // the client-side shuffle.
+      appActions: (context, list) => [
+        SetPlaybackOverflow(
+          empty: !list.hasLoaded || list.total == 0,
+          onPlayAll: () =>
+              unawaited(context.read<QueueController>().playUris([album.uri])),
+          onShuffle: () => unawaited(
+            _shufflePlaySet(context, (api) async {
+              final all = await api.albumTracks(
+                album.id,
+                offset: 0,
+                limit: -1,
+              );
+              return [for (final t in all.items) t.uri];
+            }),
+          ),
+          onPlayNext: () => unawaited(
+            context.read<QueueController>().addUris([album.uri], ahead: true),
+          ),
+          onAddToUpNext: () =>
+              unawaited(context.read<QueueController>().addUris([album.uri])),
+        ),
+      ],
       itemBuilder: (context, i, track, enabled) => TrackRow(
         track: track,
         enabled: enabled,

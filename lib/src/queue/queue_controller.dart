@@ -164,6 +164,38 @@ class QueueController extends ChangeNotifier {
     (api) => api.playUris(uris, clear: true, startPlayback: true),
   );
 
+  /// R-19 (issue #41) — Play Next / Add to Up Next: `POST
+  /// /api/queue/items/add` **without `clear`**, `playback=add` — the queue
+  /// is edited, playback is NOT touched (safe while paused; the
+  /// clear+start [playUris] above is the replace-and-play sibling, keep
+  /// the two distinct). [ahead] inserts at `position=0` (Play Next, the
+  /// orchestrator-frozen contract); the tail case (Add to Up Next) pins
+  /// `position` to the current queue length — an omitted position would
+  /// land at a RANDOM slot while the server's shuffle mode is on
+  /// (live-verified 2026-11-20, see OwntoneApi.addUris). No optimistic
+  /// edit: the server's `queue` WS event + the [_action] trailing refresh
+  /// land the post-commit list (unit-011 single-flight).
+  Future<bool> addUris(List<String> uris, {bool ahead = false}) => _action(
+    ahead ? 'Play next' : 'Add to queue',
+    (api) => api.addUris(uris, position: ahead ? 0 : _queue.length),
+  );
+
+  /// R-19 (issue #41) — Shuffle: play [uris] in a CLIENT-side shuffled
+  /// order, replacing the queue (same replace-and-start contract as
+  /// [playUris], just shuffled first). **Must not mutate the server's
+  /// global shuffle mode**: the add-time `?shuffle` param is the global
+  /// mode setter (docs + live-verified 2026-11-20: `shuffle=false` on an
+  /// add flipped `/api/player`'s shuffle flag), so it is unusable here —
+  /// client-side pre-shuffle is the chosen path. **Supervised** (starts
+  /// audio — real speakers), reachable only from a user tap.
+  Future<bool> playUrisShuffled(List<String> uris) {
+    final shuffled = List<String>.of(uris)..shuffle();
+    return _action(
+      'Shuffle play',
+      (api) => api.playUris(shuffled, clear: true, startPlayback: true),
+    );
+  }
+
   /// Tapping a queued row advances the queue IN PLACE (issue #21, R-11,
   /// OwnTone web-UI parity): the queue content is unchanged and the tapped
   /// entry simply becomes the current track — `PUT
