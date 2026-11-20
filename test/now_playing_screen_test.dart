@@ -14,6 +14,7 @@ import 'package:owntone_remote/src/player/player_state.dart';
 import 'package:owntone_remote/src/queue/queue_controller.dart';
 import 'package:owntone_remote/src/rating/rating_controller.dart';
 import 'package:owntone_remote/src/settings/settings_store.dart';
+import 'package:owntone_remote/src/ui/browse_screens.dart';
 import 'package:owntone_remote/src/ui/now_playing_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,6 +56,15 @@ class Fixture {
   /// Queue-item metadata (issue #26's playhead-row test pushes a long title).
   String title = 'Test Track';
 
+  /// Browse ids on the queue item (R-17, issue #39). Default null so the
+  /// pre-existing tests keep their exact queue payload — the R-17 tests
+  /// opt in (the server always sends both for file tracks; null is the
+  /// defensive branch that hides the entry). Non-null also flips the
+  /// artwork fallback (`./artwork/album/<id>`), which is why the opt-in
+  /// tests install the 404 HttpOverrides.
+  String? albumId;
+  String? albumArtistId;
+
   /// When non-null, PUTs to this path answer 500 (rollback/snackbar tests).
   String? failPutPath;
 
@@ -78,6 +88,8 @@ class Fixture {
           'title': title,
           'artist': 'Test Artist',
           'album': 'Test Album',
+          if (albumId != null) 'album_id': albumId,
+          if (albumArtistId != null) 'album_artist_id': albumArtistId,
           'length_ms': length,
           'uri': 'library:track:42',
           if (itemArtwork != null) 'artwork_url': itemArtwork,
@@ -95,6 +107,52 @@ class Fixture {
         return jsonResponse(o, queueJson());
       case '/api/outputs':
         return jsonResponse(o, _outputsJson);
+      // R-17 (issue #39): the Go to Artist / Go to Album targets' browse
+      // endpoints (the "real" albums/tracks the pushed route must render).
+      case '/api/library/artists/aT/albums':
+        return jsonResponse(o, {
+          'items': [
+            {
+              'id': 'alT',
+              'name': 'Test Album',
+              'artist': 'Test Artist',
+              'artist_id': 'aT',
+              'track_count': 1,
+              'length_ms': length,
+              'uri': 'library:album:alT',
+            },
+            {
+              'id': 'alT2',
+              'name': 'Test Album Two',
+              'artist': 'Test Artist',
+              'artist_id': 'aT',
+              'track_count': 1,
+              'length_ms': length,
+              'uri': 'library:album:alT2',
+            },
+          ],
+          'total': 2,
+          'offset': 0,
+          'limit': 50,
+        });
+      case '/api/library/albums/alT/tracks':
+        return jsonResponse(o, {
+          'items': [
+            {
+              'id': 42,
+              'title': title,
+              'artist': 'Test Artist',
+              'album': 'Test Album',
+              'album_id': 'alT',
+              'track_number': 1,
+              'length_ms': length,
+              'uri': 'library:track:42',
+            },
+          ],
+          'total': 1,
+          'offset': 0,
+          'limit': 50,
+        });
     }
     if (o.method != 'PUT') {
       return jsonResponse(o, <String, dynamic>{});
@@ -988,6 +1046,151 @@ void main() {
       await tester.runAsync(realPump);
       await tester.pump();
       expect(find.byIcon(Icons.music_note), findsOneWidget);
+    });
+  });
+
+  // R-17 (issue #39, diff-list D-04): the now-playing overflow carries
+  // Go to Artist / Go to Album, pushing the browse screens for the
+  // current track. The frozen spec's "absent/disabled" resolves to
+  // ABSENT when no track (or no browse id) is loaded, and INERT menu
+  // rows while offline (matching the entry row's disabled pattern).
+  group('now-playing context navigation (R-17, issue #39)', () {
+    /// Menu-open pumps (outputs_appbar_test's proven pattern: route
+    /// animations need `pumpAndSettle`, not fixed pumps, in the fake-async
+    /// zone — fixed-count pumps leave menu/route transitions stuck mid-
+    /// flight and the popped route mounted).
+    Future<void> openOverflow(WidgetTester tester) async {
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+    }
+
+    /// Lets a pushed browse route's list fetch land (dio completes through
+    /// the fake clock; the real-time beat gives the adapter's future its
+    /// event-loop turns, cf. browse_screens_test's settle).
+    Future<void> settle(WidgetTester tester) async {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 80)),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'loaded track: overflow shows both entries; Go to Artist pushes '
+      'ArtistAlbumsScreen with the artist albums; back; Go to Album pushes '
+      'AlbumTracksScreen with the album tracks',
+      (tester) async {
+        // The queue item carries album_id (fixture default), so the
+        // now-playing artwork falls back to `./artwork/album/<id>` —
+        // 404-override it like the artwork test does (deterministic
+        // placeholder, no real socket).
+        HttpOverrides.global = _FailOverrides();
+        addTearDown(() => HttpOverrides.global = null);
+        await tester.runAsync(wireUp);
+        fx.albumId = 'alT';
+        fx.albumArtistId = 'aT';
+        channels.last.serverSend('{"notify":["player"]}');
+        await pumpScreen(tester);
+        await tester.runAsync(realPump);
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        await openOverflow(tester);
+        expect(find.text('Go to Artist'), findsOneWidget);
+        expect(find.text('Go to Album'), findsOneWidget);
+
+        await tester.tap(find.text('Go to Artist'));
+        await settle(tester);
+        expect(tester.takeException(), isNull);
+        final artistRoute = find.byType(ArtistAlbumsScreen);
+        expect(artistRoute, findsOneWidget, reason: 'route by widget type');
+        expect(
+          find.descendant(
+            of: artistRoute,
+            matching: find.text('Test Album Two'),
+          ),
+          findsOneWidget,
+          reason: "the artist's real albums render",
+        );
+
+        await tester.tap(find.byTooltip('Back'));
+        await tester.pumpAndSettle();
+        expect(find.byType(ArtistAlbumsScreen), findsNothing);
+
+        await openOverflow(tester);
+        await tester.tap(find.text('Go to Album'));
+        await settle(tester);
+        expect(tester.takeException(), isNull);
+        final albumRoute = find.byType(AlbumTracksScreen);
+        expect(albumRoute, findsOneWidget, reason: 'route by widget type');
+        expect(
+          find.descendant(of: albumRoute, matching: find.text('Test Track')),
+          findsOneWidget,
+          reason: "the album's real track renders",
+        );
+      },
+    );
+
+    testWidgets('stopped (no track): the overflow entries are absent', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      fx.state = 'stop';
+      fx.progress = 0;
+      fx.length = 0;
+      fx.itemId = null;
+      channels.last.serverSend('{"notify":["player"]}');
+      await pumpScreen(tester);
+      await tester.runAsync(realPump);
+      await tester.pump();
+      expect(find.text('Stopped'), findsOneWidget);
+      expect(find.byIcon(Icons.more_vert), findsNothing);
+      expect(find.text('Go to Artist'), findsNothing);
+      expect(find.text('Go to Album'), findsNothing);
+    });
+
+    testWidgets('track without browse ids (defensive branch): entries absent', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      fx.albumId = null;
+      fx.albumArtistId = null;
+      channels.last.serverSend('{"notify":["player"]}');
+      await pumpScreen(tester);
+      await tester.runAsync(realPump);
+      await tester.pump();
+      expect(find.text('Test Track'), findsOneWidget, reason: 'track loaded');
+      expect(find.byIcon(Icons.more_vert), findsNothing);
+    });
+
+    testWidgets('offline with a cached track: entries present but inert', (
+      tester,
+    ) async {
+      HttpOverrides.global = _FailOverrides();
+      addTearDown(() => HttpOverrides.global = null);
+      await tester.runAsync(wireUp);
+      fx.albumId = 'alT';
+      fx.albumArtistId = 'aT';
+      channels.last.serverSend('{"notify":["player"]}');
+      await pumpScreen(tester);
+      await tester.runAsync(realPump);
+      await tester.pump();
+
+      await tester.runAsync(dropServer);
+      await tester.pump();
+      expect(conn.phase, ConnectionPhase.offline);
+
+      await openOverflow(tester);
+      expect(find.text('Go to Artist'), findsOneWidget);
+      expect(find.text('Go to Album'), findsOneWidget);
+      final items = tester.widgetList<PopupMenuItem<String>>(
+        find.byType(PopupMenuItem<String>),
+      );
+      expect(items, hasLength(2));
+      expect(
+        items.every((i) => !i.enabled),
+        isTrue,
+        reason: 'offline rows are inert (no dead navigation)',
+      );
     });
   });
 }

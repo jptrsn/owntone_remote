@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../connection/connection_controller.dart';
 import '../core/artwork_probe.dart';
+import '../library/library_models.dart';
 import '../outputs/outputs_controller.dart';
 import '../outputs/output.dart';
 import '../player/player_controller.dart';
@@ -111,6 +112,37 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
     if (p != null && p.isPlaying && _ticker == null) _startTicker(p);
     if (p != null && !p.isPlaying) _stopTicker();
 
+    // R-17 (issue #39): browse-context targets for the current track,
+    // rebuilt each frame. The queue item carries no plain `artist_id` —
+    // `album_artist_id` is the id `/api/library/artists/{id}/albums`
+    // accepts (verified live 2026-11-20). An entry with no id behind it is
+    // not rendered (the frozen spec's "absent" option — no dead menu row);
+    // offline keeps them visible but inert, matching the entry row's
+    // disabled-while-offline pattern.
+    final np = controller.nowPlaying;
+    final artistId = np?.albumArtistId;
+    final albumId = np?.albumId;
+    final artistTarget = (np != null && artistId != null && artistId.isNotEmpty)
+        ? Artist(
+            id: artistId,
+            name: np.artist ?? 'Unknown artist',
+            albumCount: 0,
+            trackCount: 0,
+            lengthMs: 0,
+          )
+        : null;
+    final albumTarget = (np != null && albumId != null && albumId.isNotEmpty)
+        ? Album(
+            id: albumId,
+            name: np.album ?? 'Unknown album',
+            artist: np.artist ?? '',
+            artistId: artistId ?? '',
+            trackCount: 0,
+            lengthMs: np.lengthMs ?? 0,
+            uri: 'library:album:$albumId',
+          )
+        : null;
+
     final syncLabel = switch (conn.wsPhase) {
       WsPhase.open => 'sync: live',
       WsPhase.reconnecting => 'sync: reconnecting…',
@@ -149,6 +181,35 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
               ),
             ),
           ),
+          if (artistTarget != null || albumTarget != null)
+            PopupMenuButton<String>(
+              key: const ValueKey('now-playing-overflow'),
+              tooltip: 'More',
+              onSelected: (value) {
+                if (!enabled) return;
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => value == 'artist'
+                        ? ArtistAlbumsScreen(artist: artistTarget!)
+                        : AlbumTracksScreen(album: albumTarget!),
+                  ),
+                );
+              },
+              itemBuilder: (context) => [
+                if (artistTarget != null)
+                  PopupMenuItem<String>(
+                    value: 'artist',
+                    enabled: enabled,
+                    child: const Text('Go to Artist'),
+                  ),
+                if (albumTarget != null)
+                  PopupMenuItem<String>(
+                    value: 'album',
+                    enabled: enabled,
+                    child: const Text('Go to Album'),
+                  ),
+              ],
+            ),
         ],
       ),
       body: Column(

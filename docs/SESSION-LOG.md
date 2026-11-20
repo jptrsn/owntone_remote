@@ -2549,3 +2549,30 @@ agent-lens/inspector trees + flutter_driver dead on this run, uiautomator
 content-desc + screencap + console carried it (and this model has no image
 input — screencaps are on-disk-only evidence). Report
 `.ai-dlc/night-2026-11-19/reports/40.md`.
+
+**Overnight unattended run 2026-11-19/20 — issue #39 now-playing context
+navigation (unit #39, night pipeline).** R-17 shipped on
+`fix/issue-39-nowplaying-go-to`: the now-playing overflow (new
+`PopupMenuButton`, tooltip 'More') gains **Go to Artist → ArtistAlbumsScreen**
+and **Go to Album → AlbumTracksScreen** for the current track (ReTune's np
+context actions, D-04). `NowPlayingItem` gains `albumId`/`albumArtistId`
+from the queue item's `album_id`/`album_artist_id` — live curl-verified
+2026-11-20: queue/track payloads carry **no plain `artist_id`**, and
+`album_artist_id` is the id `/api/library/artists/{id}/albums` accepts
+(doc-commented so it never gets "tidied" to a nonexistent `artist_id`).
+Frozen-spec "absent/disabled" adjudicated: **absent** with no track/ids
+(whole button unmounted — no dead rows), **inert** rows offline (matches the
+entry-row offline pattern). 4 new R-17 widget tests (entries by text, routes
+found by widget type, fake-server real albums/tracks render, stopped/id-less
+absent, offline inert); fixture browse ids are opt-in (null default) because
+a present `album_id` flips the frozen artwork-fallback branch. Gates:
+analyze 0, format clean, 494/494 (+4), debug APK builds. Device pass on the
+unit's own disposable AVD `OwnToneNight_API_36` (created + deleted): real
+server paused throughout (item 211696 unchanged at every check, GETs only) —
+overflow shows both entries, Go to Artist renders Tony Sly's real albums, Go
+to Album renders all 12 Sad Bear tracks with ratings, back returns to a
+living Now Playing, 0 crashes. Harness note: `flutter run` stalled 3×
+tool-side at Installing (manual `adb install -r` of the same APK: 0.5 s) —
+fallback `am start` + VM-service connect + uiautomator content-desc +
+screencap (build/devshots/, no model image input) carried the evidence, the
+same channel as #43/#40. Report `.ai-dlc/night-2026-11-19/reports/39.md`.
