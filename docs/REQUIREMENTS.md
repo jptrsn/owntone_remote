@@ -318,6 +318,28 @@ header.
 **Acceptance:** widget test: fake pages [A…A, B…] → headers rendered
 once each; rows unchanged (reuse `BrowseRow`); gates green.
 
+### R-26 Theme preference (Light · Dark · Follow system) — P1
+*(direct user request 2026-11-19, issue #43 — not a ReTune diff-list row;
+numbered R-26 because R-21..R-25 are claimed by the retune-ux-capture
+intent)*
+Settings (next to the rocker step) gains a three-way theme picker —
+**Light / Dark / System**. `Light`/`Dark` force the scheme; `System` (the
+default) follows `platformBrightness`, **including live while the app is
+open** (a system toggle mid-session re-skins with no restart). The dark
+scheme is `ColorScheme.fromSeed` with the **same seed** (`0xFF7C5CBF`,
+`brightness: dark`) — no bespoke palette in v1. The choice persists via
+`SettingsStore` (key `theme.mode`, same pattern as `rockerStep`:
+read-validate fallback — corrupt/legacy value → `system`) and applies on
+the next screen without an app restart. No hardcoded colors on the affected
+paths (now-playing's no-artwork placeholders become scheme-derived).
+Behavior change to call out: once `darkTheme` exists, `System` (default)
+actually follows the system — users on a dark phone see the app flip
+(accepted — that is the point of the issue).
+**Acceptance:** three modes render the correct brightness; default is
+`System`; selection survives app kill/relaunch; `System` follows a platform
+brightness change while running; corrupt persisted value degrades to
+`System`, never a crash; dark scheme derives from the existing seed.
+
 ## Explicitly out of scope
 
 See PLAN.md §4. In particular: **all iTunes-specific ReTune features

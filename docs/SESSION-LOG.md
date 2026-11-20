@@ -2495,3 +2495,28 @@ one-by-one at the CLI and approved verbatim. retune-ux-capture closed
 again, this time with the navigation family properly captured (the v1
 inventory's false "bottom nav / mini player / reorder" claims corrected
 the same day). Open build queue now: #38–#42, #44–#48.
+
+**Overnight unattended run 2026-11-19/20 — issue #43 theme switcher (unit
+#43, night pipeline).** Light/Dark/System theme preference shipped on
+`fix/issue-43-theme-switcher`: `SettingsStore.theme.mode` (untyped read —
+`getString` THROWS on a wrongly-typed legacy value and "corrupt → System,
+never crash" is the R-26 acceptance), `ThemePreference` ChangeNotifier
+mirrored to `MaterialApp.themeMode` + `darkTheme` from the same seed
+(0xFF7C5CBF, `fromSeed`, no bespoke palette), `SegmentedButton` picker in
+Settings under the rocker row, now-playing placeholders → `onSurfaceVariant`.
+R-ID adjudicated **R-26** (issue proposed R-21; R-21..R-25 are the
+retune-ux-capture navigation family). Device pass on the unit's own
+disposable AVD `OwnToneNight_API_36` (created + deleted by the unit; the
+issue's Pixel-6 line superseded by the night device policy): picker renders,
+Dark luma 243→26.5 without restart, kill/relaunch keeps dark,
+`cmd uimode night yes|no` flips live (243→26.6→243), sed-corrupted pref
+boots clean (0 crash-buffer hits). Server `pause` verified before/after;
+zero playback actions. Gates: analyze 0, format clean, 486/486 (14 new
+R-26 tests), debug APK builds. Harness facts worth keeping: MaterialApp
+wraps the resolved theme in an **AnimatedTheme (200 ms)** — theme widget
+tests must `pumpAndSettle`, a single `pump` reads a mid-lerp `Theme.of`;
+`platformBrightnessTestValue` needs `handlePlatformBrightnessChanged()`;
+agent-lens/inspector trees and flutter_driver were unavailable on this
+run — uiautomator (labels in content-desc, works on the API-36 AVD unlike
+the Pixel 6) + screencap-luma + logcat carried the evidence. Report
+`.ai-dlc/night-2026-11-19/reports/43.md`.

@@ -6,11 +6,13 @@ import 'package:provider/provider.dart';
 import '../connection/connection_controller.dart';
 import '../core/server_config.dart';
 import '../settings/settings_store.dart';
+import '../settings/theme_preference.dart';
 import 'about_screen.dart';
 
-/// Settings (R-01, R-14): manual host + JSON-port entry persisted via
+/// Settings (R-01, R-14, R-26): manual host + JSON-port entry persisted via
 /// [SettingsStore], the volume-rocker step (1–10, applied to the next
-/// press — the mirror handler reads the store at keypress time), and the
+/// press — the mirror handler reads the store at keypress time), the theme
+/// picker (Light · Dark · System, applied on select), and the
 /// entry to the read-only [AboutScreen]. Manual entry only in v1 (D8: no
 /// discovery).
 class SettingsScreen extends StatefulWidget {
@@ -235,6 +237,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         icon: const Icon(Icons.add),
                       ),
                     ],
+                  ),
+                  const Divider(),
+                  // Theme (R-26): three-way picker next to the rocker step.
+                  // Applies on select — MaterialApp rebuilds off the
+                  // ThemePreference (no restart); the choice persists so a
+                  // kill/relaunch keeps it.
+                  Text('Theme', style: Theme.of(context).textTheme.bodyLarge),
+                  Text(
+                    'Follow the system setting or force a scheme.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedButton<ThemeMode>(
+                    key: const ValueKey('theme-mode-picker'),
+                    segments: const [
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        label: Text('Light'),
+                      ),
+                      ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        label: Text('System'),
+                      ),
+                    ],
+                    selected: {context.watch<ThemePreference>().mode},
+                    onSelectionChanged: (selection) => unawaited(
+                      context.read<ThemePreference>().setMode(selection.first),
+                    ),
                   ),
                   const Divider(),
                   ListTile(

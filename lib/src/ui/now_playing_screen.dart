@@ -761,13 +761,23 @@ class _ArtworkBoxState extends State<ArtworkBox> {
               Image.network(
                 artworkUrl.toString(),
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const Center(
-                  child: Icon(Icons.music_note, size: 96, color: Colors.grey),
+                // R-26: scheme-derived (was Colors.grey) — stays legible on
+                // the dark surface.
+                errorBuilder: (_, _, _) => Center(
+                  child: Icon(
+                    Icons.music_note,
+                    size: 96,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               )
             else
-              const Center(
-                child: Icon(Icons.music_note, size: 96, color: Colors.grey),
+              Center(
+                child: Icon(
+                  Icons.music_note,
+                  size: 96,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
           ],
         ),

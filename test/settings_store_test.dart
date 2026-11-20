@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:owntone_remote/src/core/server_config.dart';
 import 'package:owntone_remote/src/settings/settings_store.dart';
@@ -68,6 +69,53 @@ void main() {
       await store.save(const ServerConfig(host: 'h', port: 1));
       final reloaded = await SettingsStore.create();
       expect(reloaded.rockerStep, 3);
+      expect(reloaded.config, const ServerConfig(host: 'h', port: 1));
+    });
+  });
+
+  group('SettingsStore theme mode (R-26: default system, persisted, '
+      'read-validate fallback)', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+    });
+
+    test('R-26 unset → default System', () async {
+      final store = await SettingsStore.create();
+      expect(store.themeMode, ThemeMode.system);
+    });
+
+    test('R-26 save → reload survives a "relaunch" (fresh instance)', () async {
+      await (await SettingsStore.create()).saveThemeMode(ThemeMode.dark);
+      expect((await SettingsStore.create()).themeMode, ThemeMode.dark);
+      await (await SettingsStore.create()).saveThemeMode(ThemeMode.light);
+      expect((await SettingsStore.create()).themeMode, ThemeMode.light);
+    });
+
+    test(
+      'R-26 corrupt persisted value degrades to System, never a crash',
+      () async {
+        SharedPreferences.setMockInitialValues({'theme.mode': 'neon'});
+        expect((await SettingsStore.create()).themeMode, ThemeMode.system);
+        SharedPreferences.setMockInitialValues({'theme.mode': ''});
+        expect((await SettingsStore.create()).themeMode, ThemeMode.system);
+        // Wrong case / legacy spelling is unknown → fallback, not a crash.
+        SharedPreferences.setMockInitialValues({'theme.mode': 'LIGHT'});
+        expect((await SettingsStore.create()).themeMode, ThemeMode.system);
+      },
+    );
+
+    test('R-26 wrongly-typed stored value degrades to System', () async {
+      // getString on an int-backed key reads null → default.
+      SharedPreferences.setMockInitialValues({'theme.mode': 7});
+      expect((await SettingsStore.create()).themeMode, ThemeMode.system);
+    });
+
+    test('R-26 theme and server config persist independently', () async {
+      final store = await SettingsStore.create();
+      await store.saveThemeMode(ThemeMode.dark);
+      await store.save(const ServerConfig(host: 'h', port: 1));
+      final reloaded = await SettingsStore.create();
+      expect(reloaded.themeMode, ThemeMode.dark);
       expect(reloaded.config, const ServerConfig(host: 'h', port: 1));
     });
   });
