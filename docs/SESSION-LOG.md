@@ -2740,3 +2740,39 @@ tap bar play → server `play`, tap → `pause`. WITHHELD-with-proof
 stopped-state check — each covered by the fake-controller captured-call
 widget tests named in the report. Report
 `.ai-dlc/night-2026-11-19/reports/45.md`.
+
+## 2026-11-20 — overnight: issue #41 detail overflow Play All/Shuffle/Play Next/Add to Up Next (opencode)
+
+Branch `fix/issue-41-play-all-shuffle` off develop (`6148360`). Frozen
+spec `.ai-dlc/night-2026-11-19/issues/41.md` (R-19, D-06): app-bar
+overflow **Play All · Shuffle · Play Next · Add to Up Next** on
+PlaylistTracks/AlbumTracks/ArtistAlbums (new `SetPlaybackOverflow` + a
+`PagedBrowseScreen.appActions` hook that listens to the `PagedList` so the
+overflow gates emptiness — disabled whole button while loading/empty,
+chosen minimal rule). `QueueController.addUris(uris,{ahead})` — POST
+queue/items/add WITHOUT clear, `playback=add`; ahead⇒`position=0`
+(frozen), tail⇒`position=_queue.length`; `playUrisShuffled` = client-side
+pre-shuffle + the existing clear+start contract; both through the unit-011
+`_action` single-flight + trailing refresh. Live findings pinned in code
+(29.3, 2026-11-20, safe adds + exact restore): `playback=add` never
+starts audio; the add-time `?shuffle` param is the **global** shuffle-mode
+setter (flipped the flag to false, restored via PUT + verified) → R-19's
+shuffle-play must pre-shuffle client-side, never send the param; omitted/
+out-of-range `position` with server shuffle ON inserts at a RANDOM slot
+(640/597/1061/710/1072/999999→1072 observed) → the tail add needs the
+position pin; `limit=-1` is a real unbounded page on album/playlist
+tracks. 18 new R-19 tests (`test/detail_overflow_test.dart`, captured
+request lines; Play All/Shuffle taps are fake-API-only). Gates: analyze 0,
+format clean, **557/557** (+18), debug APK builds. Device pass on the
+unit's own disposable AVD `OwnToneNight_API_36` (created+deleted, 0 qemu
+after, serial by avd_name, Pixel 6 never targeted; accepted fallback
+harness — uiautomator + input + screencap): four labelled entries dumped
+on the Playlist AND Album screens; **Play Next** (Sad Bear) → 12 items at
+positions 0..11 (API-verified) + Queue screen rows visible → DELETE ×12 →
+head/tail/total restored byte-exact; **Add to Up Next** → 12 items at the
+tail 1396..1407 (API-verified) + Now Playing chip 1396→1408→1396 via WS →
+restored; `pause`/shuffle=true/60/211696/1490 byte-identical at every
+check. BLOCKED-PENDING-SUPERVISION (pre-declared, audible, never tapped):
+Play All and Shuffle LIVE rows — substitute proofs are the named
+captured-request tests in the report. Report
+`.ai-dlc/night-2026-11-19/reports/41.md`.
