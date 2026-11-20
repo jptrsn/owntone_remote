@@ -164,6 +164,11 @@ class ArtistsScreen extends StatelessWidget {
         },
         keyOf: (artist) => artist.id,
       ),
+      // R-25: group by the server's sort key (name_sort), not the display
+      // name — the server orders by name_sort ("Daniela Andrade" lands
+      // under Andrade; verified live 2026-11-20), so only it yields
+      // contiguous letter groups.
+      groupKeyOf: (artist) => artist.sortName,
       itemBuilder: (context, i, artist, enabled) => ArtistRow(
         artist: artist,
         enabled: enabled,
@@ -299,6 +304,9 @@ class GenresScreen extends StatelessWidget {
         },
         keyOf: (genre) => genre.name,
       ),
+      // R-25: same sort-key grouping as ArtistsScreen (name_sort verified
+      // contiguous live 2026-11-20).
+      groupKeyOf: (genre) => genre.sortName,
       itemBuilder: (context, i, genre, enabled) => GenreRow(
         genre: genre,
         enabled: enabled,

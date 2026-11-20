@@ -19,11 +19,20 @@ class PagedBrowseList<T> extends StatefulWidget {
     required this.emptyMessage,
     required this.what,
     this.emptyIcon,
+    this.groupKeyOf,
   });
 
   final PagedList<T> list;
   final bool enabled;
   final Widget Function(BuildContext context, int index, T item) itemBuilder;
+
+  /// R-25: when set, the loaded branch renders disabled alphabetical
+  /// section headers (ReTune `basic_header` pattern) before every item
+  /// whose normalized group key (see [browseSectionKey]) differs from the
+  /// previous *loaded* item's — so paging across a letter boundary emits
+  /// the header exactly once, in either direction. Null (the default)
+  /// renders the plain list (Playlists/Albums stay headerless).
+  final String Function(T item)? groupKeyOf;
 
   /// Shown with [emptyIcon] when the server answers an empty slice.
   final String emptyMessage;
@@ -112,14 +121,35 @@ class _PagedBrowseListState<T> extends State<PagedBrowseList<T>> {
       );
     }
     final hasFooter = list.loading || (list.error != null && !list.exhausted);
+    // R-25: flatten items (+ headers where the group key changes) into one
+    // row list. The key comparison runs against the previous *loaded*
+    // item, not the previous row — a header therefore lands once across a
+    // page boundary and once across a reload, never twice.
+    final groupKeyOf = widget.groupKeyOf;
+    final rows = <_BrowseRow>[];
+    String? prevKey;
+    for (var i = 0; i < list.items.length; i++) {
+      if (groupKeyOf != null) {
+        final key = browseSectionKey(groupKeyOf(list.items[i]));
+        if (key != prevKey) {
+          rows.add(_BrowseRow.header(key));
+          prevKey = key;
+        }
+      }
+      rows.add(_BrowseRow.item(i));
+    }
     return ListView.separated(
       controller: _scroll,
       padding: const EdgeInsets.all(8),
-      itemCount: list.items.length + (hasFooter ? 1 : 0),
+      itemCount: rows.length + (hasFooter ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, i) {
-        if (i < list.items.length) {
-          return widget.itemBuilder(context, i, list.items[i]);
+        if (i < rows.length) {
+          final row = rows[i];
+          if (row.header != null) {
+            return _SectionHeader(label: row.header!);
+          }
+          return widget.itemBuilder(context, row.index, list.items[row.index]);
         }
         return list.error != null
             ? _ListErrorRow(
@@ -129,6 +159,58 @@ class _PagedBrowseListState<T> extends State<PagedBrowseList<T>> {
               )
             : const _LoadingMoreRow();
       },
+    );
+  }
+}
+
+/// One rendered row of the loaded branch: an item (by index) or a section
+/// header (by label).
+class _BrowseRow {
+  const _BrowseRow.item(this.index) : header = null;
+  const _BrowseRow.header(this.header) : index = -1;
+
+  final int index;
+  final String? header;
+}
+
+/// The R-25 letter group from an item's server sort key: uppercased first
+/// character; anything that is not a letter (digit, symbol, empty) folds
+/// into `#` — ReTune's `basic_header` collapse.
+String browseSectionKey(String sortName) {
+  final trimmed = sortName.trim();
+  if (trimmed.isEmpty) return '#';
+  final first = String.fromCharCodes(trimmed.runes.take(1)).toUpperCase();
+  return _letterFirst.hasMatch(first) ? first : '#';
+}
+
+final _letterFirst = RegExp(r'^\p{L}', unicode: true);
+
+/// A section header row (R-25): structure, not a control — no ink, no tap
+/// callback, nothing focusable. The semantics label stays for a11y readers
+/// as a heading (`header: true`), the way ReTune's disabled header rows
+/// read as structure rather than list items.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      header: true,
+      label: label,
+      child: ExcludeSemantics(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.secondary,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

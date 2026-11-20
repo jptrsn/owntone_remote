@@ -22,6 +22,7 @@ class PagedBrowseScreen<T> extends StatefulWidget {
     required this.emptyMessage,
     required this.emptyIcon,
     required this.what,
+    this.groupKeyOf,
   });
 
   final String title;
@@ -40,6 +41,10 @@ class PagedBrowseScreen<T> extends StatefulWidget {
 
   /// Noun for the error text: "Could not load artists."
   final String what;
+
+  /// R-25: forwarded to [PagedBrowseList] — set to get alphabetical
+  /// section headers (Artists/Genres; Songs when #38 lands).
+  final String Function(T item)? groupKeyOf;
 
   @override
   State<PagedBrowseScreen<T>> createState() => _PagedBrowseScreenState<T>();
@@ -87,6 +92,7 @@ class _PagedBrowseScreenState<T> extends State<PagedBrowseScreen<T>> {
         emptyMessage: widget.emptyMessage,
         emptyIcon: widget.emptyIcon,
         what: widget.what,
+        groupKeyOf: widget.groupKeyOf,
         itemBuilder: (context, i, item) =>
             widget.itemBuilder(context, i, item, enabled),
       ),
