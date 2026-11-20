@@ -136,6 +136,7 @@ class _QueueScreenState extends State<QueueScreen> {
         items: items,
         enabled: enabled,
         nowPlayingId: nowPlaying?.id,
+        nowPlayingItemId: player.player?.itemId,
         // Issue #21: a queued row is already in the queue — tapping it
         // skips in place (queue content unchanged), it must NOT re-add
         // with clear+playback=start (that replaced the whole queue).
@@ -151,6 +152,7 @@ class _QueueList extends StatefulWidget {
     required this.items,
     required this.enabled,
     required this.nowPlayingId,
+    required this.nowPlayingItemId,
     required this.onSkip,
   });
 
@@ -162,6 +164,11 @@ class _QueueList extends StatefulWidget {
   final bool enabled;
   final String? nowPlayingId;
 
+  /// `PlayerState.itemId` — the anchor [queueMoveNewPosition] needs to
+  /// re-derive the hide-cut at drop time (the same source the parent's
+  /// `visibleQueue` call used to build [items]).
+  final int? nowPlayingItemId;
+
   /// Row tap (issue #21): advance the queue in place to [item] —
   /// `QueueController.skipToQueueItem`, never `playUris`.
   final void Function(QueueItem item) onSkip;
@@ -171,6 +178,50 @@ class _QueueList extends StatefulWidget {
 }
 
 class _QueueListState extends State<_QueueList> {
+  /// R-23 mid-drag contract (issue #46): while a drag is live the list is
+  /// FROZEN at the items the user grabbed. Two independent reasons:
+  ///  1. Flutter 3.47.9 trips its per-item GlobalKey ("Duplicate GlobalKey
+  ///     detected") when a refetch rebuilds the sliver while the overlay
+  ///     proxy holds the dragged child;
+  ///  2. R-23 itself: a WS `queue` event arriving mid-drag must NOT yank
+  ///     the row out from under the finger — the drag keeps its LOCAL
+  ///     order and the [_action]-trailing post-commit refresh reconciles
+  ///     afterwards (pinned by the issue-#46 widget test).
+  /// Both the parent-driven rebuild (identical cached widget) and the
+  /// `itemBuilder` closure (frozen items — the sliver re-invokes it on
+  /// every internal drag frame) must be frozen, or the rebuild slips
+  /// through anyway. Released by `onReorderEnd` (fires on same-place
+  /// drops too) and defensively in `onReorderItem`. Known exotic
+  /// limitation: a SYSTEM-cancelled drag (pointer takeover) fires neither
+  /// callback; the list then unfreezes on the next drag or a revisit.
+  bool _dragging = false;
+  Widget? _lastBuilt;
+  List<QueueItem>? _frozenItems;
+  Timer? _unfreezeTimer;
+
+  List<QueueItem> get _rendered => _frozenItems ?? widget.items;
+
+  void _beginDragGate() {
+    // NO setState here: the drag-start frame must stay the sliver's own
+    // (supported) update — replacing the ReorderableListView *instance* in
+    // that very frame makes the overlay's reparented child orphan its
+    // still-listed row elements (duplicate-GlobalKey at finalize). The
+    // freeze works by NEVER handing the element a new instance while
+    // dragging (`_queueListView` returns `_lastBuilt`).
+    _unfreezeTimer?.cancel(); // a stale safety timer must not unfreeze
+    _dragging = true; // mid-drag
+    _frozenItems = widget.items;
+  }
+
+  void _endDragGate() {
+    _unfreezeTimer?.cancel();
+    if (!_dragging && _frozenItems == null) return;
+    setState(() {
+      _dragging = false;
+      _frozenItems = null;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -192,6 +243,7 @@ class _QueueListState extends State<_QueueList> {
 
   @override
   void dispose() {
+    _unfreezeTimer?.cancel();
     widget.controller.removeListener(_rebuild);
     super.dispose();
   }
@@ -205,14 +257,7 @@ class _QueueListState extends State<_QueueList> {
       return Column(
         children: [
           _SyncErrorStrip(message: c.syncError!),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.all(8),
-              itemCount: widget.items.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, i) => _queueRow(context, widget.items[i]),
-            ),
-          ),
+          Expanded(child: _queueListView(context, c)),
         ],
       );
     }
@@ -241,15 +286,92 @@ class _QueueListState extends State<_QueueList> {
         ),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.all(8),
-      itemCount: widget.items.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, i) => _queueRow(context, widget.items[i]),
-    );
+    return _queueListView(context, c);
   }
 
-  Widget _queueRow(BuildContext context, QueueItem item) {
+  /// R-23 (issue #46): the queue is reorderable — long-press-drag (ReTune's
+  /// "tap and hold to drag", `16-up-next`) commits on drop.
+  /// `ReorderableDelayedDragStartListener` is the load-bearing choice: the
+  /// plain `ReorderableDragStartListener` starts the drag IMMEDIATELY on
+  /// pointer-down in this Flutter (3.47.9), which would steal row taps and
+  /// list scrolls; the delayed variant waits out the long-press timeout
+  /// (ReTune parity). `buildDefaultDragHandles: false` + the handle only on
+  /// draggable rows is what makes the **now-playing row inert** (R-23:
+  /// OwnTone keeps the current entry fixed — no handle to grab ⇒ no drag,
+  /// no request). `onReorderItem` (not the deprecated `onReorder`) hands
+  /// drop indices already adjusted for the removed item —
+  /// [queueMoveNewPosition] maps them through the hide-cut to the
+  /// server-absolute `new_position`; the optimistic reorder + rollback +
+  /// trailing refresh all live in `QueueController.moveItem` (the unit-011
+  /// single-flight contract — never hand-roll a refresh here). A WS
+  /// `queue` event arriving mid-drag rebuilds the list under the overlay;
+  /// the drag keeps its local order and the post-commit refresh
+  /// reconciles (documented by the issue-#46 widget test).
+  ///
+  /// Flutter 3.47.9 has no `separatorBuilder` on `ReorderableListView` —
+  /// the row gap is baked in as each item's bottom padding (with the list
+  /// bottom padding zeroed), byte-equivalent to the old `ListView
+  /// .separated` geometry.
+  Widget _queueListView(BuildContext context, QueueController c) {
+    if (_dragging && _lastBuilt != null) return _lastBuilt!;
+    final items = _rendered;
+    final list = ReorderableListView.builder(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      itemCount: items.length,
+      buildDefaultDragHandles: false,
+      onReorderStart: (int index) => _beginDragGate(),
+      onReorderEnd: (int index) {
+        // Fires on the RAW drop (even same-place) — ~250 ms before the
+        // drop-back animation finishes and `_dragReset` removes the proxy.
+        // Unfreezing HERE (or earlier) collides with the live proxy on any
+        // changed row set (duplicate GlobalKey). The common path unfreezes
+        // one frame after `onReorderItem`; this timer covers the rest
+        // (same-place drops never call `onReorderItem`).
+        _unfreezeTimer?.cancel();
+        _unfreezeTimer = Timer(const Duration(milliseconds: 500), _endDragGate);
+      },
+      onReorderItem: (int oldIndex, int newIndex) {
+        final dragged = items;
+        // One frame of deferral, for a reason: the framework calls
+        // `onReorderItem` BEFORE its own `_dragReset` (the overlay-proxy
+        // teardown) in the same frame — unfreezing and firing the
+        // optimistic notify HERE lands the rebuilt row set in the same
+        // finalizeTree as the still-mounted proxy (the duplicate-
+        // GlobalKey assertion). The next frame sees the proxy gone.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _endDragGate(); // before the optimistic notify — let it render
+          if (oldIndex < 0 || oldIndex >= dragged.length) return;
+          final item = dragged[oldIndex];
+          // The cut is re-derived from the LIVE controller list: a
+          // mid-drag refetch may have shifted the anchor — that is the
+          // documented reconciliation trade (the trailing refresh
+          // settles the truth).
+          final absolute = queueMoveNewPosition(
+            c.queue,
+            widget.nowPlayingItemId,
+            hidePlayed: c.hidePlayedItems,
+            displayFromIndex: oldIndex,
+            displayToIndex: newIndex,
+          );
+          if (absolute == null) return;
+          unawaited(c.moveItem(item, absolute));
+        });
+      },
+      itemBuilder: (context, i) {
+        final item = _rendered[i]; // frozen while dragging (see above)
+        return Padding(
+          key: ValueKey(item.id),
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _queueRow(context, item, i),
+        );
+      },
+    );
+    _lastBuilt = list;
+    return list;
+  }
+
+  Widget _queueRow(BuildContext context, QueueItem item, int index) {
     final theme = Theme.of(context);
     final isNowPlaying = item.id == widget.nowPlayingId;
     final secondary = [
@@ -307,6 +429,28 @@ class _QueueListState extends State<_QueueList> {
                   formatTrackLength(item.lengthMs),
                   style: theme.textTheme.labelSmall,
                 ),
+                // R-23 drag handle (issue #46): absent on the now-playing
+                // row (it must stay inert — no handle to grab) and while
+                // offline (row taps are gated the same way). The semantics
+                // label is ours — ReTune's drag is a11y-invisible (23
+                //-playing-audit); "Reorder <title>" is the R-23 contract.
+                if (!isNowPlaying && widget.enabled) ...[
+                  const SizedBox(width: 8),
+                  Semantics(
+                    label: 'Reorder ${item.title}',
+                    child: ReorderableDelayedDragStartListener(
+                      index: index,
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.drag_handle,
+                          size: 20,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
