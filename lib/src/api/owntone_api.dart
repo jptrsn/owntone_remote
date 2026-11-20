@@ -111,6 +111,22 @@ class OwntoneApi {
     return Paging.fromJson(res.data as Map<String, dynamic>, Track.fromJson);
   }
 
+  /// Every library track, in server (name) order — the Songs list (R-15).
+  ///
+  /// There is **no `GET /api/library/tracks` collection route** on this
+  /// server: the 29.3 JSON-API route table carries only
+  /// `/api/library/tracks/{id}` (GET/PUT), the batch PUT, and the
+  /// track→playlists GET (source-checked + live 400 for every parameter
+  /// combination, 2026-11-20). The all-tracks list therefore rides the
+  /// proven search endpoint — the same route [genreAlbums] uses:
+  /// `GET /api/search?type=tracks&query=` where the server's empty-query
+  /// branch is `title LIKE '%%'` (source: `search_tracks`), i.e. every
+  /// track, `Q_ITEMS` sorted by name (`title_sort`). Verified live
+  /// 2026-11-20: total 3265, page 2 (`offset=100`) serves distinct rows.
+  /// Do NOT "simplify" this onto `/api/library/tracks` — it does not exist.
+  Future<Paging<Track>> tracks({int offset = 0, int limit = 50}) =>
+      _searchGroup('tracks', '', Track.fromJson, offset: offset, limit: limit);
+
   /// `GET /api/library/genres` — this server ignores `offset`/`limit`
   /// (verified live 2026-10-23: `limit=3` returned all 79 genres), so no
   /// paging parameters are sent; the response is still modeled as

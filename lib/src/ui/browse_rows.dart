@@ -252,6 +252,7 @@ class TrackRow extends StatelessWidget {
     this.onPlay,
     this.onRate,
     this.showArtist = false,
+    this.showAlbum = false,
   });
 
   final Track track;
@@ -265,17 +266,26 @@ class TrackRow extends StatelessWidget {
   final Future<String?> Function(int newRating)? onRate;
   final bool showArtist;
 
+  /// R-15 (Songs): second line becomes `artist - album` (ReTune's Songs
+  /// row, `docs/retune-capture/12-songs/notes.md`). Implies [showArtist];
+  /// without it only the album shows. Both empty → no secondary line.
+  final bool showAlbum;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final len = formatTrackLength(track.lengthMs);
     final stars = starsForRating(track.rating);
-    final base = showArtist
-        ? '${track.title}, ${track.artist}, $len'
-        : '${track.title}, $len';
+    final detail = [
+      if (showArtist && track.artist.isNotEmpty) track.artist,
+      if (showAlbum && track.album.isNotEmpty) track.album,
+    ].join(' - ');
+    final base = detail.isEmpty
+        ? '${track.title}, $len'
+        : '${track.title}, $detail, $len';
     return BrowseRow(
       primary: track.title,
-      secondary: showArtist ? track.artist : null,
+      secondary: detail.isEmpty ? null : detail,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

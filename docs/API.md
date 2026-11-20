@@ -110,6 +110,7 @@ Add response: `{version, count, items[]}`.
 | GET | `/api/library/albums[?offset&limit]` | `paging` of albums |
 | GET | `/api/library/albums/{id}/tracks[?offset&limit]` | `paging` of tracks |
 | GET | `/api/library/tracks/{id}` | single track (has `rating`) |
+| GET | `/api/search?type=tracks&query=[&offset&limit]` | **all-tracks list** (Songs, R-15) — the empty `query` is the server's `title LIKE '%%'` branch: every track, `Q_ITEMS` sorted by name (`title_sort`); paging per group (source `search_tracks` + live 3265/100-page, 2026-11-20). **There is NO `GET /api/library/tracks` collection route** (route table carries only `/tracks/{id}` GET/PUT + batch PUT — verified in the 29.3 source and live 400 for every param combination); do not "simplify" `OwntoneApi.tracks` onto it |
 | PUT | `/api/library/tracks/{id}?rating=0-100` | 200 observed (docs say 204) (R-12; supervised). **Commit is async:** `GET /api/library/tracks/{id}` can serve the PRE-write rating for 0.1–1.6 s after the PUT returns (curl-sampled 2026-11-17) — clients must not single-GET-confirm. Also `usermark`, `play_count`, `skip_count`, … |
 | PUT | `/api/library/tracks` | body `{"tracks":[{"id":1,"rating":100},…]}` batch |
 | GET | `/api/library/genres` | `paging` of `{name}` (browse-info) |

@@ -38,6 +38,7 @@ class LibraryHomeScreen extends StatelessWidget {
     (Icons.queue_music, 'Playlists'),
     (Icons.person, 'Artists'),
     (Icons.album, 'Albums'),
+    (Icons.music_note, 'Songs'),
     (Icons.label_outline, 'Genres'),
   ];
 
@@ -69,6 +70,7 @@ class LibraryHomeScreen extends StatelessWidget {
                         'Playlists' => const PlaylistsScreen(),
                         'Artists' => const ArtistsScreen(),
                         'Albums' => const AlbumsScreen(),
+                        'Songs' => const TracksScreen(),
                         _ => const GenresScreen(),
                       },
                     ),
@@ -250,6 +252,49 @@ class AlbumsScreen extends StatelessWidget {
         ),
         onPlay: () =>
             unawaited(context.read<QueueController>().playUris([album.uri])),
+      ),
+    );
+  }
+}
+
+/// The Songs view (R-15, issue #38 / diff-list D-02): every library track
+/// as one paged two-line list (`title` / `artist - album`, ReTune's Songs
+/// tab, `docs/retune-capture/12-songs/`). Rows are the existing
+/// [TrackRow]s — row tap plays (R-10), stars rate (R-12) — with the #48
+/// alphabetical section headers enabled (the deferred "Songs when #38
+/// lands" clause): grouped by the server's `title_sort`, the order the
+/// endpoint serves in (see `OwntoneApi.tracks`).
+class TracksScreen extends StatelessWidget {
+  const TracksScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return PagedBrowseScreen<Track>(
+      title: 'Songs',
+      what: 'tracks',
+      emptyMessage: 'No tracks in the library.',
+      emptyIcon: Icons.music_note,
+      buildList: (conn) => PagedList(
+        fetch: (offset, limit) async {
+          final api = conn.api;
+          if (api == null) throw StateError('no api');
+          return api.tracks(offset: offset, limit: limit);
+        },
+        keyOf: (track) => track.id.toString(),
+      ),
+      // R-25 (via #48's deferral): group by the server's sort key
+      // (title_sort), not the display title — the endpoint orders by it
+      // ("The A Team" with title_sort "A Team" opens the list, verified
+      // live 2026-11-20), so only it yields contiguous letter groups.
+      groupKeyOf: (track) => track.sortTitle,
+      itemBuilder: (context, i, track, enabled) => TrackRow(
+        track: track,
+        enabled: enabled,
+        showArtist: true,
+        showAlbum: true,
+        onRate: rateTrack(context, track.id),
+        onPlay: () =>
+            unawaited(context.read<QueueController>().playUris([track.uri])),
       ),
     );
   }
