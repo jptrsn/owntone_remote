@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../connection/connection_controller.dart';
 import 'connection_banner.dart';
+import 'outputs_screen.dart';
 
 /// The shell shared by every browse screen (R-10, unit 005a): app bar with
 /// back, the app-wide offline banner (unit 001), and the reconnect /
@@ -91,5 +92,30 @@ class _BrowseScreenScaffoldState extends State<BrowseScreenScaffold> {
   void dispose() {
     _eventsSub?.cancel();
     super.dispose();
+  }
+}
+
+/// R-18 (D-09, `docs/retune-capture/14-speakers/`): ReTune's app-bar
+/// **Speakers** action — outputs are one tap from any browse screen, mid-
+/// browse, not only from now-playing. Same destination as now-playing's
+/// entry ([OutputsScreen]).
+///
+/// Pressable while offline on purpose (queue hide-toggle precedent): the
+/// action itself touches nothing on the server and [OutputsScreen] renders
+/// the offline banner + waiting state itself. Do not "fix" it to disable
+/// with the connection — that regresses the R-18 "one tap from any browse
+/// screen" acceptance to "one tap while lucky".
+class OutputsAppBarAction extends StatelessWidget {
+  const OutputsAppBarAction({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Outputs',
+      icon: const Icon(Icons.speaker, semanticLabel: 'Outputs'),
+      onPressed: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const OutputsScreen())),
+    );
   }
 }

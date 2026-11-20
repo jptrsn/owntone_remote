@@ -2520,3 +2520,32 @@ agent-lens/inspector trees and flutter_driver were unavailable on this
 run — uiautomator (labels in content-desc, works on the API-36 AVD unlike
 the Pixel 6) + screencap-luma + logcat carried the evidence. Report
 `.ai-dlc/night-2026-11-19/reports/43.md`.
+
+**Overnight unattended run 2026-11-19/20 — issue #40 outputs app-bar action
+(unit #40, night pipeline).** R-18 shipped on `fix/issue-40-outputs-appbar`:
+`OutputsAppBarAction` (`Icons.speaker`, tooltip + semantics label 'Outputs',
+same `OutputsScreen` destination as now-playing) on the library home and all
+eight paged browse screens — ReTune's one-tap Speakers action (D-09).
+`BrowseScreenScaffold` already had `actions:` (unit 005b); the action is
+wired at the `LibraryHomeScreen`/`PagedBrowseScreen` call sites, NOT baked
+into the scaffold — scaffold-level would give QueueScreen a third action and
+reproduce the dv unit-004 360-px overflow R-18 explicitly warns about
+(Search/Queue deliberately out of scope: R-18 enumerates "library home + all
+paged browse lists"). Pressable while offline on purpose (queue
+hide-toggle precedent; the destination renders the offline state itself).
+4 new R-18 widget tests (`test/outputs_appbar_test.dart`): 360×800 pumps
+(takeException null + tooltip + semantics label) and tap-through/back with
+the fake provider proving the real OutputsScreen and its output names.
+Gates: analyze 0, format clean (one real reformat pass), 490/490 (+4), debug
+APK builds. Device pass on the unit's own disposable AVD
+`OwnToneNight_API_36` (created + deleted): connected to the real server
+(paused throughout, selection byte-compared before/after the sheet —
+untouched), icon present on library home + Albums, tap opens the real
+outputs list (Bathroom display/ESP-CAAC64 selected/…), back returns to the
+list; **360-dp check on-device via `wm density 300`** (1080 px = exactly 360
+logical px): app bar title/icon non-overlapping, fully on-screen, console 0
+overflow lines — same 0-hit grep at the 411-dp default. Harness same as #43:
+agent-lens/inspector trees + flutter_driver dead on this run, uiautomator
+content-desc + screencap + console carried it (and this model has no image
+input — screencaps are on-disk-only evidence). Report
+`.ai-dlc/night-2026-11-19/reports/40.md`.
