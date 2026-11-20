@@ -2923,3 +2923,53 @@ debugDumpRenderTree/debugDumpApp + logcat + uiautomator; first dump inert,
 alive after a semantics request; idle-trap under now-playing animation).
 Morning supervised row: **Pixel 6 real-hardware same-LAN scan re-check**.
 Report `.ai-dlc/night-2026-11-19/reports/42.md`.
+
+## 2026-11-20 — supervised pass (user present) + pipeline fixes — Pixel 6
+
+User present, audible authorized. Pixel 6 `25071FDF600953`, debug build
+@ develop `2f6673a`, via `flutter run` + flutter-agent-lens/dart-MCP (VM
+widget-tree reads; uiautomator bridge dead on this device as documented).
+
+**All supervised rows from the 2026-11-19 overnight run executed and PASS**
+(evidence in each report's "Supervised pass" section): #42 same-LAN scan
+real-hardware re-check; #43 theme toggle live render (Light 241.6 / Dark
+45.8 luma, pinned brightness; `system` restored); #45 prev/next-paused +
+play/pause LIVE + stopped-state guards; #41 Play All (1396→15 replace,
+play starts) + Shuffle (client-side pre-shuffle order verified, **global
+shuffle flag untouched**); #46 drag-to-reorder while playing (1→4, reverted
+byte-identical); #47 per-row Remove while playing (1395, re-added
+byte-identical) + row-tap skip-in-place (item advances, count unchanged).
+
+**Server incident/caution (documented, not an app bug):** the two selected
+AirPlay outputs (ESP-CAAC64 + Volumio Kitchen) cause OwnTone to AUTO-PAUSE
+any playback ~100 ms after `play` — measured 4× (118 ms window captured at
+400 ms sampling). During AirPlay episodes every play tap *looks* inert; the
+app was proven correct (PUT lands, state flips, reverts server-side).
+Workaround for any device test needing sustained playback: select Server
+(ALSA) output only, restore afterwards. This also explains the earlier
+"external player" red herring — playback attempts were ours throughout.
+Final server state: `pause`, shuffle=true, queue 1396 uri-sha
+`7e0650c2ab59ec2c` (byte-identical), outputs = snapshot pair.
+
+**Red-screen error:** the "Looking up a deactivated widget's ancestor"
+red screen seen once at ~14:08 did **not reproduce** in ~50 min of heavy
+real-app use (scan→connect→navigate churn, theme toggles, drag, remove).
+Suspects remain the PR-#61 M2 finding (in-flight `discover()` after route
+pop); left unrepaired, harness now detects it (red-dominant-pixel screencap
+check + console EXCEPTION grep — both clean all session).
+
+**Pipeline hardening** (`.ai-dlc/overnight/pipeline.md`): (1) Step 3 now
+MANDATES `gh issue close` after squash-merge — Closes-via-merge never fires
+for develop merges (all 11 issues stayed open overnight, closed by hand);
+(2) device policy gains four hard interaction rules: dump-immediately-before
+every tap (no remembered coordinates), per-step red-screen detection,
+brightness pinning before luma comparisons, and no held presses near the
+nav-bar edge (hold-to-search system gesture hijack + overlay observed).
+
+User UX follow-up filed: issue #62 (auto-discovery first, manual host/port
+behind an Advanced affordance).
+
+Process lesson (user correction, honored): every `input tap` must be
+immediately preceded by its own widget-tree dump — earlier taps taken from
+stale/remembered geometry opened Google account settings, popped the sheet,
+and summoned the hold-to-search overlay before the rule was enforced.
