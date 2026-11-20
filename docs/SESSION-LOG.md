@@ -2686,3 +2686,57 @@ input + screencap (build/night44/), the #43/#40/#39/#48/#38 fallback —
 the Flutter a11y bridge went quiet after a late background/relaunch
 (documented trap); all drawer assertions captured while alive. Report
 `.ai-dlc/night-2026-11-19/reports/44.md`.
+
+## 2026-11-20 — overnight: issue #45 persistent mini transport bar (opencode)
+
+Branch `fix/issue-45-mini-transport-bar` off develop (`2debde4`). Frozen
+spec `.ai-dlc/night-2026-11-19/issues/45.md` (R-22, N-01): pinned bottom
+mini player on every screen except Now Playing — new
+`lib/src/ui/mini_player.dart` hosted as `Scaffold.bottomNavigationBar`
+(Scaffold's own layer: never scrolls away, never steals row taps) on
+`BrowseScreenScaffold` (Library/Search/Queue/all paged+detail views), the
+standalone Outputs and Settings Scaffolds. Two-line metadata
+(`title` / `artist - album`) + prev/play-pause/next; the play/pause
+**icon mapping goes through `mirror_handler.controlsFor` itself** (first
+entry = the play/pause control — do not re-derive the condition beside
+it). Presses route to `PlayerController` **never** `QueueController.playUris`
+(the issue-#21 `clear=true` lesson — routing tests capture calls on
+recording controller subclasses, `playUrisCalls == 0` in every press test,
+mutation-verified by rerouting the button to `playUris([])`). Metadata
+zone tap → `showNowPlaying` (widget test asserts root depth 1, on-device
+verified from two-deep Songs). Visible iff a current item exists
+(playing or paused), hidden stopped — ReTune's dead-transport-while-stopped
+deliberately not copied (PR-body simplification). All three buttons carry
+tooltip + semantics label (uiautomator content-desc `Previous/Play/Next`
++ `Open now playing` on-device; tooltip+label asserted in an a11y test).
+Offline → the three `onPressed`s null (widget test: null-onPressed ×3,
+no-op tap, ConnectionBanner coexists above the bar). No auto-hide.
+Artwork: **icon-only v1** (a thumbnail would fetch beyond the unit-010
+ArtworkProbe cache → spec's no-extra-fetch gate fails → skipped). Two
+traps pinned in code+tests: `Column(mainAxisSize: max)` inside the bar
+grows to the FULL viewport because Scaffold lays out `bottomNavigationBar`
+with loose constraints (800-px bar, zero-height body — caught live,
+mutation-verified by a new compact-height assertion); and provider-less
+test pumps (89 existing tests) needed the `rateTrack` shape —
+`Provider.of<T?>(context, listen: true)` (nullable = no-throw;
+`context.maybeWatch` does not exist in provider 6). One existing test
+scoped to the `ListView` (now_playing "Go to Album" — the bar legitimately
+re-renders the fixture title on the pushed screen). 11 new R-22 tests
+(`test/mini_player_test.dart`). Gates: analyze 0, format clean,
+**539/539** (+11), debug APK builds. Device pass on the unit's own
+disposable AVD `OwnToneNight_API_36` (created+deleted, serial by
+avd_name, Pixel 6 never targeted): bar **absent** on NP root (single
+title node), present with the two-line fixture metadata + three labelled
+buttons on Library/Queue/Outputs/Settings/paged Songs, row tap navigates
+with the bar shown, bar bounds **invariant** under a 900-px list scroll,
+metadata tap → NP root; `player=pause` item 211696@1490 vol 60
+byte-identical at every check, zero mutation requests, 0 `E/flutter`.
+Harness: MCP-first (agent-lens VM-service connect OK, `get_tree` failed)
+→ accepted #43/#40/#39/#48/#38 fallback (uiautomator content-desc +
+input + screencap, build/scratch/). BLOCKED-PENDING-SUPERVISION (pre-
+declared): bar play/pause LIVE on the real server — morning summary:
+tap bar play → server `play`, tap → `pause`. WITHHELD-with-proof
+(fixture preservation + no-audio): on-device prev/next taps and the
+stopped-state check — each covered by the fake-controller captured-call
+widget tests named in the report. Report
+`.ai-dlc/night-2026-11-19/reports/45.md`.
