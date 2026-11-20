@@ -2487,3 +2487,11 @@ external-playback observation**: found play 211617@183.8 s vol 100
 "proceed") then restored pause@199001 + vol 100. Device stayon restored.
 R-21…R-25 written into REQUIREMENTS; issue drafts 07–11 pending user
 review one-by-one (same flow as #38–#42).
+
+**N-issues published (2026-11-19):** #44 drawer (R-21, option B), #45
+mini transport bar (R-22), #46 queue drag-reorder (R-23), #47 queue
+remove/play-next (R-24), #48 section headers (R-25) — all reviewed
+one-by-one at the CLI and approved verbatim. retune-ux-capture closed
+again, this time with the navigation family properly captured (the v1
+inventory's false "bottom nav / mini player / reorder" claims corrected
+the same day). Open build queue now: #38–#42, #44–#48.
