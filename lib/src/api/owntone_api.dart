@@ -301,9 +301,14 @@ class OwntoneApi {
   /// Next / Add to Up Next. `playback=add` verified live 2026-11-20:
   /// accepted (200), player state stays `pause`.
   ///
-  /// [position] is sent ONLY when non-null and must be the CURRENT queue
-  /// length (tail append) or 0 (insert at list head): live-verified
-  /// 2026-11-20, a position beyond the real length is treated like an
+  /// [position] is sent ONLY when non-null. Official json-api docs
+  /// (docs-mcp 2026-11-20): "new items are inserted starting from this
+  /// position" — the first added item ENDS UP at [position]. R-19 uses it
+  /// for 0 (Play Next, list head) and the current length (Add to Up Next,
+  /// tail); R-24's queue-row Play Next (issue #47, QueueController.playNext)
+  /// reuses THIS method with `position = current + 1` — one position
+  /// variant, deliberately not a duplicated add method. It must also stay
+  /// the no-clear path: live-verified 2026-11-20, a position beyond the real length is treated like an
   /// omitted one — and with the server's shuffle mode on, an omitted/
   /// out-of-range position inserts at a RANDOM slot inside the unplayed
   /// region (observed 640/597/1061 in a 1396-item queue), not the tail.
@@ -352,6 +357,15 @@ class OwntoneApi {
   /// shared fixture — issue-46 report ASSUMPTIONS).
   Future<void> moveQueueItem(String entryId, int newPosition) =>
       _put('/api/queue/items/$entryId', {'new_position': newPosition});
+
+  /// Per-row Remove (R-24, issue #47): delete ONE queue entry —
+  /// `DELETE /api/queue/items/{id}` (`docs/API.md:95`; official json-api
+  /// docs via docs-mcp 2026-11-20 — 204 on success). A queue edit WITHOUT
+  /// `playback=start`: safe while paused (AGENTS safe list). Keyed on the
+  /// queue-entry `id` (never an index) — the hide-cut can shift indices
+  /// between build and tap, it cannot shift ids.
+  Future<void> deleteQueueItem(String entryId) =>
+      _dio.delete('/api/queue/items/$entryId');
 
   Future<void> play() => _put('/api/player/play');
   Future<void> pause() => _put('/api/player/pause');

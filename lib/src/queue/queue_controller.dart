@@ -236,6 +236,47 @@ class QueueController extends ChangeNotifier {
     },
   );
 
+  /// R-24 (issue #47) — per-row Remove: `DELETE /api/queue/items/{id}`
+  /// (docs/API.md:95, 204) with an optimistic splice, verbatim [_action]
+  /// participation (rollback + typed snackbar + trailing post-commit
+  /// refresh) — do NOT add a second refresh path (unit-011 stale-clobber
+  /// warnings above; same contract as [moveItem]). Keyed on the entry
+  /// **id**, never an index: the hide-cut can shift indices between the
+  /// row build and the tap, it cannot shift ids. Queue edit WITHOUT
+  /// `playback=start`: safe unattended while paused. The now-playing entry
+  /// is excluded client-side (the row exposes no menu — R-24; the server
+  /// would accept the DELETE, deliberately unprobed on the shared
+  /// fixture).
+  Future<bool> removeItem(QueueItem item) => _action(
+    'Remove',
+    (api) => api.deleteQueueItem(item.id),
+    optimistic: (before) => [
+      for (final e in before)
+        if (e.id != item.id) e,
+    ],
+  );
+
+  /// R-24 (issue #47) — per-row Play Next: insert a COPY of [item] just
+  /// after the current entry — `POST /api/queue/items/add` with `uris` =
+  /// the row's uri and `position` = current + 1 — via the #41 [addUris]
+  /// position variant (one add method, no duplication; **no `clear`**,
+  /// `playback=add` — playback untouched, safe while paused).
+  /// [position] comes from the
+  /// screen's [queuePlayNextPosition] at tap time (the screen owns
+  /// `PlayerState.itemId`, same split as [moveItem]'s absolute index).
+  /// **Insert-COPY is the CHOSEN semantics** (orchestrator-frozen): the
+  /// original row stays put and the track plays twice — ReTune's safe
+  /// default. Move-semantics (remove+insert) was NOT chosen: a queued row
+  /// is a library reference the user may have re-ordered deliberately,
+  /// and a compound remove+insert can half-fail (item gone, copy not in).
+  /// No optimistic edit (mirrors [addUris]): the server's `queue` WS
+  /// event + the [_action] trailing refresh land the post-commit list
+  /// (unit-011 single-flight — no hand-rolled refresh).
+  Future<bool> playNext(QueueItem item, {required int position}) => _action(
+    'Play next',
+    (api) => api.addUris([item.uri], position: position),
+  );
+
   Future<bool> _action(
     String label,
     Future<void> Function(OwntoneApi) fn, {
@@ -341,6 +382,19 @@ List<QueueItem> visibleQueue(
   if (cut == 0) return queue;
   return queue.sublist(cut);
 }
+
+/// R-24 (issue #47), pure: the `position` for a queue-row Play Next —
+/// `POST /api/queue/items/add?uris=…&position=<current+1>`: the copy
+/// becomes the next item to play, whatever the server's shuffle mode does
+/// with the rest (position in range IS honoured with shuffle on —
+/// live-verified 2026-11-20, unlike an omitted/out-of-range position).
+/// No current entry (stopped, or an itemId the list does not hold — e.g.
+/// a mid-refetch stale highlight) → 0: with nothing playing, "play next"
+/// means the head of the queue (minimal interpretation, ASSUMPTIONS).
+/// Shares [indexOfNowPlaying] with the highlight and the hide-cut — one
+/// definition of "current" for all three.
+int queuePlayNextPosition(List<QueueItem> queue, int? itemId) =>
+    (indexOfNowPlaying(queue, itemId) ?? -1) + 1;
 
 /// R-23 (issue #46), pure: maps a drop on the [visibleQueue] window to the
 /// absolute `new_position` for `PUT /api/queue/items/{id}` (docs/API.md:94 —

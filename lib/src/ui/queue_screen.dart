@@ -141,6 +141,20 @@ class _QueueScreenState extends State<QueueScreen> {
         // skips in place (queue content unchanged), it must NOT re-add
         // with clear+playback=start (that replaced the whole queue).
         onSkip: (item) => unawaited(queueController.skipToQueueItem(item)),
+        // R-24 (issue #47) per-row actions. The position is computed from
+        // the LIVE controller state at tap time (same live-read split as
+        // the drag's drop mapping — a build-time capture would go stale
+        // under a WS queue event).
+        onPlayNext: (item) => unawaited(
+          queueController.playNext(
+            item,
+            position: queuePlayNextPosition(
+              queueController.queue,
+              player.player?.itemId,
+            ),
+          ),
+        ),
+        onRemove: (item) => unawaited(queueController.removeItem(item)),
       ),
     );
   }
@@ -154,6 +168,8 @@ class _QueueList extends StatefulWidget {
     required this.nowPlayingId,
     required this.nowPlayingItemId,
     required this.onSkip,
+    required this.onPlayNext,
+    required this.onRemove,
   });
 
   final QueueController controller;
@@ -172,6 +188,13 @@ class _QueueList extends StatefulWidget {
   /// Row tap (issue #21): advance the queue in place to [item] —
   /// `QueueController.skipToQueueItem`, never `playUris`.
   final void Function(QueueItem item) onSkip;
+
+  /// R-24 (issue #47) row-menu actions: insert a COPY of [item] after the
+  /// current entry / delete [item]. Never offered on the now-playing row
+  /// (no menu at all — R-24; the server-side now-playing delete is
+  /// deliberately unprobed on the shared fixture).
+  final void Function(QueueItem item) onPlayNext;
+  final void Function(QueueItem item) onRemove;
 
   @override
   State<_QueueList> createState() => _QueueListState();
@@ -448,6 +471,83 @@ class _QueueListState extends State<_QueueList> {
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
+                    ),
+                  ),
+                  // R-24 (issue #47): ReTune's row accessory popup
+                  // (Play Next · Remove — 23-playing-audit A3, verified
+                  // with the player paused). PopupMenuButton is the
+                  // repo's M3 overflow precedent (browse_screens.dart);
+                  // swipe-to-dismiss was rejected because proving
+                  // row-tap-skip-in-place (#21) survives the Dismissible
+                  // gesture arena is the harder, riskier contract. The
+                  // NOW-PLAYING ROW IS EXCLUDED: this whole block is
+                  // gated on !isNowPlaying — neither action is offered
+                  // (or reachable) for the current entry (R-24). The
+                  // button's tap is consumed by PopupMenuButton itself —
+                  // it does not bubble to the row's InkWell, so the #21
+                  // skip stays tap-only (pinned by the non-regression
+                  // widget test).
+                  const SizedBox(width: 4),
+                  Semantics(
+                    label: 'Queue options ${item.title}',
+                    child: PopupMenuButton<String>(
+                      tooltip: 'Queue options',
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        Icons.more_vert,
+                        size: 20,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      onSelected: (value) {
+                        if (value == 'play-next') {
+                          widget.onPlayNext(item);
+                        } else if (value == 'remove') {
+                          widget.onRemove(item);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        // Menu items carry BOTH a tooltip and a semantics
+                        // label (R-24 "do better than ReTune's a11y-
+                        // invisible CheckedTextView popup").
+                        PopupMenuItem<String>(
+                          value: 'play-next',
+                          child: Tooltip(
+                            message: 'Play next',
+                            child: Semantics(
+                              label: 'Play next ${item.title}',
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                visualDensity: VisualDensity.compact,
+                                leading: const Icon(Icons.play_arrow),
+                                title: const Text('Play next'),
+                              ),
+                            ),
+                          ),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'remove',
+                          child: Tooltip(
+                            message: 'Remove from queue',
+                            child: Semantics(
+                              label: 'Remove ${item.title} from queue',
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                visualDensity: VisualDensity.compact,
+                                leading: Icon(
+                                  Icons.delete_outline,
+                                  color: theme.colorScheme.error,
+                                ),
+                                title: Text(
+                                  'Remove',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.error,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

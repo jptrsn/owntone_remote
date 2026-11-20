@@ -91,6 +91,95 @@ void main() {
     );
   });
 
+  // Issue #47 (R-24): per-row Remove + Play Next wire shape. Captured
+  // request lines are the contract (the #21/#41/#46 pattern) — the
+  // official json-api docs (docs-mcp 2026-11-20) freeze DELETE → 204
+  // and `position` = "items are inserted starting from this position".
+  group('R-24 wire format (issue #47)', () {
+    test('deleteQueueItem: DELETE /api/queue/items/{id} — path + id only, '
+        'no query (docs/API.md:95)', () async {
+      await api.deleteQueueItem('196176');
+      expect(adapter.requests.single, 'DELETE /api/queue/items/196176');
+    });
+
+    test('addUris position variant (play-next): uris + playback=add + '
+        'exact position, WITHOUT clear=true — the #41 method extended, '
+        'not duplicated', () async {
+      await api.addUris(['library:track:1193'], position: 1);
+      expect(
+        adapter.requests.single,
+        'POST /api/queue/items/add'
+        '?uris=library%3Atrack%3A1193&playback=add&position=1',
+      );
+    });
+
+    test('addUris without position stays position-free (the #41 tail '
+        'caller must keep its request shape)', () async {
+      await api.addUris(['library:track:1193'], position: null);
+      expect(adapter.requests.single, isNot(contains('position')));
+      expect(adapter.requests.single, contains('playback=add'));
+      expect(adapter.requests.single, isNot(contains('clear')));
+    });
+  });
+
+  // R-24 (issue #47), pure: the play-next position mapping. Shares
+  // indexOfNowPlaying with the highlight and the hide-cut — one "current"
+  // definition; no current entry ⇒ 0 (with nothing playing, "next" is
+  // the head — minimal interpretation, recorded in the controller doc).
+  group('queuePlayNextPosition (pure, R-24 issue #47)', () {
+    final queue = <QueueItem>[
+      QueueItem(
+        id: '1',
+        position: 0,
+        trackId: 10,
+        title: 'A',
+        artist: '',
+        album: '',
+        lengthMs: 1000,
+        uri: 'library:track:10',
+      ),
+      QueueItem(
+        id: '2',
+        position: 1,
+        trackId: 11,
+        title: 'B',
+        artist: '',
+        album: '',
+        lengthMs: 1000,
+        uri: 'library:track:11',
+      ),
+      QueueItem(
+        id: '3',
+        position: 2,
+        trackId: 12,
+        title: 'C',
+        artist: '',
+        album: '',
+        lengthMs: 1000,
+        uri: 'library:track:12',
+      ),
+    ];
+
+    test('anchor at index 0 → 1, at index 1 → 2, at the tail → length', () {
+      expect(queuePlayNextPosition(queue, 1), 1);
+      expect(queuePlayNextPosition(queue, 2), 2);
+      expect(queuePlayNextPosition(queue, 3), 3);
+    });
+
+    test('no current (stopped) → 0; an itemId the list does not hold → 0', () {
+      expect(queuePlayNextPosition(queue, null), 0);
+      // Stale/mid-refetch highlight (entry id absent from the list): the
+      // head is the honest answer, same unanchorable rule as the hide-cut.
+      expect(queuePlayNextPosition(queue, 99), 0);
+    });
+
+    test('matches on the ENTRY id, not track_id (shared rule)', () {
+      // track_id 11 would be index 1 by coincidence of this fixture;
+      // track_id 10 is NOT entry id 10 — no anchor → 0.
+      expect(queuePlayNextPosition(queue, 10), 0);
+    });
+  });
+
   group('QueueItem model', () {
     test('fromJson: the live wire shape (verified 2026-10-23)', () {
       final item = QueueItem.fromJson({

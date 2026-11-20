@@ -2825,3 +2825,58 @@ byte-identical at every checkpoint. BLOCKED-PENDING-SUPERVISION
 (pre-declared, run config): **Drag while PLAYING** — audible class,
 substitute proof = the pause-state server-verified drags + fake-API
 tests. Report `.ai-dlc/night-2026-11-19/reports/46.md`.
+
+## 2026-11-20 — overnight: issue #47 queue per-row Remove + Play Next (opencode)
+
+Unattended run (branch `fix/issue-47-queue-row-remove` off develop
+@`5dbefb4`). R-24 (N-04, 23-playing-audit A3) built: per-row
+`PopupMenuButton` accessory (repo M3 overflow precedent — Dismissible
+rejected per adjudication: popup simpler, no gesture-arena regression
+risk) offering **Play next · Remove** with tooltips + semantics labels
+(`Queue options <title>`, `Play next <title>`, `Remove <title> from
+queue` — ReTune's popup is a11y-invisible, R-24 says do better);
+**now-playing row renders NO menu** (neither action reachable).
+`QueueController.removeItem` = `DELETE /api/queue/items/{id}` via
+`_action` VERBATIM — ID-keyed optimistic splice (a hide-cut index-splice
+would remove the wrong row), rollback + typed snackbar, unit-011
+trailing refresh, no second refresh path. `playNext` = `POST
+queue/items/add` `uris` row-uri `position=current+1` **no clear**,
+`playback=add`, riding the **#41 addUris position variant (extended,
+not duplicated; playUris clear+start contract untouched)**;
+**insert-COPY chosen** (ReTune safe default, frozen adjudication — move
+semantics could half-fail; decision in code + report); pure
+`queuePlayNextPosition` (shares `indexOfNowPlaying`; no current → 0,
+minimal interpretation). API `deleteQueueItem` (204 semantics
+docs-mcp-confirmed 2026-11-20). 16 new R-24 tests (captured request
+lines: `DELETE /api/queue/items/196176` exact; add exact
+`...&playback=add&position=1` without clear/start; fake-500 rollback;
+now-playing exposes neither; hide-played interplay — above-cut rows
+unreachable + id-keyed delete can't touch the hidden region; **row-tap
+#21 non-regression** — body tap fires the skip, opens no popup).
+Gates: analyze 0, format clean, **591/591** (+16), debug APK builds.
+Device pass on the unit's own AVD `OwnToneNight_API_36` (created+
+deleted, 0 qemu after, serial by avd_name, Pixel 6 never targeted;
+fallback harness — uiautomator content-desc + input taps + server
+digests; **popup dumps came back complete — the empty-overlay dump trap
+did NOT reproduce on the AVD**; one a11y-bridge death recovered via
+force-stop+cold start as #46; harness finding: list flings must stay
+inside y∈[296,2253] — y≈2300 hits the mini-player).
+Safe-unattended instantiations, pause-checked at EVERY checkpoint
+(`pause`/shuffle=true/60/211696/1490 byte-identical throughout;
+versions 2619→2623 = exactly the four authorized mutations; 0
+E/flutter): **A1 Remove `Pride` (row 1395) via the app** → server
+count−1 + row gone (app+server) → curl re-add at 1395 (playback=add) →
+**uri-sequence digest == pre-action (`696bebed22030595` == `696bebed22030595`)**
+with the one restored-row id diff recorded honestly (212265→212654);
+**A2 Play Next `Oxy Moronic` (1394) via the app** → NEW id 212655 at
+current+1=492 with matching uri, original row STAYS (insert-COPY
+confirmed on-device) → curl DELETE 212655 (204) → **id-sequence digest
+== pre-action (`e3d1044d70fe65c4` == `e3d1044d70fe65c4`, byte-identical
+restore)**; hide-ON now-playing row content-desc has NO `Queue options`
+and NO `Reorder` while neighbours carry both.
+BLOCKED-PENDING-SUPERVISION (pre-declared, run config): **Remove while
+PLAYING** + supervised-manual-once — audible class; substitute proof =
+the pause-state server-verified round-trips + fake-API captured-request
+tests. On-device row-tap skip deliberately NOT run (play-class endpoint;
+widget test substitutes). Report
+`.ai-dlc/night-2026-11-19/reports/47.md`.

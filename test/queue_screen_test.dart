@@ -824,6 +824,329 @@ void main() {
     });
   });
 
+  // Issue #47 (R-24): ReTune's per-row accessory popup (Play Next ·
+  // Remove — 23-playing-audit A3, machine-verified with the player
+  // paused). PopupMenuButton = the repo's M3 overflow precedent; the
+  // now-playing row exposes NEITHER action (its block is gated on
+  // !isNowPlaying). Captured-request assertions follow the #21/#41/
+  // #46 pattern — the fake API records the exact request lines.
+  group('R-24 per-row Remove + Play Next (issue #47)', () {
+    Finder menu(String title) => find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Queue options $title',
+    );
+    Finder menuItem(String label) => find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == label,
+    );
+
+    Future<void> openMenu(WidgetTester tester, String title) async {
+      await tester.tap(menu(title));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('removeItem (controller): exactly one DELETE with the '
+        'entry id + the GET /api/queue trailing refresh, optimistic '
+        'splice, zero other mutating/transporting calls — the _action '
+        'pattern verbatim (R-24)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      final before = adapter.requests.length;
+      final house = queue.queue.firstWhere((e) => e.title == 'House Party');
+      late bool ok;
+      await tester.runAsync(() async {
+        ok = await queue.removeItem(house);
+      });
+      await settle(tester);
+      expect(ok, isTrue);
+      final fired = adapter.requests.skip(before).toList();
+      expect(
+        fired.where((r) => r.startsWith('DELETE')),
+        ['DELETE /api/queue/items/196176'],
+        reason:
+            'exact DELETE path + the tapped row\'s QUEUE-ENTRY id '
+            '(docs/API.md:95), keyed on id not index (hide-cut safe)',
+      );
+      expect(
+        fired,
+        contains('GET /api/queue'),
+        reason: 'trailing post-commit refresh (unit-011)',
+      );
+      expect(
+        fired.where(
+          (r) =>
+              r.contains('/items/add') ||
+              r.contains('/api/queue/clear') ||
+              r.startsWith('PUT /api/player') ||
+              r.contains('new_position'),
+        ),
+        isEmpty,
+        reason: 'remove must transport nothing and touch nothing else',
+      );
+      expect(queue.queue.map((e) => e.title), ['Skunk', 'Blues in the Attic']);
+    });
+
+    testWidgets('removeItem failure (fake 500): pre-action list restored '
+        '+ typed _describeActionError (R-24 — the clear-proven _action '
+        'contract)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      fx.failRemove = true;
+      final house = queue.queue.firstWhere((e) => e.title == 'House Party');
+      late bool ok;
+      await tester.runAsync(() async {
+        ok = await queue.removeItem(house);
+      });
+      expect(ok, isFalse);
+      expect(
+        queue.actionError,
+        contains('Remove failed — server answered HTTP 500.'),
+      );
+      expect(queue.queue.map((e) => e.title), [
+        'Skunk',
+        'Blues in the Attic',
+        'House Party',
+      ], reason: 'rollback to the pre-action list');
+    });
+
+    testWidgets('playNext (controller): ONE add WITHOUT clear/start with '
+        'position=current+1=1 (Skunk is current at 0) + trailing GET '
+        '(R-24)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      final before = adapter.requests.length;
+      final house = queue.queue.firstWhere((e) => e.title == 'House Party');
+      late bool ok;
+      await tester.runAsync(() async {
+        ok = await queue.playNext(
+          house,
+          position: queuePlayNextPosition(queue.queue, 196174),
+        );
+      });
+      await settle(tester);
+      expect(ok, isTrue);
+      final fired = adapter.requests.skip(before).toList();
+      expect(
+        fired.where((r) => r.contains('/items/add')),
+        [
+          'POST /api/queue/items/add'
+              '?uris=library%3Atrack%3A1193&playback=add&position=1',
+        ],
+        reason:
+            'the row\'s OWN uri re-added at current+1 — the #41 '
+            'addUris position variant, no duplicate add method (R-24)',
+      );
+      expect(
+        fired.where((r) => r.contains('clear=true')),
+        isEmpty,
+        reason: 'a queue INSERT must never clear (the #21 defect class)',
+      );
+      expect(
+        fired.where((r) => r.contains('playback=start')),
+        isEmpty,
+        reason: 'playback untouched — safe unattended while paused',
+      );
+      expect(
+        fired.where((r) => r.startsWith('PUT /api/player/play')),
+        isEmpty,
+        reason: 'Play next is not a skip either (that stays row-tap-only)',
+      );
+      expect(fired, contains('GET /api/queue'));
+    });
+
+    testWidgets('row menu on every NON-now-playing row; the now-playing '
+        'row exposes NEITHER action (no button at all) (R-24)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      expect(menu('Blues in the Attic'), findsOneWidget);
+      expect(menu('House Party'), findsOneWidget);
+      expect(
+        menu('Skunk'),
+        findsNothing,
+        reason:
+            'Skunk is the now-playing row (item_id 196174) — R-24 '
+            'excludes it from both actions',
+      );
+      expect(
+        find.byTooltip('Queue options'),
+        findsNWidgets(2),
+        reason: 'exactly the two non-current rows carry the accessory',
+      );
+    });
+
+    testWidgets('Remove via the menu: exactly the DELETE + trailing GET, '
+        'the row vanishes, zero add/clear/player calls (R-24)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      final before = adapter.requests.length;
+
+      await openMenu(tester, 'House Party');
+      await tester.tap(find.text('Remove'));
+      await settle(tester);
+
+      final fired = adapter.requests.skip(before).toList();
+      expect(fired.where((r) => r.startsWith('DELETE')), [
+        'DELETE /api/queue/items/196176',
+      ]);
+      expect(
+        fired.where(
+          (r) =>
+              r.contains('/items/add') ||
+              r.contains('/api/queue/clear') ||
+              r.startsWith('PUT /api/player'),
+        ),
+        isEmpty,
+      );
+      expect(find.text('House Party'), findsNothing, reason: 'row gone');
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+    });
+
+    testWidgets('Play next via the menu: exact add position=1 without '
+        'clear=true/start, and the tapped row STAYS — insert-COPY, not '
+        'move (R-24 chosen semantics)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      final before = adapter.requests.length;
+
+      await openMenu(tester, 'House Party');
+      await tester.tap(find.text('Play next'));
+      await settle(tester);
+
+      final fired = adapter.requests.skip(before).toList();
+      expect(fired.where((r) => r.contains('/items/add')), [
+        'POST /api/queue/items/add'
+            '?uris=library%3Atrack%3A1193&playback=add&position=1',
+      ]);
+      expect(fired.where((r) => r.contains('clear=true')), isEmpty);
+      expect(fired.where((r) => r.contains('playback=start')), isEmpty);
+      expect(
+        fired.where((r) => r.startsWith('DELETE')),
+        isEmpty,
+        reason:
+            'insert-COPY (ReTune-safe default, orchestrator-frozen): '
+            'a move would DELETE the original row too',
+      );
+      expect(fired, contains('GET /api/queue'));
+      // The copy landed at 1 (fixture-inserted); the ORIGINAL row stays.
+      expect(find.text('House Party'), findsOneWidget);
+      expect(find.text('Added library:track:1193'), findsOneWidget);
+    });
+
+    testWidgets('failed remove (fake 500): rows roll back + typed '
+        'snackbar (R-24)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      fx.failRemove = true;
+
+      await openMenu(tester, 'House Party');
+      await tester.tap(find.text('Remove'));
+      await settle(tester);
+
+      expect(
+        find.textContaining('Remove failed'),
+        findsOneWidget,
+        reason: 'typed _describeActionError snackbar (R-24)',
+      );
+      expect(find.text('House Party'), findsOneWidget, reason: 'rollback');
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+    });
+
+    testWidgets('menu items carry tooltips AND semantics labels (R-24 — '
+        "do better than ReTune's a11y-invisible CheckedTextView popup)", (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+
+      await openMenu(tester, 'House Party');
+      expect(find.byTooltip('Play next'), findsOneWidget);
+      expect(find.byTooltip('Remove from queue'), findsOneWidget);
+      expect(menuItem('Play next House Party'), findsOneWidget);
+      expect(menuItem('Remove House Party from queue'), findsOneWidget);
+    });
+
+    testWidgets('row tap STILL fires the #21 skip-in-place and opens no '
+        'popup — the accessory must not regress the tap (R-10/R-11, '
+        'issue #21 non-regression)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      final before = adapter.requests.length;
+
+      await tester.tap(find.text('House Party'));
+      await settle(tester);
+
+      final fired = adapter.requests.skip(before).toList();
+      expect(
+        fired,
+        contains('PUT /api/player/play?item_id=196176'),
+        reason: 'row body tap = skip in place (issue #21)',
+      );
+      expect(
+        fired.where((r) => r.contains('/items/add') || r.startsWith('DELETE')),
+        isEmpty,
+      );
+      expect(
+        find.text('Play next'),
+        findsNothing,
+        reason: 'a body tap must NOT open the accessory popup',
+      );
+    });
+
+    testWidgets('hide-played interplay (R-24 × issue #23): rows ABOVE the '
+        'cut are unremovable (no menu rendered), and removing a visible '
+        'row leaves the hidden region untouched', (tester) async {
+      await tester.runAsync(() => wireUp(configure: (f) => f.itemId = 196175));
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      await tester.tap(find.byTooltip('Hide items played earlier'));
+      await settle(tester);
+      // Visible window [Blues (current), House Party]; Skunk is above the
+      // cut — not rendered, hence no menu to reach either (the only way
+      // "remove a row above the cut" could happen is an index bug; the
+      // id-keyed DELETE makes that structurally impossible).
+      expect(find.text('Skunk'), findsNothing);
+      expect(menu('Skunk'), findsNothing);
+      expect(menu('House Party'), findsOneWidget);
+      final before = adapter.requests.length;
+
+      await openMenu(tester, 'House Party');
+      await tester.tap(find.text('Remove'));
+      await settle(tester);
+
+      final fired = adapter.requests.skip(before).toList();
+      expect(
+        fired.where((r) => r.startsWith('DELETE')),
+        ['DELETE /api/queue/items/196176'],
+        reason:
+            'exactly the tapped row; the hidden row above the cut '
+            'is untouched (no DELETE for id 196174 anywhere)',
+      );
+      expect(
+        adapter.requests.where((r) => r.contains('196174')),
+        isEmpty,
+        reason: 'id-keyed delete can never reach the hidden region',
+      );
+      expect(find.text('House Party'), findsNothing);
+      // Toggle back: the cut re-derives over the new full list — Skunk
+      // (above the old cut) is STILL there; House Party is gone from the
+      // underlying list, not just the window.
+      await tester.tap(find.byTooltip('Show items played earlier'));
+      await settle(tester);
+      expect(find.text('Skunk'), findsOneWidget);
+      expect(find.text('Blues in the Attic'), findsOneWidget);
+      expect(find.text('House Party'), findsNothing);
+    });
+  });
+
   group('R-11 refresh (R-02)', () {
     testWidgets('WS queue event (external change) refetches', (tester) async {
       await tester.runAsync(wireUp);
@@ -1154,6 +1477,14 @@ class Fixture {
   /// rollback + snackbar path can be asserted.
   bool failMove = false;
 
+  /// R-24 (issue #47): when true, the per-row remove DELETE fails with a
+  /// 500, so the rollback + snackbar path can be asserted.
+  bool failRemove = false;
+
+  /// Fresh ids for added entries (210000+ keeps them clear of the
+  /// 196xxx/200xxx ids other tests insert).
+  int _addId = 210000;
+
   /// While true, REST calls fail and new WS handshakes fail — the app stays
   /// in its offline state until this is cleared (the unit 002 dropServer
   /// pattern), so a test can observe the offline window before the backoff
@@ -1211,8 +1542,27 @@ class Fixture {
     // official json-api docs (verified 2026-11-20): `new_position` is the
     // entry's FINAL index — a MOVE (remove + insert), not a swap — and
     // 204 on success.
-    final moveMatch = RegExp(r'^/api/queue/items/(\d+)$').firstMatch(p);
-    if (moveMatch != null) {
+    final itemMatch = RegExp(r'^/api/queue/items/(\d+)$').firstMatch(p);
+    if (itemMatch != null) {
+      final id = int.parse(itemMatch.group(1)!);
+      // R-24 (issue #47): per-row remove. Server-true semantics per the
+      // official json-api docs (docs-mcp 2026-11-20): 204, the entry is
+      // gone, remaining entries renumber. Keyed on the ENTRY id (never
+      // an index — mirror of OwntoneApi.deleteQueueItem).
+      if (o.method == 'DELETE') {
+        if (failRemove) {
+          throw DioException(
+            requestOptions: o,
+            type: DioExceptionType.badResponse,
+            response: Response(requestOptions: o, statusCode: 500),
+          );
+        }
+        final at = items.indexWhere((e) => e['id'] == id);
+        if (at == -1) return Response(requestOptions: o, statusCode: 404);
+        items.removeAt(at);
+        renumber();
+        return Response(requestOptions: o, statusCode: 204);
+      }
       if (o.method != 'PUT') {
         return Response(requestOptions: o, statusCode: 405);
       }
@@ -1223,7 +1573,6 @@ class Fixture {
           response: Response(requestOptions: o, statusCode: 500),
         );
       }
-      final id = int.parse(moveMatch.group(1)!);
       final from = items.indexWhere((e) => e['id'] == id);
       if (from == -1) return Response(requestOptions: o, statusCode: 404);
       final to = int.tryParse(o.uri.queryParameters['new_position'] ?? '');
@@ -1289,19 +1638,26 @@ class Fixture {
         final shouldClear = q['clear'] == 'true';
         if (shouldClear) items.clear();
         // Expand each uri as one fresh entry (the server expands containers;
-        // the fixture's uris are all tracks).
+        // the fixture's uris are all tracks). R-24 (issue #47): `position`
+        // honoured per the official docs — "items are inserted starting
+        // from this position" (the first lands AT it); omitted → tail
+        // append (out-of-range is deliberately NOT modelled: every caller
+        // pins an in-range position, see OwntoneApi.addUris).
+        final at = int.tryParse(q['position'] ?? '');
         for (var i = 0; i < uris.length; i++) {
           final m = RegExp(r'library:track:(\d+)').firstMatch(uris[i]);
-          items.add(
+          items.insert(
+            (at == null ? items.length : at + i).clamp(0, items.length),
             track(
-              200000 + i,
-              items.length,
+              _addId++,
+              0,
               'Added ${uris[i]}',
               int.parse(m?.group(1) ?? '0'),
               100000,
             ),
           );
         }
+        renumber();
         return jsonResponse(o, {
           'version': 2,
           'count': items.length,
