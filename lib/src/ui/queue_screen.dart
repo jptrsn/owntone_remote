@@ -7,6 +7,7 @@ import '../connection/connection_controller.dart';
 import '../player/player_controller.dart';
 import '../queue/queue_controller.dart';
 import '../queue/queue_item.dart';
+import 'app_drawer.dart';
 import 'browse_rows.dart';
 import 'browse_screen_scaffold.dart';
 import 'list_states.dart';
@@ -107,6 +108,7 @@ class _QueueScreenState extends State<QueueScreen> {
 
     return BrowseScreenScaffold(
       title: 'Queue',
+      drawer: const AppDrawer(selected: DrawerDestination.queue),
       offlineMessage: 'Server unreachable — retrying. Queue disabled.',
       actions: [
         IconButton(

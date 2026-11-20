@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../connection/connection_controller.dart';
+import 'app_drawer.dart';
 import 'connection_banner.dart';
 import 'outputs_screen.dart';
 
@@ -25,6 +26,7 @@ class BrowseScreenScaffold extends StatefulWidget {
     this.onReconnect,
     this.onLibraryChanged,
     this.actions,
+    this.drawer,
     this.offlineMessage = 'Server unreachable — retrying. Browsing disabled.',
   });
 
@@ -35,6 +37,14 @@ class BrowseScreenScaffold extends StatefulWidget {
 
   /// App-bar actions (unit 005b: the queue screen's clear button).
   final List<Widget>? actions;
+
+  /// The R-21 navigation drawer (issue #44), mirrored like [actions] from
+  /// the call site so each screen names its own selected destination.
+  /// Defaults to a plain [AppDrawer] (hamburger on every browse screen —
+  /// the frozen "hamburger on every main screen" contract); pass
+  /// `const AppDrawer(selected: …)` on screens that are drawer
+  /// destinations.
+  final Widget? drawer;
 
   final String offlineMessage;
 
@@ -78,7 +88,16 @@ class _BrowseScreenScaffoldState extends State<BrowseScreenScaffold> {
     }
     final enabled = conn.phase == ConnectionPhase.connected;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title), actions: widget.actions),
+      // drawerAwareLeading: AppBar's auto-leading replaces the BackButton
+      // with the DrawerButton once a drawer exists — pushed screens need
+      // both (app_drawer.dart explains; do not reduce to leading: null).
+      appBar: AppBar(
+        title: Text(widget.title),
+        leading: drawerAwareLeading(context),
+        leadingWidth: drawerAwareLeadingWidth(context),
+        actions: widget.actions,
+      ),
+      drawer: widget.drawer ?? const AppDrawer(),
       body: Column(
         children: [
           if (!enabled) ConnectionBanner(message: widget.offlineMessage),

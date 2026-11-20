@@ -8,6 +8,7 @@ import '../core/server_config.dart';
 import '../settings/settings_store.dart';
 import '../settings/theme_preference.dart';
 import 'about_screen.dart';
+import 'app_drawer.dart';
 
 /// Settings (R-01, R-14, R-26): manual host + JSON-port entry persisted via
 /// [SettingsStore], the volume-rocker step (1–10, applied to the next
@@ -102,8 +103,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final conn = context.watch<ConnectionController>();
     final canPop = Navigator.of(context).canPop();
     return Scaffold(
+      // R-21 (issue #44): hamburger on the standalone Settings Scaffold;
+      // drawerAwareLeading keeps the BackButton on the pushed variant.
       appBar: AppBar(
         title: Text(canPop ? 'Server' : 'Connect'),
+        leading: drawerAwareLeading(context),
+        leadingWidth: drawerAwareLeadingWidth(context),
         actions: [
           if (canPop)
             IconButton(
@@ -113,6 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
         ],
       ),
+      drawer: const AppDrawer(selected: DrawerDestination.settings),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),

@@ -8,6 +8,7 @@ import '../queue/queue_controller.dart';
 import '../rating/rating_controller.dart';
 import '../library/library_models.dart';
 import '../library/paged_list.dart';
+import 'app_drawer.dart';
 import 'browse_rows.dart';
 import 'browse_screen_scaffold.dart';
 import 'paged_browse_screen.dart';
@@ -50,6 +51,7 @@ class LibraryHomeScreen extends StatelessWidget {
       title: 'Library',
       // R-18: outputs one tap away from every browse screen (D-09).
       actions: const [OutputsAppBarAction()],
+      drawer: const AppDrawer(selected: DrawerDestination.library),
       body: ListView.separated(
         padding: const EdgeInsets.all(8),
         itemCount: _sections.length,
@@ -90,6 +92,7 @@ class PlaylistsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return PagedBrowseScreen<Playlist>(
       title: 'Playlists',
+      drawer: const AppDrawer(selected: DrawerDestination.playlists),
       what: 'playlists',
       emptyMessage: 'No playlists in the library.',
       emptyIcon: Icons.queue_music,
@@ -155,6 +158,7 @@ class ArtistsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return PagedBrowseScreen<Artist>(
       title: 'Artists',
+      drawer: const AppDrawer(selected: DrawerDestination.artists),
       what: 'artists',
       emptyMessage: 'No artists in the library.',
       emptyIcon: Icons.person,
@@ -231,6 +235,7 @@ class AlbumsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return PagedBrowseScreen<Album>(
       title: 'Albums',
+      drawer: const AppDrawer(selected: DrawerDestination.albums),
       what: 'albums',
       emptyMessage: 'No albums in the library.',
       emptyIcon: Icons.album,
@@ -271,6 +276,7 @@ class TracksScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return PagedBrowseScreen<Track>(
       title: 'Songs',
+      drawer: const AppDrawer(selected: DrawerDestination.songs),
       what: 'tracks',
       emptyMessage: 'No tracks in the library.',
       emptyIcon: Icons.music_note,
@@ -338,6 +344,7 @@ class GenresScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return PagedBrowseScreen<Genre>(
       title: 'Genres',
+      drawer: const AppDrawer(selected: DrawerDestination.genres),
       what: 'genres',
       emptyMessage: 'No genres in the library.',
       emptyIcon: Icons.label_outline,

@@ -23,6 +23,7 @@ class PagedBrowseScreen<T> extends StatefulWidget {
     required this.emptyIcon,
     required this.what,
     this.groupKeyOf,
+    this.drawer,
   });
 
   final String title;
@@ -45,6 +46,11 @@ class PagedBrowseScreen<T> extends StatefulWidget {
   /// R-25: forwarded to [PagedBrowseList] — set to get alphabetical
   /// section headers (Artists/Genres; Songs when #38 lands).
   final String Function(T item)? groupKeyOf;
+
+  /// R-21: forwarded to [BrowseScreenScaffold] — the drawer with this
+  /// screen's `selected:` destination (null → plain hamburger, e.g. the
+  /// detail screens that are not drawer destinations).
+  final Widget? drawer;
 
   @override
   State<PagedBrowseScreen<T>> createState() => _PagedBrowseScreenState<T>();
@@ -84,6 +90,7 @@ class _PagedBrowseScreenState<T> extends State<PagedBrowseScreen<T>> {
       // 360-logical-px overflow constraint (unit 004 finding) is pinned by
       // test/outputs_appbar_test.dart.
       actions: const [OutputsAppBarAction()],
+      drawer: widget.drawer,
       onReconnect: _onReconnect,
       onLibraryChanged: _list.started ? () => unawaited(_list.reload()) : null,
       body: PagedBrowseList(
