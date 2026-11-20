@@ -2972,4 +2972,10 @@ behind an Advanced affordance).
 Process lesson (user correction, honored): every `input tap` must be
 immediately preceded by its own widget-tree dump — earlier taps taken from
 stale/remembered geometry opened Google account settings, popped the sheet,
-and summoned the hold-to-search overlay before the rule was enforced.
+and summoned the hold-to-search overlay before the rule was enforced. The
+rule proved necessary twice over: a LATE tap (theme-restore, coordinates
+one dump old) landed under a Google overlay and launched Calendar while the
+Flutter tree still looked healthy — the tree cannot see system overlays, so
+`topResumedActivity` must be checked before taps (rule now in pipeline.md;
+app re-foregrounded via explicit component intent, pref `system` and player
+`pause` confirmed by read-only checks).
