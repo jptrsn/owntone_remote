@@ -4,12 +4,18 @@ Authoritative process definition for an **unattended overnight run** of serial
 units: build → PR → review → (fix → re-review)* → merge → next unit. Executed
 by a **fresh session** with no other context. Generalized from
 `kestra/overnight-pipeline-generic.md` (Obsidian), instantiated for this repo
-2026-11-18 for GitHub issues #19–#26.
+2026-11-18 for GitHub issues #19–#26 (run complete) and re-instantiated
+2026-11-19 for GitHub issues #38–#48 (the eleven open issues; this Run
+configuration reflects that instantiation — the 2026-11-18 values are
+superseded below and preserved only in git history).
 
-**Run authorization:** the user authorized unattended merge to `develop` for
-the `<cfg:units>` list on 2026-11-18 ("work through each of these issues
-without requiring my intervention or supervision"). That authorization is
-LIMITED to these units and the commits/pushes/merges this document names.
+**Run authorization:** the user authorized unattended build, commit, push,
+review, fix and squash-merge to `develop` for the `<cfg:units>` list on
+2026-11-19 (same scope and limits as the consumed 2026-11-18 authorization:
+no repo creation, no audible playback, no devices outside the per-unit night
+AVD — never the Pixel 6, never emulator-5554, no library mutations). That
+authorization is LIMITED to these units and the commits/pushes/merges this
+document names.
 It does not authorize: creating repositories (hard-banned,
 `~/.config/opencode/AGENTS.md` + opencode permissions), starting audible
 playback (AGENTS hard rule 1), touching devices outside `<cfg:device policy>`,
@@ -33,15 +39,15 @@ or library mutations on the server.
 | Key | Value |
 |---|---|
 | `repo` | `jptrsn/owntone_remote`, remote `origin` (ssh), base **`develop`**, merge style **squash** (`gh pr merge <n> --squash --delete-branch`) |
-| `units` | serial order: **#25 → #26 → #24 → #19 → #23 → #22 → #21 → #20** (pure-UI first, server-semantics last). Branch `fix/issue-<n>-<slug>`. Spec: `.ai-dlc/night-2026-11-18/issues/<n>.md` (frozen copies of the issues; canonical = the GitHub issue). Subject = the issue title. |
-| `prior state` | nothing pushed for these units; every unit starts at build. PR bodies MUST contain `Closes #<n>`. |
+| `units` | serial order: **#43 → #40 → #39 → #48 → #38 → #44 → #45 → #41 → #46 → #47 → #42** (isolated UI first, shared-scaffold navigation next, queue/server-semantics after, mDNS discovery last). Branch `fix/issue-<n>-<slug>`. Spec: `.ai-dlc/night-2026-11-19/issues/<n>.md` (frozen copies of the issues; canonical = the GitHub issue). Subject = the issue title. |
+| `prior state` | no branches/PRs exist for any of these units (verified Step 0); every unit starts at build. PR bodies MUST contain `Closes #<n>`. |
 | `standing file` | `AGENTS.md` (repo root). "Done means" = its § Quality gates; audio safety = § Hard rules 1 (verbatim non-negotiable); device isolation = § Hard rule 2. |
 | `gates` | `flutter analyze` (0 issues) · `dart format --output=none --set-exit-if-changed .` · `flutter test --exclude-tags live` (all green, ~443) · `flutter build apk --debug`. Expect `analysis_options.yaml` churn from analyze — commit it. |
-| `report format` | per-unit report `.ai-dlc/night-2026-11-18/reports/<n>.md`, committed on the unit branch, mandatory fields: `SUMMARY`, `GATES` (verbatim tails), `OBSERVED` (action → result per device check, incl. BLOCKED-PENDING-SUPERVISION rows), `ASSUMPTIONS`, `RESOLVED FINDINGS` (per review round). A `docs/SESSION-LOG.md` entry is added by the build subagent in the unit's final commit (repo rule). |
+| `report format` | per-unit report `.ai-dlc/night-2026-11-19/reports/<n>.md`, committed on the unit branch, mandatory fields: `SUMMARY`, `GATES` (verbatim tails), `OBSERVED` (action → result per device check, incl. BLOCKED-PENDING-SUPERVISION rows), `ASSUMPTIONS`, `RESOLVED FINDINGS` (per review round). A `docs/SESSION-LOG.md` entry is added by the build subagent in the unit's final commit (repo rule). |
 | `external deps` | OwnTone server `192.168.1.13` (REST :3689, ws :3688, v29.3) — **shared with another active session.** GET freely. Safe unattended: `pause`, `stop`, `seek`, volume PUT, queue edits **without** `playback=start`, output enable/disable **while paused**, library reads. **NEVER** any call or UI tap that can start audio (`player/play|toggle`, `next/previous` that could transition into play, `playback=start`, app play button). Before any device step: `curl -s $BASE/api/player` — if `state == "play"` the user is listening: **skip device steps**, rely on fakes/widget tests, record it. Reliable outputs: Volumio Kitchen (AirPlay), Server (ALSA); Chromecast remote outputs fail server-side selection. No library mutations, ever. No `PUT /api/update|/api/rescan`. |
 | `device policy` | Each unit creates its own AVD `OwnToneNight_API_36` (`android-36 google_apis`, arm64) and **deletes it at unit end, including on blockers**. Emulator/sdkmanager at `~/Library/Android/sdk/...` (no `ANDROID_HOME`). Resolve serial via `getprop ro.boot.qemu.avd_name` after boot; **never** touch `Pixel_9_Pro_API_36` / `emulator-5554` or any AVD you did not create; **Pixel 6 `25071FDF600953` is off-limits overnight** (user's daily driver). App under test via `flutter run -d <serial>`; inspect with flutter-agent-lens (widget tree, screenshot, console) + dart MCP tools; `evaluate_expression` returns cap 128 chars — chunk; read `flutter run` console for framework errors. |
-| `review grounding` | Reviewers load the `agentic-code-review` skill and follow it; grounding docs via docs-mcp: `owntone-server`, `flutter`, `audio_service`, `just_audio`, `provider`. Contract = `AGENTS.md` hard rules + `docs/ARCHITECTURE.md`. Deliberately-open defects that must NOT be re-reported: the other open issues in #19–#26 (out of this unit's scope) and the Known-limitations list in `docs/RELEASE-NOTES.md`. |
-| `unit exceptions` | **#20 and #21**: completion criteria that need audible playback (confirm-stops-while-playing; hear-the-advance) are recorded `BLOCKED-PENDING-SUPERVISION` in the report's OBSERVED section — the unit still merges on the strength of the paused-state + fake-controller evidence, and is flagged in the morning summary. **#22**: emulator-level suppression is provable unattended (inject `adb -s <serial> shell input keyevent 24/25`); the real-hardware re-check is flagged for the morning. |
+| `review grounding` | Reviewers load the `agentic-code-review` skill and follow it; grounding docs via docs-mcp: `owntone-server`, `flutter`, `audio_service`, `just_audio`, `provider`. Contract = `AGENTS.md` hard rules + `docs/ARCHITECTURE.md`. Deliberately-open defects that must NOT be re-reported: the OTHER issues in #38–#48 (out of this unit's scope) and the Known-limitations list in `docs/RELEASE-NOTES.md`. |
+| `unit exceptions` | **#41, #45, #46, #47**: any completion criterion that needs AUDIBLE playback (#41 Play All/Shuffle, #45 bar play/pause live, #46 drag while playing, #47 remove-while-playing) and their "supervised manual once" rows are recorded `BLOCKED-PENDING-SUPERVISION` in the report's OBSERVED section and flagged in the morning summary — the unit still merges on the strength of the paused-state + fake-controller evidence. Queue add/move/delete WITHOUT `playback=start` and volume/seek PUTs remain safe unattended. **#42**: `dns-sd` browse/query and `live`-tagged discovery tests against the LAN server are safe (no playback); the mDNS plugin choice must be justified in the PR body. |
 | `review cap` | 3 rounds. |
 | `ledger path` | `docs/overnight-ledger.md` — gitignored (confirmed in Step 0), never committed. |
 | `scratch` | **ONLY `/tmp/**` (subfolders included) and the repo working tree.** No reads or writes of user files outside these (no `~` scratch, no `/var/folders` scratch, no vault access). Reviewer/fix worktrees: `/tmp/owntone-night/pr<n>/`. Downloads/keystore material are never needed. |
@@ -125,7 +131,7 @@ continue from the latest `next:`.
 1. Create the ledger (confirm gitignored). `RUN_UNIQUE`.
 2. `git fetch origin && git checkout develop && git pull`; `git status --short` must be empty.
 3. `gh auth status`; confirm `gh pr view` sees the repo.
-4. No prior-state PRs to open (all units start at build). Enter the loop at unit #25.
+4. No prior-state PRs to open (all units start at build). Enter the loop at unit #43.
 
 ### Step 1 — build unit N
 1. Gate `PREVIOUS_MERGED`; `git checkout develop && git pull && git checkout -b fix/issue-<n>-<slug>`.
@@ -148,7 +154,7 @@ continue from the latest `next:`.
 ### Final summary
 Ledger `PIPELINE COMPLETE` (or `PIPELINE STOPPED — <reason>`): every PR
 number/state/head SHA, what merged, what is left for the human (supervised
-rows from #20/#21/#22, any ASSUMPTIONS/BLOCKED entries), device state (all
+rows from #41/#45/#46/#47, any ASSUMPTIONS/BLOCKED entries), device state (all
 night AVDs confirmed deleted). Last message of the session mirrors it.
 
 ## The unattended contract
@@ -205,7 +211,7 @@ Each = unattended contract (verbatim) + task block. Spawned via Task tool,
 
 ```
 Your task: fix GitHub issue #<n>, spec (frozen):
-.ai-dlc/night-2026-11-18/issues/<n>.md. Branch <branch> exists and is checked
+.ai-dlc/night-2026-11-19/issues/<n>.md. Branch <branch> exists and is checked
 out. Read AGENTS.md, then docs/REQUIREMENTS.md (the R-IDs the issue names),
 docs/ARCHITECTURE.md, and the code sites the issue names.
 
@@ -220,7 +226,7 @@ Commits: commit AND push after each verified step; final commit includes the
 docs/SESSION-LOG.md entry. Message style per AGENTS (why, not what).
 
 Before returning: all gates green in the tree; report at
-.ai-dlc/night-2026-11-18/reports/<n>.md with every mandatory field; git
+.ai-dlc/night-2026-11-19/reports/<n>.md with every mandatory field; git
 status clean; your AVD deleted; final ledger entry appended.
 
 Return (and only this):
@@ -236,10 +242,10 @@ Load the agentic-code-review skill and follow it. Do all work in your own
 worktree: git worktree add /tmp/owntone-night/pr<n> <branch>; dependencies
 there. The diff is `gh pr diff <n>` — never the worktree's branch state.
 Gates to run in the worktree: <cfg:gates>. Behaviour verification is already
-recorded in .ai-dlc/night-2026-11-18/reports/<n>.md — cite it, do not re-run
+recorded in .ai-dlc/night-2026-11-19/reports/<n>.md — cite it, do not re-run
 device checks. Ground docs-mcp: ownTone-server, flutter, audio_service,
 just_audio, provider. AGENTS.md hard rules + docs/ARCHITECTURE.md are a
-contract; open issues #19–#26 (other than this one) and RELEASE-NOTES known
+contract; open issues #38–#48 (other than this one) and RELEASE-NOTES known
 limitations are deliberately open — do not re-report them.
 Read-only toward repo and GitHub: no edits, no push, no merges, no gh writes.
 Every finding needs evidence (file:line, gate output, concrete failure).
