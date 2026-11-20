@@ -2448,3 +2448,11 @@ confirmed; D-03/D-10 deferred as taste); mDNS moved INTO scope (R-20 —
 was listed out-of-scope pre-gate); unit 004 done — **intent complete**.
 Issue drafts: `.ai-dlc/retune-ux-capture/issues/` (6, repo issue style;
 publish pending user go).
+
+**Issues published (2026-11-19):** #38 Songs view (R-15), #39 Go to
+Artist/Album (R-17), #40 global outputs action (R-18), #41 detail context
+actions (R-19), #42 mDNS discovery (R-20). #02 draft (playlist artwork,
+D-05/R-16) **declined by user at review** ("skip it, I don't care about
+this one") — R-16 withdrawn in REQUIREMENTS, diff-list D-05 marked
+SKIPPED, draft kept unposted for the record. retune-ux-capture fully
+closed; build work now tracked by #38–#42 (units off develop per GitFlow).

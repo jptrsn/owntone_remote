@@ -186,13 +186,19 @@ paged two-line list (`title` / `artist - album`) via
 (same contract as other browse screens); row play replaces the queue and
 starts; row rating flow works.
 
-### R-16 Playlist row artwork + smart badge — P2
+### ~~R-16 Playlist row artwork + smart badge~~ — WITHDRAWN
+*(user declined at issue review 2026-11-19 — "skip it, I don't care about this one"; issue draft not posted; diff-list D-05 marked SKIPPED)*
+
+<details>
+<summary>original text</summary>
 `PlaylistRow` leads with the playlist artwork (through `ArtworkProbe` —
 one-GET-per-URL verdict, 204 → normal no-image branch, per unit 010) with
 the current `queue_music` icon as fallback; smart playlists show a
 "smart" chip from the API `smart` flag.
 **Acceptance:** artwork shown when the server has one; no 204 errors
 logged; icon fallback otherwise; badge matches server flag.
+
+</details>
 
 ### R-17 Now-playing context navigation — P2
 Now-playing overflow gains **Go to Artist** and **Go to Album** opening

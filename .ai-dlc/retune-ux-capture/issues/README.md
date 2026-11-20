@@ -6,14 +6,14 @@ Six drafts, repo issue style (`## Change/Defect` · `## Expected` · `## Where`
 
 | file | diff-list | requirement |
 |---|---|---|
-| 01-songs-browse-view.md | D-02 | R-15 |
-| 02-playlist-artwork-smart-badge.md | D-05 | R-16 |
-| 03-now-playing-go-to-artist-album.md | D-04 | R-17 |
-| 04-outputs-action-on-browse-screens.md | D-09 | R-18 |
-| 05-detail-play-all-shuffle-playnext-add.md | D-06 | R-19 |
-| 06-mdns-server-auto-discovery.md | D-01 | R-20 |
+| 01-songs-browse-view.md | D-02 | R-15 | → [#38](https://github.com/jptrsn/owntone_remote/issues/38)
+| ~~02-playlist-artwork-smart-badge.md~~ | D-05 | ~~R-16~~ — **user declined 2026-11-19** (not posted) |
+| 03-now-playing-go-to-artist-album.md | D-04 | R-17 | → [#39](https://github.com/jptrsn/owntone_remote/issues/39)
+| 04-outputs-action-on-browse-screens.md | D-09 | R-18 | → [#40](https://github.com/jptrsn/owntone_remote/issues/40)
+| 05-detail-play-all-shuffle-playnext-add.md | D-06 | R-19 | → [#41](https://github.com/jptrsn/owntone_remote/issues/41)
+| 06-mdns-server-auto-discovery.md | D-01 | R-20 | → [#42](https://github.com/jptrsn/owntone_remote/issues/42)
 
-Publish (on user go, from repo root):
+Posted 2026-11-19 (user reviewed each one at the CLI). Publish pattern used:
 
 ```sh
 gh issue create --title "<frontmatter title>" --label "<labels>" --body-file <file>
