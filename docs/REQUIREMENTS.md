@@ -237,6 +237,87 @@ fallback and default. No pairing ceremony (OwnTone JSON has none).
 without typing an IP; picking it connects (R-01 flow); discovery timeout
 never blocks manual entry.
 
+### R-21 Drawer navigation — P1 (user decision 2026-11-19, N-02 option B)
+Add a Material 3 **NavigationDrawer**, ReTune-style (`23-playing-audit`
+A1 evidence): header **Connected To — <server name from /api/config>**;
+sections **Playing** (Now Playing · Queue), **Library** (Library home —
+then the Views list Playlists/Artists/Albums/Songs(+Genres/Composers as
+R-15 lands, deep-linkable), and **Settings** (server + rocker step) +
+**Outputs**. A **hamburger opens the drawer on every screen** (Now Playing
+root and every pushed screen; ReTune's UpNext-activity gap is NOT copied).
+Selecting an item from a pushed screen **must not stack duplicates**:
+`popUntil(isFirst)` then push the target (follow the `showNowPlaying`
+warning at `root_screen.dart:9-20`). Selected destination gets
+`Semantics(selected:)` (ReTune exposes none — do better, unit-009 pattern).
+Drawer state must not leak focus/scroll weirdness (back closes drawer
+first).
+**Acceptance:** hamburger present on all main screens; each destination
+lands exactly once (no duplicate routes in the stack — assert route
+count); offline: drawer opens but library/queue items inert (banner
+contract); semantics labels assert the selected state.
+
+### R-22 Persistent mini transport bar — P1 (N-01; user: "bottom bar when
+a track is playing")
+A pinned **bottom mini player** on every screen except Now Playing itself:
+2-line metadata (title / `artist - album`) + prev/play-pause/next,
+driven by `PlayerController` (same icon-state mapping as
+`mirror_handler.controlsFor`), tap on the metadata zone →
+`showNowPlaying`. **Visible whenever a current item exists** (playing or
+paused — ReTune keeps the bar through pause, verified `12`/`lib-playing`);
+**hidden when stopped/no current item** (ReTune keeps dead transport
+buttons then — deliberate simplification, recorded). Play/pause press
+routes to `PlayerController` (never `playUris`). Transport buttons get
+tooltips + semantics (ReTune has none — a11y gap not copied). Must coexist
+with the offline banner (banner above the bar) and not steal taps from
+list rows behind it (bar is its own layer, not a list footer). Auto-hide
+details: none (the bar persists — contrast the volume toast, which is
+transient by design, `22-volume-toaster`).
+**Acceptance:** bar present while playing/paused on Library/Queue/
+Outputs/Search/Settings routes, absent when stopped; play/pause toggles
+server state (supervised once); prev/next change item; tap → Now Playing
+and **exactly one** NP route exists; row taps still work while bar shown.
+
+### R-23 Queue drag-reorder — P1 (N-03)
+`QueueScreen` supports **tap-and-hold drag reorder** (ReTune gesture,
+`16`/A3) committing on drop via `PUT /api/queue/items/{id}?new_position=N`
+(`docs/API.md:94`); `QueueController.moveItem(item, newIndex)` follows the
+existing `_action` pattern (optimistic move, rollback + typed snackbar
+error, trailing post-commit refresh — single-flight per unit 011). With
+**hide-played ON** the drag indices map through `visibleQueue`'s cut to
+absolute positions (or drag is disabled while ON — implementer picks the
+simpler correct option; assert behavior either way). Reordering the
+now-playing entry: disallow (drag its row = no-op) — OwnTone semantics
+keep current fixed; verify live. WS `queue` event during a drag: the
+drag keeps local order, refetch lands on drop-commit reconciliation.
+**Acceptance:** unit tests for index mapping (incl. hide-cut) on pure
+fns; widget test drives a drag and asserts the exact PUT (captured
+request) — no network; live/manual supervised once on device; gates green.
+
+### R-24 Queue per-row actions: Remove + Play Next — P1 (N-04)
+Queue rows gain ReTune's per-row menu (A3 evidence — accessory popup
+**Play Next · Remove**): `QueueController.removeItem(item)` →
+`DELETE /api/queue/items/{id}` (`docs/API.md:95`) and `addUris`-based
+play-next = `POST /api/queue/items/add?uris=…&position=<after current>`
+(verify position param semantics live against `docs/API.md`); both through
+the `_action` pattern. Swipe-to-dismiss may implement Remove **instead of
+a visible accessory** if it matches the visual language — must stay
+undoable-feeling (rollback on failure) and must **never** remove the
+now-playing row (disable for it).
+**Acceptance:** unit tests capture the exact endpoints/params; removing a
+row optimistic-removes + rolls back on failure (fake 500); now-playing row
+cannot be removed; hide-played interplay covered; supervised manual once.
+
+### R-25 Browse section headers — P2 (N-05)
+Artists/Genres/Songs (R-15) paged lists render **alphabetical section
+headers** (ReTune `basic_header` pattern, `03`/`10` evidence): computed
+client-side from the loaded pages (server returns sorted lists — verify
+sort with `cc=` + `order` params live), header row = sticky-ish group
+divider (disabled, non-clickable, semantics-excluded like ReTune's
+disabled rows); paging across a letter boundary must not duplicate the
+header.
+**Acceptance:** widget test: fake pages [A…A, B…] → headers rendered
+once each; rows unchanged (reuse `BrowseRow`); gates green.
+
 ## Explicitly out of scope
 
 See PLAN.md §4. In particular: **all iTunes-specific ReTune features

@@ -2470,3 +2470,20 @@ corrected and **D-07 reopened**; new navigation-family rows **N-01
 Issue comments/edits: #38 (Songs rows must show artist + album), #40
 (BrowseScreenScaffold already supports `actions:` — `queue_screen.dart:111`).
 Lesson recorded: parity comparisons read the CODE, not unit-doc memory.
+
+**Supervised navigation audit + N-rows gate (2026-11-19, user present).**
+User: do all N-rows; **N-02 = option B (drawer + bottom bar when
+playing)**; audit ReTune on the Pixel 6 for anything unsure, mind
+auto-hiding transitions. Findings (evidence `23-playing-audit/notes.md`):
+mini bar on every activity (playing/paused/stopped states byte-diffed;
+stopped = transport only, metadata hidden); drawer sections Connected To/
+Playing/Libraries/Views, **no a11y selected state**, no drawer on
+UpNextActivity; volume keys app-wide with center toaster **auto-hide
+~1–2.5 s** (machine-verified via band diffs — 22-volume-toaster regraded
+from deferred to verified); queue row accessory = **Play Next · Remove**
+popup, header accessory = Clear; long-press drag visual-only. **Third
+external-playback observation**: found play 211617@183.8 s vol 100
+(concurrent session), paused ~15 s audible; supervised window (user
+"proceed") then restored pause@199001 + vol 100. Device stayon restored.
+R-21…R-25 written into REQUIREMENTS; issue drafts 07–11 pending user
+review one-by-one (same flow as #38–#42).
