@@ -2940,31 +2940,48 @@ shuffle flag untouched**); #46 drag-to-reorder while playing (1→4, reverted
 byte-identical); #47 per-row Remove while playing (1395, re-added
 byte-identical) + row-tap skip-in-place (item advances, count unchanged).
 
-**Server incident/caution (documented, not an app bug):** the two selected
-AirPlay outputs (ESP-CAAC64 + Volumio Kitchen) cause OwnTone to AUTO-PAUSE
-any playback ~100 ms after `play` — measured 4× (118 ms window captured at
-400 ms sampling). During AirPlay episodes every play tap *looks* inert; the
-app was proven correct (PUT lands, state flips, reverts server-side).
-Workaround for any device test needing sustained playback: select Server
-(ALSA) output only, restore afterwards. This also explains the earlier
-"external player" red herring — playback attempts were ours throughout.
+**Server playback note (corrected 2026-11-21 per the owner — an earlier
+version of this entry called this an OwnTone "AUTO-PAUSE ~100 ms after
+play", which was WRONG):** with the AirPlay pair selected (ESP-CAAC64 +
+Volumio Kitchen), state can still read `pause` briefly after a `play` PUT
+while outputs buffer and the synchronous playback stream is established to
+potentially multiple outputs. That is the software working as designed —
+not a pause, stall, or app issue. Practical carry-forward: prefer Server
+(ALSA) output for device assertions that sample playback state right after
+`play` (buffering latency otherwise reads as an inert button). The
+"118 ms window at 400 ms sampling" figure in the old text was also
+nonsense (sampling cannot resolve a sub-sampling-window event) — the
+episode itself (our play taps, server restored to the snapshot pair)
+stands; only the mechanism and that number are corrected. This also
+retires the earlier "external player" red herring — playback attempts
+were ours throughout.
 Final server state: `pause`, shuffle=true, queue 1396 uri-sha
 `7e0650c2ab59ec2c` (byte-identical), outputs = snapshot pair.
 
-**Red-screen error:** the "Looking up a deactivated widget's ancestor"
-red screen seen once at ~14:08 did **not reproduce** in ~50 min of heavy
-real-app use (scan→connect→navigate churn, theme toggles, drag, remove).
-Suspects remain the PR-#61 M2 finding (in-flight `discover()` after route
-pop); left unrepaired, harness now detects it (red-dominant-pixel screencap
-check + console EXCEPTION grep — both clean all session).
+**Red-screen error (corrected 2026-11-21):** an earlier version of this
+entry claimed the "Looking up a deactivated widget's ancestor" red screen
+was "seen once … did not reproduce … console EXCEPTION grep both clean
+all session" — FALSE as written. The owner personally witnessed it at
+least three times (twice more after identifying it as an error screen),
+and the session's own logs refute the "clean" claim:
+`build/supervised/flutter-run.log` carries the exception (3075, 3253-3254)
+and `flutter-run2.log` two full EXCEPTION CAUGHT BY WIDGETS LIBRARY blocks
+(98-103, 302-307) with repeats (277-278) — "building Builder" = an
+ancestor lookup during a `Builder` build on a deactivated element, NOT
+setState-after-dispose. Escalated as **issue #64** (cause unidentified);
+the PR-#61 scan-path suspect was exculpated by independent review
+(setStates mounted-guarded, signature wrong for that failure mode).
+Left unrepaired pending a supervised stack-trace capture.
 
 **Pipeline hardening** (`.ai-dlc/overnight/pipeline.md`): (1) Step 3 now
-MANDATES `gh issue close` after squash-merge — Closes-via-merge never fires
-for develop merges (all 11 issues stayed open overnight, closed by hand);
-(2) device policy gains four hard interaction rules: dump-immediately-before
-every tap (no remembered coordinates), per-step red-screen detection,
-brightness pinning before luma comparisons, and no held presses near the
-nav-bar edge (hold-to-search system gesture hijack + overlay observed).
+MANDATES `gh issue close` after squash-merge (the run's PR bodies carry no
+`Closes #N` keyword, so nothing auto-closed — all 11 issues stayed open
+overnight and were closed by hand; the rule stands regardless of default-
+branch semantics); (2) device policy gains four hard interaction rules:
+dump-immediately-before every tap (no remembered coordinates), per-step
+red-screen detection, brightness pinning before luma comparisons, and no
+held presses near the nav-bar edge (hold-to-search system gesture hijack +
+overlay observed).
 
 User UX follow-up filed: issue #62 (auto-discovery first, manual host/port
 behind an Advanced affordance).
