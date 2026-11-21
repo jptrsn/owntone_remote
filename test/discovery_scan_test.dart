@@ -32,12 +32,16 @@ class FakeDiscovery implements DiscoverySource {
 
   final Future<List<DiscoveredServer>> Function() behaviour;
   int calls = 0;
+  int cancels = 0;
 
   @override
   Future<List<DiscoveredServer>> discover() {
     calls++;
     return behaviour();
   }
+
+  @override
+  void cancel() => cancels++;
 }
 
 const hit1 = DiscoveredServer(
@@ -300,5 +304,81 @@ void main() {
       // the assertion.
       expect(find.byKey(const ValueKey('scan-panel')), findsOneWidget);
     });
+  });
+
+  group('R-20 scan cancellation (PR #61 retroactive review major)', () {
+    testWidgets('dispose DURING an in-flight scan cancels the source — a late '
+        'completion cannot touch the unmounted state', (tester) async {
+      final gate = Completer<List<DiscoveredServer>>();
+      final discovery = FakeDiscovery(() => gate.future);
+      await pumpScreen(tester, discovery);
+
+      await tapScan(tester);
+      expect(find.text('Searching the local network…'), findsOneWidget);
+
+      // Pop-equivalent: tear the screen down while the scan is in flight.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      expect(discovery.cancels, 1, reason: 'dispose() abandoned the scan');
+
+      // The orphaned completion lands after unmount (this is the path
+      // the generation token + cancel() together defuse): it must not
+      // throw and must not schedule frames.
+      gate.complete(const [hit1]);
+      await tester.pump(const Duration(seconds: 13)); // drain 12 s timeout
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'PUSHED SettingsScreen: tapping a hit pops the route and connects '
+      '(pins the Navigator.of(context).pop() branch, unreachable while the '
+      'screen is pumped as home — the issue #64 crash neighbourhood)',
+      (tester) async {
+        final discovery = FakeDiscovery(() async => const [hit1]);
+        SharedPreferences.setMockInitialValues({});
+        final store = await SettingsStore.create();
+        final conn = scriptedConn();
+        opened.add(conn);
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              Provider<SettingsStore>.value(value: store),
+              ChangeNotifierProvider<ThemePreference>.value(
+                value: ThemePreference(store),
+              ),
+              ChangeNotifierProvider<ConnectionController>.value(value: conn),
+            ],
+            child: MaterialApp(
+              home: Builder(
+                builder: (context) => Scaffold(
+                  body: TextButton(
+                    key: const ValueKey('push'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            SettingsScreen(initial: null, discovery: discovery),
+                      ),
+                    ),
+                    child: const Text('go'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.byKey(const ValueKey('push')));
+        await tester.pumpAndSettle();
+        await tapScan(tester);
+        expect(find.text('My Music on hp-server'), findsOneWidget);
+
+        await tapButton(tester, find.byKey(const ValueKey('scan-hit-0')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('go'), findsOneWidget, reason: 'route popped');
+        expect(find.byType(SettingsScreen), findsNothing);
+        expect(conn.phase, ConnectionPhase.connected);
+      },
+    );
   });
 }

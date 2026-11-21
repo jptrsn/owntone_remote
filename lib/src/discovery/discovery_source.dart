@@ -14,6 +14,12 @@ import 'discovered_server.dart';
 ///   wait (the scan runs as a side panel, R-20).
 abstract class DiscoverySource {
   Future<List<DiscoveredServer>> discover();
+
+  /// Abandon any in-flight [discover] (PR #61 retroactive review major):
+  /// the Settings screen calls this from `dispose()` so an orphaned scan
+  /// cannot keep the multicast socket sending after the route pops.
+  /// Implementations must be idempotent and safe to call when idle.
+  void cancel() {}
 }
 
 /// A scan that could not be run/completed at the backend level (socket bind
