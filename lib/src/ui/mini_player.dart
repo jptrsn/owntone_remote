@@ -28,7 +28,7 @@ class MiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Nullable-Provider.of (rateTrack precedent, browse_screens.dart):
+    // Nullable-Provider.of (provider's nullable-generic idiom):
     // `Provider.of<T?>` answers null when no provider is registered, so
     // screens pumped without the player providers (some widget tests)
     // collapse to no bar instead of throwing; production always provides
@@ -55,78 +55,89 @@ class MiniPlayer extends StatelessWidget {
     return Material(
       key: const ValueKey('mini-player'),
       color: theme.colorScheme.surfaceContainer,
-      child: Row(
-        children: [
-          // Metadata zone (ReTune's text rows; a tap lands on Now Playing).
-          // Navigation only — live while offline like the drawer's
-          // Now Playing entry.
-          Expanded(
-            child: Semantics(
-              key: const ValueKey('mini-metadata-semantics'),
-              button: true,
-              label: 'Open now playing',
-              child: InkWell(
-                key: const ValueKey('mini-metadata'),
-                onTap: () => showNowPlaying(context),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  // MainAxisSize.min is load-bearing: Scaffold lays out
-                  // bottomNavigationBar with LOOSE constraints (up to the
-                  // full screen height), and a max-sizing Column would
-                  // then grow to the whole viewport — an 800-px bar and a
-                  // zero-height body (pinned by the height assertion in
-                  // test/mini_player_test.dart).
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title ?? 'Unknown title',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall,
-                      ),
-                      if (secondary.isNotEmpty)
+      // Scaffold does NOT apply SafeArea to a bottomNavigationBar child
+      // (Material's own bottom widgets do it themselves): without this the
+      // transport buttons sit under the 3-button system nav strip / in the
+      // gesture area (PR #57 review major; the device dump showed the bar
+      // bottom at the 2400-px screen edge). The Material keeps painting
+      // under the inset; only the content is lifted.
+      child: SafeArea(
+        top: false,
+        left: false,
+        right: false,
+        child: Row(
+          children: [
+            // Metadata zone (ReTune's text rows; a tap lands on Now Playing).
+            // Navigation only — live while offline like the drawer's
+            // Now Playing entry.
+            Expanded(
+              child: Semantics(
+                key: const ValueKey('mini-metadata-semantics'),
+                button: true,
+                label: 'Open now playing',
+                child: InkWell(
+                  key: const ValueKey('mini-metadata'),
+                  onTap: () => showNowPlaying(context),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    // MainAxisSize.min is load-bearing: Scaffold lays out
+                    // bottomNavigationBar with LOOSE constraints (up to the
+                    // full screen height), and a max-sizing Column would
+                    // then grow to the whole viewport — an 800-px bar and a
+                    // zero-height body (pinned by the height assertion in
+                    // test/mini_player_test.dart).
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          secondary,
+                          item.title ?? 'Unknown title',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall,
+                          style: theme.textTheme.titleSmall,
                         ),
-                    ],
+                        if (secondary.isNotEmpty)
+                          Text(
+                            secondary,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          IconButton(
-            key: const ValueKey('mini-previous'),
-            tooltip: 'Previous',
-            onPressed: enabled ? player.previous : null,
-            icon: const Icon(Icons.skip_previous, semanticLabel: 'Previous'),
-          ),
-          IconButton(
-            key: const ValueKey('mini-play-pause'),
-            tooltip: showPause ? 'Pause' : 'Play',
-            onPressed: enabled
-                ? (showPause ? player.pause : player.play)
-                : null,
-            icon: Icon(
-              showPause ? Icons.pause : Icons.play_arrow,
-              semanticLabel: showPause ? 'Pause' : 'Play',
+            IconButton(
+              key: const ValueKey('mini-previous'),
+              tooltip: 'Previous',
+              onPressed: enabled ? player.previous : null,
+              icon: const Icon(Icons.skip_previous, semanticLabel: 'Previous'),
             ),
-          ),
-          IconButton(
-            key: const ValueKey('mini-next'),
-            tooltip: 'Next',
-            onPressed: enabled ? player.next : null,
-            icon: const Icon(Icons.skip_next, semanticLabel: 'Next'),
-          ),
-          const SizedBox(width: 4),
-        ],
+            IconButton(
+              key: const ValueKey('mini-play-pause'),
+              tooltip: showPause ? 'Pause' : 'Play',
+              onPressed: enabled
+                  ? (showPause ? player.pause : player.play)
+                  : null,
+              icon: Icon(
+                showPause ? Icons.pause : Icons.play_arrow,
+                semanticLabel: showPause ? 'Pause' : 'Play',
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('mini-next'),
+              tooltip: 'Next',
+              onPressed: enabled ? player.next : null,
+              icon: const Icon(Icons.skip_next, semanticLabel: 'Next'),
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
       ),
     );
   }

@@ -263,11 +263,17 @@ void main() {
 
   late _DepthObserver observer;
 
-  Future<void> pumpApp(WidgetTester tester, Widget home) async {
+  Future<void> pumpApp(
+    WidgetTester tester,
+    Widget home, {
+    FakeViewPadding viewPadding = FakeViewPadding.zero,
+  }) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 3.0;
+    tester.view.padding = viewPadding;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
     observer = _DepthObserver();
     await tester.pumpWidget(
       MultiProvider(
@@ -304,6 +310,24 @@ void main() {
       find.byKey(ValueKey('drawer-${dest.name}'));
 
   group('R-22 presence / visibility', () {
+    testWidgets('R-22 bar content clears a non-zero bottom window inset '
+        '(PR #57 review major: Scaffold gives bottomNavigationBar children '
+        'no SafeArea — buttons sat under the system nav strip; device dump '
+        'showed bar bottom at the 2400-px screen edge)', (tester) async {
+      await tester.runAsync(wireUp);
+      // dpr 3.0 => 144 physical px = 48 logical px of system nav.
+      await pumpApp(
+        tester,
+        const LibraryHomeScreen(),
+        viewPadding: const FakeViewPadding(bottom: 144),
+      );
+      expect(find.byKey(const ValueKey('mini-player')), findsOneWidget);
+      expect(
+        tester.getBottomLeft(find.byKey(const ValueKey('mini-play-pause'))).dy,
+        lessThanOrEqualTo(800 - 48 + 1),
+      );
+    });
+
     testWidgets(
       'R-22 bar is present on Library/Queue/Outputs/Settings with a fake '
       'current item (paused) — two-line metadata + the three transport '
