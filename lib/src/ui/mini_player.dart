@@ -56,7 +56,8 @@ class MiniPlayer extends StatelessWidget {
       key: const ValueKey('mini-player'),
       color: theme.colorScheme.surfaceContainer,
       // Scaffold does NOT apply SafeArea to a bottomNavigationBar child
-      // (Material's own bottom widgets do it themselves): without this the
+      // (the M3 bottom widgets — NavigationBar/BottomAppBar — wrap their
+      // own child in SafeArea; the M2 widget does not): without this the
       // transport buttons sit under the 3-button system nav strip / in the
       // gesture area (PR #57 review major; the device dump showed the bar
       // bottom at the 2400-px screen edge). The Material keeps painting

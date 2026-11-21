@@ -266,11 +266,11 @@ void main() {
   Future<void> pumpApp(
     WidgetTester tester,
     Widget home, {
-    FakeViewPadding viewPadding = FakeViewPadding.zero,
+    FakeViewPadding bottomInset = FakeViewPadding.zero,
   }) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 3.0;
-    tester.view.padding = viewPadding;
+    tester.view.padding = bottomInset;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPadding);
@@ -319,7 +319,7 @@ void main() {
       await pumpApp(
         tester,
         const LibraryHomeScreen(),
-        viewPadding: const FakeViewPadding(bottom: 144),
+        bottomInset: const FakeViewPadding(bottom: 144),
       );
       expect(find.byKey(const ValueKey('mini-player')), findsOneWidget);
       expect(
