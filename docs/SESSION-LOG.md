@@ -2974,10 +2974,12 @@ the PR-#61 scan-path suspect was exculpated by independent review
 Left unrepaired pending a supervised stack-trace capture.
 
 **Pipeline hardening** (`.ai-dlc/overnight/pipeline.md`): (1) Step 3 now
-MANDATES `gh issue close` after squash-merge (the run's PR bodies carry no
-`Closes #N` keyword, so nothing auto-closed — all 11 issues stayed open
-overnight and were closed by hand; the rule stands regardless of default-
-branch semantics); (2) device policy gains four hard interaction rules:
+MANDATES `gh issue close` after squash-merge (at run time `develop` was
+not yet the default branch and GitHub reads `Closes #N` only for
+default-branch-targeting PRs, so nothing auto-closed — all 11 issues
+stayed open overnight and were closed by hand; the explicit close stays
+mandatory even now that develop is the default — guaranteed comment trail
++ state gate independent of keyword semantics); (2) device policy gains four hard interaction rules:
 dump-immediately-before every tap (no remembered coordinates), per-step
 red-screen detection, brightness pinning before luma comparisons, and no
 held presses near the nav-bar edge (hold-to-search system gesture hijack +

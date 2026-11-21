@@ -164,8 +164,14 @@ mandatory on discovery (precedent: PRs #51–#61 + #63, reviewed post-merge
    ledger merge SHA → `git checkout develop && git pull`.
 2. **Close the issue explicitly** — `gh issue close <issue> --comment
    "Fixed in PR #<n> (squash <merge-sha> to develop)"`. This is mandatory,
-   not optional: the run's PR bodies carry no `Closes #N` keyword, so
-   GitHub's auto-close never fires (observed 2026-11-20 —
+   not optional. Mechanism note (corrected 2026-11-21 by review): GitHub
+   interprets `Closes #N` **only when the PR targets the repository's
+   default branch**; at run time (2026-11-20) `develop` was not yet the
+   default, so the keyword (present in the run's PR bodies per Step 1.5)
+   could not fire and all eleven issues were hand-closed. `develop` IS the
+   default today, so the keyword would now fire — but explicit close stays
+   mandatory (guaranteed comment trail + `gh issue view` gate, independent
+   of GitHub keyword semantics) (observed 2026-11-20 —
    all eleven run issues stayed open after merge and had to be closed by
    hand). Gate: `gh issue view <issue> -q .state` → `CLOSED`.
 
