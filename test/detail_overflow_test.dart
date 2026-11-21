@@ -212,6 +212,26 @@ void main() {
       expect(add, isNot(contains('clear')));
     });
 
+    test('tail add on a NOT-yet-LOADED slice refreshes first, then pins '
+        'the loaded length (PR #58 review minor: cold-start tail add '
+        'silently pinned position=0 = queue HEAD)', () async {
+      final cold = QueueController(connection: conn);
+      await cold.init();
+      expect(cold.hasLoaded, isFalse, reason: 'pre-first-GET slice');
+      addRequests(); // no-op read to keep the helper honest
+      final ok = await cold.addUris(['library:album:7']);
+      expect(ok, isTrue);
+      final add = addRequests().last;
+      expect(
+        add,
+        contains('position=3'),
+        reason:
+            'pinned against the LOADED slice (fixture length 3), '
+            'not the empty cold-start one (would be position=0)',
+      );
+      cold.dispose();
+    });
+
     test(
       'failed add surfaces a typed error and keeps the known list',
       () async {

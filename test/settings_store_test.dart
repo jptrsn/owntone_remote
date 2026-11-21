@@ -105,7 +105,9 @@ void main() {
     );
 
     test('R-26 wrongly-typed stored value degrades to System', () async {
-      // getString on an int-backed key reads null → default.
+      // A getString-backed read would THROW here (TypeError on the
+      // int-backed key — shared_preferences casts, it does not read null;
+      // see SettingsStore.themeMode) — the untyped get degrades to System.
       SharedPreferences.setMockInitialValues({'theme.mode': 7});
       expect((await SettingsStore.create()).themeMode, ThemeMode.system);
     });

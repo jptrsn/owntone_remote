@@ -154,7 +154,19 @@ class _QueueScreenState extends State<QueueScreen> {
             ),
           ),
         ),
-        onRemove: (item) => unawaited(queueController.removeItem(item)),
+        onRemove: (item) {
+          // PR #60 retroactive review minor: the menu is gated at BUILD
+          // time, so a popup left open across a track advance could DELETE
+          // the (newly) now-playing entry — whose server-side semantics are
+          // deliberately unprobed. Live re-read at selection time (same
+          // pattern as onPlayNext's position).
+          final current = findNowPlaying(
+            queueController.queue,
+            player.player?.itemId,
+          );
+          if (current?.id == item.id) return;
+          unawaited(queueController.removeItem(item));
+        },
       ),
     );
   }

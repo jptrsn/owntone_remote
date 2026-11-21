@@ -126,7 +126,12 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
     final artistTarget = (np != null && artistId != null && artistId.isNotEmpty)
         ? Artist(
             id: artistId,
-            name: np.artist ?? 'Unknown artist',
+            // ALBUM artist name with albumArtistId (PR #53 review minor):
+            // ArtistAlbumsScreen titles itself artist.name while listing
+            // artist.id's albums — on compilations the TRACK artist (np
+            // .artist) would otherwise name the screen while the albums
+            // belong to e.g. "Various artists".
+            name: np.albumArtist ?? np.artist ?? 'Unknown artist',
             albumCount: 0,
             trackCount: 0,
             lengthMs: 0,
@@ -136,7 +141,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
         ? Album(
             id: albumId,
             name: np.album ?? 'Unknown album',
-            artist: np.artist ?? '',
+            artist: np.albumArtist ?? np.artist ?? '',
             artistId: artistId ?? '',
             trackCount: 0,
             lengthMs: np.lengthMs ?? 0,

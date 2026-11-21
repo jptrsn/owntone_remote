@@ -65,6 +65,11 @@ class Fixture {
   String? albumId;
   String? albumArtistId;
 
+  /// `album_artist` wire name (PR #53 review minor — compilations: track
+  /// artist and album artist differ; Go to Artist must be named after the
+  /// ALBUM artist whose albums it lists).
+  String? albumArtist;
+
   /// When non-null, PUTs to this path answer 500 (rollback/snackbar tests).
   String? failPutPath;
 
@@ -90,6 +95,7 @@ class Fixture {
           'album': 'Test Album',
           if (albumId != null) 'album_id': albumId,
           if (albumArtistId != null) 'album_artist_id': albumArtistId,
+          if (albumArtist != null) 'album_artist': albumArtist,
           'length_ms': length,
           'uri': 'library:track:42',
           if (itemArtwork != null) 'artwork_url': itemArtwork,
@@ -1073,6 +1079,42 @@ void main() {
       );
       await tester.pumpAndSettle();
     }
+
+    testWidgets(
+      'R-17 compilation: Go to Artist is named after the ALBUM artist '
+      '(album_artist ≠ track artist — PR #53 review minor; the screen '
+      'titles itself artist.name while listing the album artist albums)',
+      (tester) async {
+        HttpOverrides.global = _FailOverrides();
+        addTearDown(() => HttpOverrides.global = null);
+        await tester.runAsync(wireUp);
+        fx.albumId = 'alT';
+        fx.albumArtistId = 'aT';
+        fx.albumArtist = 'Various artists';
+        channels.last.serverSend('{"notify":["player"]}');
+        await pumpScreen(tester);
+        await tester.runAsync(realPump);
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        await openOverflow(tester);
+        await tester.tap(find.text('Go to Artist'));
+        await settle(tester);
+        final artistRoute = find.byType(ArtistAlbumsScreen);
+        expect(artistRoute, findsOneWidget);
+        expect(
+          find.descendant(
+            of: artistRoute,
+            matching: find.text('Various artists'),
+          ),
+          findsWidgets,
+          reason:
+              'title carries the ALBUM artist — the fixture albums '
+              'subtitle is "Test Artist", so with the old (track-artist) '
+              'naming this text would appear nowhere on the route',
+        );
+      },
+    );
 
     testWidgets(
       'loaded track: overflow shows both entries; Go to Artist pushes '

@@ -1037,6 +1037,36 @@ void main() {
       expect(find.text('Added library:track:1193'), findsOneWidget);
     });
 
+    testWidgets('PR #60 review minor: a menu left open across a track '
+        'advance cannot remove the (new) now-playing row — selection-time '
+        'live re-check (server delete-of-current stays deliberately '
+        'unprobed, so it must stay untouchable)', (tester) async {
+      await tester.runAsync(wireUp);
+      await pumpScreen(tester, const QueueScreen());
+      await settle(tester);
+      final before = adapter.requests.length;
+
+      await openMenu(tester, 'House Party');
+      // The track advances TO the row whose menu is open (overlay popup
+      // survives the row rebuild; the build-time gate let this through).
+      await tester.runAsync(() async {
+        fx.itemId = 196176;
+        channels.last.serverSend('{"notify":["player","queue"]}');
+      });
+      await settle(tester);
+      expect(row('House Party', nowPlaying: true), findsOneWidget);
+
+      await tester.tap(find.text('Remove'));
+      await settle(tester);
+
+      final fired = adapter.requests.skip(before).toList();
+      expect(
+        fired.where((r) => r.startsWith('DELETE')),
+        isEmpty,
+        reason: 'selection-time now-playing re-check vetoes the stale menu',
+      );
+    });
+
     testWidgets('failed remove (fake 500): rows roll back + typed '
         'snackbar (R-24)', (tester) async {
       await tester.runAsync(wireUp);
