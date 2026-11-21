@@ -66,12 +66,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<DiscoveredServer> _hits = const [];
   String? _scanError;
 
-  // Generation token (PR #61 retroactive review major): the panel's 12 s
-  // timeout does NOT cancel the scan future (Future.timeout only stops
-  // *awaiting*). Without this, "Try again" mid-flight let scan 1's orphaned
-  // completion clobber scan 2's Searching state with stale hits. Every
-  // post-await setState in _startScan requires its own gen to still be
-  // current.
+  // Generation token (PR #61 retroactive review major). Reachability note
+  // (round-2 review): today's reachable races are all covered by mounted
+  // alone — a timed-out scan's completion is dropped by the .timeout
+  // wrapper itself, and "Try again" cannot fire mid-flight (phase guard).
+  // The gen is defence-in-depth for exactly those two wrappers: if either
+  // ever changes, an orphaned completion must still not clobber a fresh
+  // scan. Every post-await setState in _startScan requires its own gen
+  // to still be current.
   int _scanGen = 0;
 
   @override
