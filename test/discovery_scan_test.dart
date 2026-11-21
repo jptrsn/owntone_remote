@@ -330,6 +330,46 @@ void main() {
     });
 
     testWidgets(
+      'retry after timeout: scan 1 (timed out) completing late cannot '
+      'clobber scan 2 — panel keeps Searching, no stale hits land',
+      (tester) async {
+        // NOTE (round-2 review): this pins the USER-VISIBLE retry contract
+        // end-to-end; it is not a discriminating test for _scanGen — a
+        // late completion after .timeout() never even resumes _startScan
+        // (the wrapper already completed), so mounted alone passes it.
+        // The token is defence-in-depth for that wrapper, not a tested
+        // race. It IS load-bearing against the per-instance cancel flag
+        // (see MdnsOwnToneDiscovery._scanToken comment).
+        final g1 = Completer<List<DiscoveredServer>>();
+        final g2 = Completer<List<DiscoveredServer>>();
+        var call = 0;
+        final discovery = FakeDiscovery(() => (call++ == 0 ? g1 : g2).future);
+        await pumpScreen(tester, discovery);
+
+        await tapScan(tester);
+        await tester.pump(const Duration(seconds: 13)); // kScanTimeout
+        final retry = find.byKey(const ValueKey('scan-retry'));
+        expect(retry, findsOneWidget, reason: 'timeout → error state');
+
+        await tapButton(tester, retry);
+        expect(find.text('Searching the local network…'), findsOneWidget);
+
+        g1.complete(const [hit1]); // orphaned scan 1 lands late
+        await tester.pump();
+        expect(
+          find.text('My Music on hp-server'),
+          findsNothing,
+          reason: 'stale hits must not appear mid-scan-2',
+        );
+        expect(find.text('Searching the local network…'), findsOneWidget);
+
+        g2.complete(const []);
+        await tester.pump();
+        expect(find.text('Searching the local network…'), findsNothing);
+      },
+    );
+
+    testWidgets(
       'PUSHED SettingsScreen: tapping a hit pops the route and connects '
       '(pins the Navigator.of(context).pop() branch, unreachable while the '
       'screen is pumped as home — the issue #64 crash neighbourhood)',

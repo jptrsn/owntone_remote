@@ -115,13 +115,19 @@ class MdnsOwnToneDiscovery implements DiscoverySource {
   // cancel its source future, and discover() created its client locally —
   // so after a route pop (or the panel's 12 s timeout) the QU queries kept
   // firing until the package's internal windows elapsed. cancel() stops the
-  // live client; the awaits below check _cancelled and bail.
+  // live client; the awaits below check the scan's TOKEN and bail. A token
+  // (not a bool) per round-2 review: a bool reset at discover() entry
+  // un-cancels an orphaned earlier scan whenever a second discover()
+  // overlaps — safe today only because the window budget (3+3+3+3 s) equals
+  // kScanTimeout. Token invalidation is structural.
   MDnsClient? _liveClient;
-  bool _cancelled = false;
+  Object? _scanToken;
+
+  bool _stilled(Object token) => _scanToken != token;
 
   @override
   void cancel() {
-    _cancelled = true;
+    _scanToken = null;
     final client = _liveClient;
     _liveClient = null;
     if (client == null) return;
@@ -134,7 +140,8 @@ class MdnsOwnToneDiscovery implements DiscoverySource {
 
   @override
   Future<List<DiscoveredServer>> discover() async {
-    _cancelled = false;
+    final token = Object();
+    _scanToken = token;
     final client = _clientFactory();
     _liveClient = client;
     try {
@@ -145,7 +152,7 @@ class MdnsOwnToneDiscovery implements DiscoverySource {
       throw DiscoveryException('Could not start the network scan.', e);
     }
     try {
-      if (_cancelled) return const [];
+      if (_stilled(token)) return const [];
       final instances = <String>{};
       await for (final ptr in client.lookup<PtrResourceRecord>(
         ResourceRecordQuery.serverPointer(
@@ -154,10 +161,10 @@ class MdnsOwnToneDiscovery implements DiscoverySource {
         ),
         timeout: _browseWindow,
       )) {
-        if (_cancelled) return const [];
+        if (_stilled(token)) return const [];
         instances.add(ptr.domainName);
       }
-      if (_cancelled) return const [];
+      if (_stilled(token)) return const [];
 
       final found = <DiscoveredServer>{};
       // Fan out per instance: SRV (target+port) and TXT (fingerprint) in
@@ -165,12 +172,12 @@ class MdnsOwnToneDiscovery implements DiscoverySource {
       // shared `_http._tcp` crowd should not pay an A lookup each.
       await Future.wait(
         instances.map((fqdn) async {
-          if (_cancelled) return;
+          if (_stilled(token)) return;
           final srv = await _first<SrvResourceRecord>(
             client,
             ResourceRecordQuery.service(fqdn, isMulticast: false),
           );
-          if (srv == null || _cancelled) return;
+          if (srv == null || _stilled(token)) return;
           final txt = <String>[];
           await for (final record in client.lookup<TxtResourceRecord>(
             ResourceRecordQuery.text(fqdn, isMulticast: false),
@@ -179,6 +186,10 @@ class MdnsOwnToneDiscovery implements DiscoverySource {
             txt.add(record.text);
           }
           if (!isOwnToneTxt(txt)) return;
+          // Round-2 review minor: no bail here meant a cancelled scan
+          // called lookup() on the stopped client → StateError → spurious
+          // DiscoveryException instead of the empty result.
+          if (_stilled(token)) return;
           var host = _stripTrailingDot(srv.target);
           final addr = await _first<IPAddressResourceRecord>(
             client,
@@ -194,7 +205,7 @@ class MdnsOwnToneDiscovery implements DiscoverySource {
           );
         }),
       );
-      if (_cancelled) return const [];
+      if (_stilled(token)) return const [];
 
       final results = found.toList()
         ..sort((a, b) {
