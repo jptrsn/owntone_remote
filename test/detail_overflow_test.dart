@@ -232,6 +232,26 @@ void main() {
       cold.dispose();
     });
 
+    test('cold tail add whose refresh FAILS refuses (no position=0 '
+        'head-insert) — round-2 review minor', () async {
+      fx.failQueueGet = true;
+      final cold = QueueController(connection: conn);
+      await cold.init();
+      final ok = await cold.addUris(['library:album:7']);
+      expect(
+        ok,
+        isFalse,
+        reason: 'never-loaded must not degrade to head-insert',
+      );
+      expect(
+        addRequests(),
+        isEmpty,
+        reason: 'no add POST at all when the slice never loaded',
+      );
+      expect(cold.actionError, contains('queue not loaded'));
+      cold.dispose();
+    });
+
     test(
       'failed add surfaces a typed error and keeps the known list',
       () async {
@@ -516,6 +536,7 @@ class OwntoneApiHolder {
 /// position is deterministic) + scriptable add failure.
 class _Fixture {
   bool failAdds = false;
+  bool failQueueGet = false;
   bool emptyAlbumTracks = false;
 
   final List<Map<String, dynamic>> alATracks = [
@@ -647,6 +668,13 @@ class _Fixture {
       case '/api/player':
         return jsonResponse(o, {'state': 'pause', 'volume': 40});
       case '/api/queue':
+        if (failQueueGet) {
+          throw DioException(
+            requestOptions: o,
+            type: DioExceptionType.badResponse,
+            response: Response(requestOptions: o, statusCode: 500),
+          );
+        }
         return jsonResponse(o, {
           'version': 1,
           'count': _queueItems.length,
