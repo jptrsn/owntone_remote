@@ -1,15 +1,15 @@
-# Release notes — OwnTone Remote 0.1.1
+# Release notes — OwnTone Remote 0.2.0
 
-**One-time note for upgraders from 0.1.0:** this release switches to the
-project's dedicated **release signing key**. Android refuses to install
-an APK whose signing certificate differs from the installed one, and
-0.1.0 was **debug-signed** — so you must **uninstall OwnTone Remote
-once, then install 0.1.1** (in Obtainium: uninstall, then re-add / force
-update). Your server and settings are untouched by this; only the local
-app install is replaced.
+**One-time note for upgraders still on 0.1.0:** 0.1.0 was **debug-signed**;
+every release since 0.1.1 uses the project's dedicated **release signing
+key**, and Android refuses to install an APK whose signing certificate
+differs from the installed one — so if you never updated past 0.1.0 you
+must **uninstall OwnTone Remote once, then install 0.2.0** (in Obtainium:
+uninstall, then re-add / force update). Installs coming from 0.1.1 update
+in place as normal. Your server and settings are untouched either way.
 
-Release: built from tag `v0.1.1` by `release.sh` (gates green on this
-commit: analyze 0 issues · format 0 changed · 472/472 tests;
+Release: built from tag `v0.2.0` by `release.sh` (gates green on this
+commit: analyze 0 issues · format 0 changed · 623/623 tests;
 **signed with the dedicated release keystore** — `release.sh` refuses to
 publish debug-signed or foreign-signed APKs; a generated provenance
 header with the build commit and artifact sizes is published above these
@@ -17,41 +17,48 @@ notes). Package `dev.educoder.owntone_remote`,
 minSdk 26, targetSdk 36. Verified against OwnTone **29.3**
 (JSON API `:3689`, websocket `:3688`).
 
-## Changes in 0.1.1 (since 0.1.0)
+## Changes in 0.2.0 (since 0.1.1)
 
-All seven changes are OwnTone-web-UI parity fixes, each built and
-device-verified by its own overnight-pipeline unit (disposable AVD per
-unit, reviews in the cited PRs), with the two audio-behaviour criteria
-closed in a supervised user-present session on 2026-11-19:
+Eleven features from the ReTune-UX capture pass (the `retune-ux-capture`
+intent's `R-15`–`R-26`), each built and device-verified by its own
+overnight-pipeline unit (disposable AVD per unit, independent review
+records posted to the cited PRs), with the audible-playback rows closed
+in a user-present Pixel 6 session on 2026-11-20 (Server/ALSA output):
 
-- **Queue tap advances in place** — tapping a queued track no longer
-  clears the queue and plays only that track; it now mirrors the web
-  UI (`PUT /api/player/play?item_id=…`): the queue is untouched, the
-  tapped item becomes the current track (issue #21, `R-11`; PR #33).
-  Verified on-device: item moved + audible advance, queue
-  count/version byte-stable.
-- **Output deselect is conditional** — deselecting one of several
-  selected outputs is now silent (audio just continues on the rest);
-  only deselecting the **only** selected output warns, and confirming
-  deactivates it **and stops playback** (server `stop`, not pause) when
-  the player was playing (issue #20, `R-09`; PR #34). Verified
-  on-device including the stop.
-- **Unselected outputs' volume sliders are disabled** (but visible),
-  following live websocket selection changes — matching the OwnTone
-  web UI (issue #19, `R-09`; PR #31). The selection checkbox stays
-  enabled.
-- **Queue "hide items played earlier"** — a pure visibility toggle that
-  hides rows before the currently playing track and re-anchors when the
-  track changes; it never mutates the queue (zero API calls)
-  (issue #23, `R-11`; PR #32).
-- **Playing a search result navigates to Now Playing** instead of
-  leaving you on the results (issue #24, `R-13`; PR #30).
-- **Star rating on its own row** below artist/album on Now Playing,
-  centred (issue #25, `R-03`/`R-12`; PR #28).
-- **Elapsed · slider · duration share the playhead row** — the slider
-  flexes between the time labels and never squeezes or displaces them,
-  incl. long titles and 3-digit-minute durations (issue #26, `R-03`;
-  PR #29).
+- **Navigation drawer** — a hamburger drawer on every main screen with
+  the player identity, connection state, and links to Queue, Outputs,
+  Settings and About (issue #44, `R-21`; PR #56).
+- **Persistent mini transport bar** — a bottom bar (artwork, title,
+  play/pause, next) while a track is loaded, on every screen except Now
+  Playing; it honours the bottom window insets (issue #45, `R-22`;
+  PRs #57, #65).
+- **Theme choice** — Light, Dark, or Follow-system, persisted across
+  launches (issue #43, `R-26`; PR #51).
+- **Songs browse view** — the all-tracks list joins Playlists, Artists,
+  Albums and Genres on the library home (issue #38, `R-15`; PR #55).
+- **Alphabetical section headers** on the Artists, Genres and Songs
+  lists (issue #48, `R-25`; PR #54).
+- **Outputs one tap away** — a Speakers app-bar action on every browse
+  screen for mid-browse output switching (issue #40, `R-18`; PR #52).
+- **Go to Artist / Go to Album** — Now Playing's overflow opens the
+  current track's browse context (compilations name the album artist)
+  (issue #39, `R-17`; PRs #53, #67, #69).
+- **Play All / Shuffle / Play Next / Add to Up Next** on playlist and
+  album detail screens — add-only paths never clear the queue, and
+  Shuffle shuffles client-side because the server's add-time shuffle
+  parameter writes the *global* mode (issue #41, `R-19`; PR #58).
+- **Queue drag-reorder** — tap-and-hold a row and drag; commits exactly
+  one `PUT /api/queue/items/{id}?new_position=N`, with the now-playing
+  row inert (issue #46, `R-23`; PR #59).
+- **Per-row Remove and Play Next** on queue rows (row tap still
+  advances in place); the menu re-checks which row is playing before it
+  acts, so a track advance mid-menu can't make Remove delete the
+  current track (issue #47, `R-24`; PRs #60, #67).
+- **Server auto-discovery** — the connection screen scans the LAN over
+  mDNS (OwnTone's `_http._tcp` advertisement + `ffid`/`mtd-version` TXT
+  fingerprint); one tap on a hit pre-fills host/port and connects, the
+  scan is cancellable, and manual entry is never blocked (issue #42,
+  `R-20`; PRs #61, #66).
 
 ## What works
 
@@ -60,12 +67,16 @@ device — a Pixel 6; full R-ID + reconnect passes by device-verification
 units 001–002, release-build pass by unit 003, real-hardware pass by
 unit 004, and per-feature device passes in the cited `remote-app`
 units — see `.ai-dlc/device-verification/units/` and
-`.ai-dlc/remote-app/units/`, plus the 0.1.1 unit passes above).
+`.ai-dlc/remote-app/units/`, plus the 0.1.1 and 0.2.0 unit passes
+above).
 The silent-drop row was proven on-device in unit 009 (debug build; the
 release build runs the identical dart:io `pingInterval` code path):
 
 - **Connection** — host/port settings, auto-reconnect on relaunch, and
-  distinct errors for DNS failure vs refused port vs auth (`R-01`).
+  distinct errors for DNS failure vs refused port vs auth (`R-01`);
+  **LAN auto-discovery** over mDNS with its own loading/timeout/error
+  states and one-tap prefill into the same connect flow, cancellable so
+  a popped screen never keeps scanning (`R-20`).
 - **Reconnect robustness** — offline banner in ~1.4 s of a hard network
   loss, reconnect backoff 1→2→4→8→16→30 s (capped), full refetch on
   reconnect, no notification duplication or state thrash under rapid
@@ -78,14 +89,21 @@ release build runs the identical dart:io `pingInterval` code path):
   the placeholder as the normal case** — no exception or retry storm
   from the caching layer at either fetch site; rating stars render on
   their own centred row below artist/album, and elapsed·slider·duration
-  share the playhead row without the slider squeezing the labels
-  (`R-03`).
+  share the playhead row without the slider squeezing the labels;
+  overflow offers **Go to Artist / Go to Album** into the track's
+  browse context (`R-03`, `R-17`).
 - **Transport & controls** — play/pause/next/previous, media-session
   (lock screen) and notification actions, all working with the app
   backgrounded (`R-04`; the backgrounded shade-tap is evidenced on
   dv-003's AVD — on the dv-004 Pixel 6 the shell media-key injection
   path is inert, so backgrounded control was not re-verifiable there,
-  see the device gate below).
+  see the device gate below); a **persistent bottom mini transport bar**
+  while a track is loaded (`R-22`).
+- **Navigation** — ReTune-style **hamburger drawer on every main
+  screen** (player identity, connection state, Queue/Outputs/Settings/
+  About) (`R-21`); **Speakers app-bar action on every browse screen**
+  (`R-18`).
+- **Theme** — Light / Dark / Follow-system picker, persisted (`R-26`).
 - **Notification** — one persistent `mediaPlayback` foreground-service
   notification with the current track and Play/Next/Previous actions;
   updates from websocket events; survives backgrounding (`R-07`).
@@ -100,16 +118,21 @@ release build runs the identical dart:io `pingInterval` code path):
   silent, deselecting the **only** selected output warns and on confirm
   stops playback (if playing); unselected outputs render their volume
   slider disabled-but-visible, following live websocket changes;
-  selection toggles use one full-set `PUT /api/outputs/set`
-  (`R-09`).
-- **Library** — Playlists, Artists, Albums, Genres; pagination beyond
-  page 1 without duplicates; explicit empty states (`R-10`).
+  selection toggles use one full-set `PUT /api/outputs/set` (`R-09`).
+- **Library** — Playlists, Artists, Albums, Genres, and **Songs** (all
+  tracks); alphabetical **section headers** on Artists/Genres/Songs;
+  playlist/album detail offers **Play All / Shuffle / Play Next / Add
+  to Up Next** (add-only paths never clear the queue); pagination
+  beyond page 1 without duplicates; explicit empty states
+  (`R-10`, `R-15`, `R-19`, `R-25`).
 - **Queue** — list mirrors the server, exactly one "now playing"
-  marker, **tap advances the queue in place** (no replacement), clear
-  with confirm, and a pure-visibility "hide items played earlier"
-  toggle; per-event refetches are **single-flight with a coalesced
-  trailing refresh**, so overlapping server churn can't leave a stale
-  count or an out-of-date list (`R-11`).
+  marker, **tap advances the queue in place** (no replacement), **long-
+  press drag-reorder** committing a single server move (now-playing row
+  inert), **per-row Remove and Play Next**, clear with confirm, and a
+  pure-visibility "hide items played earlier" toggle; per-event
+  refetches are **single-flight with a coalesced trailing refresh**, so
+  overlapping server churn can't leave a stale count or an out-of-date
+  list (`R-11`, `R-23`, `R-24`).
 - **Ratings** — star display (server rating ÷ 20) and star taps
   persist to the server and update via websocket (`R-12`).
 - **Search** — grouped Tracks/Artists/Albums results with per-group
@@ -141,7 +164,9 @@ stock install cannot reach the server until you allow it:
    them). Either can be denied; the rest of the app still works
    (call-pause stops working without Phone).
 4. On the connection screen enter the server host (e.g.
-   `192.168.1.13`) and port `3689` → Connect.
+   `192.168.1.13`) and port `3689` → Connect — or run the **scan** to
+   find the server on the LAN (mDNS discovery needs the same network
+   permission).
 
 Battery optimization: the playback service runs as a
 `mediaPlayback` foreground service (the type Android permits for media
@@ -158,9 +183,19 @@ recorded at the device gate — see below.)
 
 ## Known limitations
 
-- **Release key migration (0.1.0 → 0.1.1).** 0.1.0 was debug-signed;
-  0.1.1 is the first release on the dedicated release key, so upgrading
-  requires a one-time uninstall/reinstall (see top of these notes).
+- **Red-screen crash under investigation (issue #64).** A widget-library
+  assertion ("Looking up a deactivated widget's ancestor is unsafe")
+  was witnessed **at least three times** by the project owner during the
+  2026-11-20 supervised device session on a **debug** build, always
+  around the Settings/connection screens. Cause unidentified (the
+  initial mDNS-scan suspect was exculpated by independent review); the
+  fix awaits a supervised `flutter run` stack-trace capture. It was not
+  observed in the dv-003/dv-004 release passes (0 crashes through the
+  10-min background runs there), and no crash-on-launch class is known.
+- **Release key migration (0.1.0 → 0.1.1+).** 0.1.0 was debug-signed;
+  every release since 0.1.1 uses the dedicated release key, so upgrading
+  **directly from 0.1.0** requires a one-time uninstall/reinstall (see
+  top of these notes).
 - **Chromecast outputs** fail to select server-side on OwnTone 29.3
   (server-side issue) — AirPlay and ALSA outputs work; Chromecast
   selection is untested end-to-end because of it.
@@ -183,13 +218,16 @@ recorded at the device gate — see below.)
 
 ## Device gate — verified (release build) + untested list
 
-The release binary for the **0.1.0 line** was device-verified twice —
-those passes cover the unchanged code paths below. The 0.1.1 changes
-were each device-verified per unit on a disposable AVD (and the two
-audio criteria in a supervised session); the 0.1.1 release binary itself
-follows the same policy as 0.1.0's notes — UI-only deltas verified on
-debug/unit builds, with the dv-003/004 release passes quoted here for
-the unchanged runtime surface.
+The release binary for the **0.1.x line** was device-verified twice —
+those passes cover the unchanged code paths below. The 0.2.0 changes
+were each device-verified per unit on a disposable AVD (overnight runs
+of 2026-11-19/20; the audible-playback rows closed in the supervised
+user-present Pixel 6 pass of 2026-11-20), and those records were
+adjudicated by independent retroactive reviews on 2026-11-21 (correction
+sweep in `docs/SESSION-LOG.md` + the cited PRs). The 0.2.0 release
+binary itself follows the same policy as 0.1.1's notes — UI-only deltas
+verified on debug/unit builds, with the dv-003/004 release passes quoted
+here for the unchanged runtime surface.
 
 `device-verification/003` passed on 2026-11-13: the release APK
 (`926a6be`) on a **disposable Android 36 AOSP emulator** (created and
