@@ -88,6 +88,11 @@ class _ConnectingScreen extends StatelessWidget {
 }
 
 /// R-01 criterion: a *specific, readable* error — DNS vs refused vs 401.
+///
+/// PR #56 review (LOW) adjudication: these phase screens carry no
+/// hamburger on purpose — R-21 enumerates the *main* screens; transient
+/// connect/error states are not navigation surfaces. The error screen's
+/// retry affordance is its own button (not the drawer).
 class _ConnectionErrorScreen extends StatelessWidget {
   const _ConnectionErrorScreen({required this.message});
 

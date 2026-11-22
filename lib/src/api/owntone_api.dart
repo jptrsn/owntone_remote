@@ -125,6 +125,13 @@ class OwntoneApi {
   /// 2026-11-20: total 3265; `offset=100` (page 3 at the default limit 50)
   /// serves distinct rows.
   /// Do NOT "simplify" this onto `/api/library/tracks` — it does not exist.
+  /// Media kind: `?media_kind=music` is deliberately NOT sent — whether
+  /// `type=tracks&query=` already excludes non-music items was never
+  /// verified server-side (PR #55 review F4; documented-untested). The
+  /// user's library is music-only (AGENTS §5 keeps podcasts/radio out of
+  /// scope), so the filter is invisible today; if a media-kind-bearing
+  /// library is ever served, add the param AND verify live before
+  /// trusting the Songs list.
   Future<Paging<Track>> tracks({int offset = 0, int limit = 50}) =>
       _searchGroup('tracks', '', Track.fromJson, offset: offset, limit: limit);
 
