@@ -1114,8 +1114,8 @@ void main() {
               'reconnecting\u2192none backoff transition would silently '
               'degrade the premise to the short label)',
         );
-        // The body volume row has its own (PR-untouched) overflow at this
-        // below-floor width — consume it so the assertion below scopes to
+        // The body ENTRY row (Playing via / Queue · N / Library) has its
+        // own (PR-untouched) 12 px overflow at this below-floor width — consume it so the assertion below scopes to
         // the actions Row geometry alone.
         tester.takeException();
         final row = tester.renderObject<RenderFlex>(

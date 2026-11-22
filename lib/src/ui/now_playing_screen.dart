@@ -401,8 +401,11 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
           // remote's "current speaker" indicator (ReTune IA, D6) and opens
           // the Outputs screen; "Queue · N" opens the queue (R-11);
           // "Library" opens the browse section. All live here — not in the
-          // app bar — because a second app-bar icon overflows the
-          // 360-logical-pixel viewport by 9px (unit 004 finding). The row is
+          // app bar — because a third actions icon overflows the narrowest
+          // supported viewport (PR #69 re-measure: actions sum 374.5 vs
+          // 360.0 at 360 logical px with the long sync label, Ahem font;
+          // unit 004's contemporaneous note said +9 px with its own label
+          // configuration). The row is
           // always present so the entries exist even with no outputs.
           Row(
             children: [
