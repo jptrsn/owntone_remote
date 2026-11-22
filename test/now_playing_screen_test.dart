@@ -3,6 +3,7 @@ import 'dart:ui' show Tristate;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderBox, RenderFlex;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:owntone_remote/src/api/backoff.dart';
 import 'package:owntone_remote/src/api/ws_client.dart';
@@ -1081,13 +1082,15 @@ void main() {
     }
 
     testWidgets(
-      'R-17 app bar fits the 360-logical-px floor WITH the More button '
-      'mounted (PR #53 round-2 review major: actions Row overflowed 9 px — '
-      'viewport tests missed it because browse ids are opt-in-null)',
+      'R-17 hardening: More-mounted actions row fits the 320-logical-px '
+      'viewport (PR #53 round-2 review: the claimed 9 px overflow at the '
+      '360 floor was NOT reproducible — measured headroom +33.5 px; the '
+      'Flexible guard demonstrably bites here: label shrinks 218.5→212 with '
+      'ellipsis while base overflows the Row by 6.5 px)',
       (tester) async {
         HttpOverrides.global = _FailOverrides();
         addTearDown(() => HttpOverrides.global = null);
-        tester.view.physicalSize = const Size(1080, 1920);
+        tester.view.physicalSize = const Size(960, 1920);
         tester.view.devicePixelRatio = 3.0;
         addTearDown(tester.view.reset);
         await tester.runAsync(wireUp);
@@ -1097,16 +1100,42 @@ void main() {
         channels.last.serverSend('{"notify":["player"]}');
         await tester.runAsync(realPump);
         await tester.pump();
-        // Longest syncLabel ('sync: reconnecting…', ~20 chars) — the
-        // reviewer's overflow repro; 'sync: live' fits 360 dp even
-        // unguarded, so asserting at the short label is vacuous.
         await tester.runAsync(dropServer);
         await tester.pump();
         expect(
           find.byKey(const ValueKey('now-playing-overflow')),
           findsOneWidget,
         );
-        expect(tester.takeException(), isNull);
+        expect(
+          find.text('sync: reconnecting\u2026'),
+          findsOneWidget,
+          reason:
+              'premise: the LONGEST syncLabel is mounted (a '
+              'reconnecting\u2192none backoff transition would silently '
+              'degrade the premise to the short label)',
+        );
+        // The body volume row has its own (PR-untouched) overflow at this
+        // below-floor width — consume it so the assertion below scopes to
+        // the actions Row geometry alone.
+        tester.takeException();
+        final row = tester.renderObject<RenderFlex>(
+          find
+              .ancestor(
+                of: find.byKey(const ValueKey('now-playing-overflow')),
+                matching: find.byType(Row),
+              )
+              .first,
+        );
+        double sum = 0;
+        row.visitChildren((c) => sum += (c as RenderBox).size.width);
+        expect(
+          sum,
+          lessThanOrEqualTo(row.constraints.maxWidth + 0.01),
+          reason:
+              'actions Row must never RenderFlex-overflow, even '
+              'below the declared 360-px floor (guard: Flexible + '
+              'ellipsis on the sync label)',
+        );
       },
     );
 

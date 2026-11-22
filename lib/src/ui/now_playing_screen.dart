@@ -174,11 +174,15 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
           // identity belongs next to "Connected To" (it is also on the
           // About screen). Do not move it back — mutation-verified
           // overflow (test/app_drawer_test.dart takeException checks).
-          // PR #53 round-2 review major: with the 'More' button mounted the
-          // actions Row overflowed 9 px at the 360-logical-px floor (the
-          // viewport tests missed it — browse ids are opt-in-null, the
-          // device is ~411 dp). The sync label is the only compressible
-          // member (title/icons are atomic), so it takes the shrink.
+          // PR #53 round-2 review: the 'More' button (browse ids mounted)
+          // pushes the actions Row past the toolbar at narrow widths — the
+          // initially-claimed 9 px at the 360 floor was NOT reproducible
+          // (round-2 measurement: +33.5 px headroom at 360, Ahem test font
+          // ~2x real Roboto); the guard demonstrably bites at 320 logical
+          // px (base overflows 6.5 px) and at 360 with textScaler 1.3
+          // (29.2 px). NavigationToolbar collapses the title first (it can
+          // reach w=0), so this label is the last compressible member
+          // before the Row itself throws. Do not remove.
           Flexible(
             child: Padding(
               padding: const EdgeInsets.only(right: 12),
