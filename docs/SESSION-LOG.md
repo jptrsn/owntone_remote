@@ -2544,7 +2544,13 @@ untouched), icon present on library home + Albums, tap opens the real
 outputs list (Bathroom display/ESP-CAAC64 selected/…), back returns to the
 list; **360-dp check on-device via `wm density 300`** (1080 px = exactly 360
 logical px): app bar title/icon non-overlapping, fully on-screen, console 0
-overflow lines — same 0-hit grep at the 411-dp default. Harness same as #43:
+overflow lines — same 0-hit grep at the 411-dp default. [CORRECTION
+2026-11-21, retroactive review of PR #52: the parenthetical is
+arithmetically wrong — `wm density 300` gives 1080 × 160/300 = **576 dp**,
+so the device row measured a 576-dp viewport; exact-360-logical-px stays
+pinned by the deterministic widget test (`test/outputs_appbar_test.dart`,
+360×800 @ dpr 1.0). See `.ai-dlc/night-2026-11-19/reports/40.md`
+§ Corrections — 2026-11-21.] Harness same as #43:
 agent-lens/inspector trees + flutter_driver dead on this run, uiautomator
 content-desc + screencap + console carried it (and this model has no image
 input — screencaps are on-disk-only evidence). Report
