@@ -176,6 +176,10 @@ class _BrowseRow {
 /// The R-25 letter group from an item's server sort key: uppercased first
 /// character; anything that is not a letter (digit, symbol, empty) folds
 /// into `#` — ReTune's `basic_header` collapse.
+/// PR #54 review (F3) hypothesised single-rune `toUpperCase` EXPANSION
+/// (ß→SS, ﬀ→FF). DISPROVED by measurement (PR #70): Dart's toUpperCase is
+/// the simple 1:1 mapping — 'ß' stays 'ß', the ﬀ ligature is unchanged; no
+/// two-char group is reachable. Behaviour pinned in tracks_screen_test.
 String browseSectionKey(String sortName) {
   final trimmed = sortName.trim();
   if (trimmed.isEmpty) return '#';

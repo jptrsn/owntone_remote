@@ -185,7 +185,7 @@ void main() {
       await pumpBrowse(tester, ['Ann', 'Bob'], groupKeyOf: identityKey);
       final data = tester.getSemantics(find.text('A')).getSemanticsData();
       expect(data.flagsCollection.isHeader, isTrue);
-      expect(data.label, contains('A'));
+      expect(data.label, equals('A'));
       expect(data.hasAction(SemanticsAction.tap), isFalse);
       expect(data.flagsCollection.isFocused, Tristate.none);
       handle.dispose();

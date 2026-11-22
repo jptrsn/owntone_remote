@@ -140,7 +140,7 @@ void main() {
   /// Controllers + real-timer waiting inside `tester.runAsync` (the fake
   /// WS/backoff timers need the real zone — pattern from
   /// outputs_appbar_test / now_playing_screen_test).
-  Future<void> wireUp() async {
+  Future<void> wireUp({bool connect = true}) async {
     SharedPreferences.setMockInitialValues({});
     serverDown = false;
     adapter = ScriptedAdapter(responder: handle);
@@ -175,8 +175,10 @@ void main() {
     rating = RatingController(connection: conn, player: player);
     await rating.init();
     store = SettingsStore(await SharedPreferences.getInstance());
-    await conn.connectTo(_cfg);
-    await Future<void>.delayed(const Duration(milliseconds: 60));
+    if (connect) {
+      await conn.connectTo(_cfg);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    }
   }
 
   Future<void> dropServer() async {
@@ -308,6 +310,18 @@ void main() {
         );
       }
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('PR #56 review (LOW): idle phase — drawer header must not '
+        'claim a connection ("Not connected", never "Connected To — …")', (
+      tester,
+    ) async {
+      await tester.runAsync(() => wireUp(connect: false));
+      expect(conn.phase, ConnectionPhase.idle);
+      await pumpApp(tester, const LibraryHomeScreen());
+      await openDrawer(tester, LibraryHomeScreen);
+      expect(find.text('Not connected'), findsOneWidget);
+      expect(find.textContaining('Connected To'), findsNothing);
     });
   });
 

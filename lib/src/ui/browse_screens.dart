@@ -91,7 +91,10 @@ class SetPlaybackOverflow extends StatelessWidget {
 
 /// R-19: the Shuffle entry's client-side pre-shuffle path. The full set is
 /// materialized as item URIs first (one unbounded `limit=-1` page —
-/// verified live against this server 2026-11-20), shuffled by
+/// `limit=-1` verified live against this server 2026-11-20 on the
+/// album-tracks and playlist-tracks routes only; the artist-albums route
+/// rides OwnTone's generic paging and is NOT separately verified —
+/// PR #58 review), shuffled by
 /// [QueueController.playUrisShuffled], then replace-and-started. The
 /// add-time `?shuffle` param is NOT used: it is the server's GLOBAL
 /// shuffle-mode setter (live-verified 2026-11-20), and R-19 requires

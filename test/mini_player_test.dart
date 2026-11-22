@@ -378,6 +378,14 @@ void main() {
           expect(find.byKey(_miniNext), findsOneWidget);
           expect(tester.takeException(), isNull);
         }
+        // PR #57 review (minor): the spec's OTHER half — "every main
+        // screen EXCEPT Now Playing" — was device-row-only until now.
+        await pumpApp(tester, const NowPlayingScreen());
+        expect(
+          find.byKey(_miniPlayer),
+          findsNothing,
+          reason: 'Now Playing must never host the mini bar (R-22)',
+        );
       },
     );
 

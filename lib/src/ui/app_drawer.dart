@@ -120,7 +120,12 @@ class AppDrawer extends StatelessWidget {
     final conn = context.watch<ConnectionController>();
     final connected = conn.phase == ConnectionPhase.connected;
     final theme = Theme.of(context);
-    final serverName = conn.serverName ?? conn.config?.host ?? 'server';
+    // PR #56 review (LOW): the idle Connect screen can open the drawer;
+    // claiming "Connected To — <host>" there asserts a connection that
+    // never happened. Pre-first-connect reads "Not connected" instead.
+    final serverName = conn.phase == ConnectionPhase.idle
+        ? null
+        : (conn.serverName ?? conn.config?.host);
     return Drawer(
       child: SafeArea(
         right: false,
@@ -135,7 +140,9 @@ class AppDrawer extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     Text(
-                      'Connected To — $serverName',
+                      serverName == null
+                          ? 'Not connected'
+                          : 'Connected To — $serverName',
                       style: theme.textTheme.titleMedium,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,

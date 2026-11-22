@@ -443,6 +443,11 @@ void main() {
       // "A List 1") — the live probe shape verified 2026-11-20.
       expect(browseSectionKey('A List 1'), 'A');
       expect(browseSectionKey('The A List 1'), 'T');
+      // PR #54 review F3 (expansion hypothesis DISPROVED — Dart's
+      // toUpperCase is simple 1:1; pinned so a future ICU/full-mapping
+      // switch that WOULD expand still has to decide the header shape):
+      expect(browseSectionKey('\u00dfweinen'), '\u00df'); // ß stays single
+      expect(browseSectionKey('\uFB00luss'), '\uFB00'); // ﬀ ligature intact
     });
   });
 }

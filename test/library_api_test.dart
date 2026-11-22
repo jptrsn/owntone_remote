@@ -300,9 +300,12 @@ Map<String, dynamic> dataFor(RequestOptions o) {
       };
     case '/api/search':
       if (o.uri.queryParameters['type'] == 'tracks') {
-        // Songs (R-15): the empty-query tracks group, wire-shaped from the
-        // live probe of 2026-11-20 (total 3265; "The A Team" /
-        // title_sort "A Team" opens the name-sorted list).
+        // Songs (R-15): the empty-query tracks group. FIRST item is the
+        // live capture of 2026-11-20 (total 3265; "The A Team" /
+        // title_sort "A Team" opens the name-sorted list). SECOND item is
+        // SYNTHESIZED to exercise the sortTitle fallback — live items all
+        // carry title_sort/rating, so a wire-shaped capture cannot cover
+        // the missing-field path (PR #55 review F2).
         return const {
           'tracks': {
             'items': [

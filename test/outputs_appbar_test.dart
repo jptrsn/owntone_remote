@@ -174,7 +174,12 @@ void main() {
           reason: 'app bar + one action must not overflow at 360 dp',
         );
         expect(find.byTooltip('Outputs'), findsOneWidget);
-        expect(find.bySemanticsLabel('Outputs'), findsWidgets);
+        expect(
+          find.bySemanticsLabel('Outputs'),
+          findsOneWidget,
+          reason:
+              'PR #52 review: uniqueness of the semantics node must regress if duplicated (tooltip check alone does not pin it)',
+        );
         semantics.dispose();
       },
     );
@@ -194,7 +199,12 @@ void main() {
           reason: 'title + back + one action must fit at 360 dp',
         );
         expect(find.byTooltip('Outputs'), findsOneWidget);
-        expect(find.bySemanticsLabel('Outputs'), findsWidgets);
+        expect(
+          find.bySemanticsLabel('Outputs'),
+          findsOneWidget,
+          reason:
+              'PR #52 review: uniqueness of the semantics node must regress if duplicated (tooltip check alone does not pin it)',
+        );
         expect(
           find.text('Album 1'),
           findsOneWidget,
