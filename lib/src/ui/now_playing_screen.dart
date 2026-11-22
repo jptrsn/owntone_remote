@@ -174,11 +174,20 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
           // identity belongs next to "Connected To" (it is also on the
           // About screen). Do not move it back — mutation-verified
           // overflow (test/app_drawer_test.dart takeException checks).
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Text(
-              syncLabel,
-              style: Theme.of(context).textTheme.labelSmall,
+          // PR #53 round-2 review major: with the 'More' button mounted the
+          // actions Row overflowed 9 px at the 360-logical-px floor (the
+          // viewport tests missed it — browse ids are opt-in-null, the
+          // device is ~411 dp). The sync label is the only compressible
+          // member (title/icons are atomic), so it takes the shrink.
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(
+                syncLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
             ),
           ),
           IconButton(

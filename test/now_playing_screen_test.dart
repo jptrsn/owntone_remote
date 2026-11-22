@@ -1081,6 +1081,70 @@ void main() {
     }
 
     testWidgets(
+      'R-17 app bar fits the 360-logical-px floor WITH the More button '
+      'mounted (PR #53 round-2 review major: actions Row overflowed 9 px — '
+      'viewport tests missed it because browse ids are opt-in-null)',
+      (tester) async {
+        HttpOverrides.global = _FailOverrides();
+        addTearDown(() => HttpOverrides.global = null);
+        tester.view.physicalSize = const Size(1080, 1920);
+        tester.view.devicePixelRatio = 3.0;
+        addTearDown(tester.view.reset);
+        await tester.runAsync(wireUp);
+        fx.albumId = 'alT';
+        fx.albumArtistId = 'aT';
+        await pumpScreen(tester);
+        channels.last.serverSend('{"notify":["player"]}');
+        await tester.runAsync(realPump);
+        await tester.pump();
+        // Longest syncLabel ('sync: reconnecting…', ~20 chars) — the
+        // reviewer's overflow repro; 'sync: live' fits 360 dp even
+        // unguarded, so asserting at the short label is vacuous.
+        await tester.runAsync(dropServer);
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('now-playing-overflow')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'R-17 exactly-one-id: single-entry menu (album-only shows only Go to '
+      'Album and pushes; artist-only shows only Go to Artist)',
+      (tester) async {
+        HttpOverrides.global = _FailOverrides();
+        addTearDown(() => HttpOverrides.global = null);
+        await tester.runAsync(wireUp);
+        fx.albumId = 'alT';
+        fx.albumArtistId = null;
+        channels.last.serverSend('{"notify":["player"]}');
+        await pumpScreen(tester);
+        await tester.runAsync(realPump);
+        await tester.pump();
+
+        await openOverflow(tester);
+        expect(find.text('Go to Album'), findsOneWidget);
+        expect(find.text('Go to Artist'), findsNothing);
+        await tester.tap(find.text('Go to Album'));
+        await settle(tester);
+        expect(find.byType(AlbumTracksScreen), findsOneWidget);
+        await tester.pageBack();
+        await settle(tester);
+
+        // Artist-only: swap the ids and let the player event re-read them.
+        fx.albumId = null;
+        fx.albumArtistId = 'aT';
+        channels.last.serverSend('{"notify":["player"]}');
+        await settle(tester);
+        await openOverflow(tester);
+        expect(find.text('Go to Artist'), findsOneWidget);
+        expect(find.text('Go to Album'), findsNothing);
+      },
+    );
+
+    testWidgets(
       'R-17 compilation: Go to Artist is named after the ALBUM artist '
       '(album_artist ≠ track artist — PR #53 review minor; the screen '
       'titles itself artist.name while listing the album artist albums)',
