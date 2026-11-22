@@ -10,12 +10,28 @@ completion criteria, backpressure, file-based memory for handoff.)
 ```
 .ai-dlc/
 ├── settings.yml
+├── orchestrator/          # unattended issue pipeline (authoritative process)
+│   ├── PROCEDURE.md       #   orchestrator state machine + gates + spawn templates
+│   ├── contract.md        #   unattended contract, pasted verbatim into subagent prompts
+│   ├── run-template.md    #   per-run config → .ai-dlc/night-<date>/run.md (human-filled)
+│   └── roles/             #   per-subagent role contracts: planner, builder, reviewer, fixer
+├── overnight/             # DEPRECATED pointer (history in git)
 └── <intent-slug>/
     ├── intent.md          # frontmatter (quality_gates, status) + Problem /
     │                      #   Solution / Domain Model / Success Criteria / Context
     ├── discovery.md       # environment + findings (where relevant)
     └── units/NNN-<slug>.md
 ```
+
+**Unattended runs** (issue list → merged PRs): follow
+`orchestrator/PROCEDURE.md`; the orchestrator spawns planner → builder →
+reviewer →(fixer ↺ reviewer)* per issue per AGENTS.md § "ai-dlc discipline".
+**OpenHands Software Factory** is the default maintenance path for issue
+work (AGENTS.md § "Maintenance model"); `orchestrator/PROCEDURE.md` §
+"OpenHands Software Factory mapping" carries its repo contract, and
+`.agents/skills/device-bound-work/` keeps device steps host-side.
+This file's unit/backpressure discipline below still governs manual work and
+is what the roles' "done means" derives from.
 
 ## Intent lifecycle
 

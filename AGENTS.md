@@ -233,6 +233,34 @@ the app.
 | `docs/ARCHITECTURE.md` | Writing code | Layers, `MusicProvider` contract, state flow |
 | `docs/API.md` | Touching the network layer | Endpoint reference, live examples, WS protocol |
 | `docs/retune-capture/CAPTURE-PROTOCOL.md` | Capture intent only | Walk procedure, static pass, output format |
+| `.ai-dlc/orchestrator/PROCEDURE.md` | Issue-driven maintenance (any agent) | Per-issue lifecycle: plan → build → PR → agentic review → iterate → merge → close |
+
+## Maintenance model (OpenHands primary, host harness for devices — 2026-11-22)
+
+Issue-driven maintenance runs on the **OpenHands Software Factory**
+(factory-triage → factory-developer → independent factory-reviewer →
+delivery watchdog) against this repo. If you are a factory agent, this file
+is your always-loaded repository context; the per-issue lifecycle detail —
+including the gates table, the review-integrity rules (independent
+reviewer, full report POSTED to the PR, merge gate reads GitHub) and the
+evidence/truthfulness rules — is
+`.ai-dlc/orchestrator/PROCEDURE.md`; § Branching & CI is binding for
+every agent, factory or otherwise (branch off `develop`, PR back to
+`develop`, squash-merge, delete branch, **explicit `gh issue close`** —
+never trust the `Closes #n` keyword alone).
+
+**Host-bound carve-out:** work needing tools on the maintainer's machine —
+Android emulators (AVDs), `adb` (including the Pixel 6 `25071FDF600953`),
+`flutter run`/VM-service inspection, on-device observation, or supervised
+audio verification on the OwnTone server — is executed **only** by the
+opencode harness on that host. A sandboxed agent must never attempt device
+steps: build and verify everything possible without hardware (fakes,
+widget tests, gates), record each hardware-dependent criterion as
+`BLOCKED-PENDING-HOST-VERIFICATION` (action → expected observation →
+substitute proof) in the PR body, and comment requesting the
+`needs-host-tools` label so the host session takes the device pass.
+Exemplar: issue #64 (red-screen capture needs a connected device) stays
+host-side until cause + proposed fix are identified there.
 
 ## Environment (host+CI aligned on 3.47.9, 2026-11-14)
 
@@ -355,10 +383,14 @@ A unit is **done** only when ALL of:
 
 ## ai-dlc discipline
 
-- **Unattended overnight runs**: `.ai-dlc/overnight/pipeline.md` is the
-  authoritative process; the user authorized merge-to-develop unattended
-  **only** for the units in its Run configuration (issues #19–#26, decision
-  2026-11-18). Runs start as the `overnight` agent
+- **Unattended runs**: `.ai-dlc/orchestrator/PROCEDURE.md` is the
+  authoritative process (plan → build → PR → agentic review → fix loop →
+  squash-merge → close-issue, per issue, serially; supersedes
+  `.ai-dlc/overnight/pipeline.md`). Per-run scope — units, authorization,
+  device policy — lives in the human-filled `.ai-dlc/night-<date>/run.md`
+  (from `run-template.md`); unattended authorization covers **only** the
+  units named there, and only what that run's authorization line grants.
+  Runs start as the `overnight` agent
   (`.opencode/agent/overnight.md`) whose permission blocks pre-answer every
   prompt the run may raise and hard-deny repo creation, the `question` tool,
   and any path outside the repo + `/tmp`. **Scratch for any run lives ONLY
