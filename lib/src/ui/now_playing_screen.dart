@@ -174,11 +174,24 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
           // identity belongs next to "Connected To" (it is also on the
           // About screen). Do not move it back — mutation-verified
           // overflow (test/app_drawer_test.dart takeException checks).
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Text(
-              syncLabel,
-              style: Theme.of(context).textTheme.labelSmall,
+          // PR #53 round-2 review: the 'More' button (browse ids mounted)
+          // pushes the actions Row past the toolbar at narrow widths — the
+          // initially-claimed 9 px at the 360 floor was NOT reproducible
+          // (round-2 measurement: +33.5 px headroom at 360, Ahem test font
+          // ~2x real Roboto); the guard demonstrably bites at 320 logical
+          // px (base overflows 6.5 px) and at 360 with textScaler 1.3
+          // (29.2 px). NavigationToolbar collapses the title first (it can
+          // reach w=0), so this label is the last compressible member
+          // before the Row itself throws. Do not remove.
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(
+                syncLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
             ),
           ),
           IconButton(
@@ -388,8 +401,11 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
           // remote's "current speaker" indicator (ReTune IA, D6) and opens
           // the Outputs screen; "Queue · N" opens the queue (R-11);
           // "Library" opens the browse section. All live here — not in the
-          // app bar — because a second app-bar icon overflows the
-          // 360-logical-pixel viewport by 9px (unit 004 finding). The row is
+          // app bar — because a third actions icon overflows the narrowest
+          // supported viewport (PR #69 re-measure: actions sum 374.5 vs
+          // 360.0 at 360 logical px with the long sync label, Ahem font;
+          // unit 004's contemporaneous note said +9 px with its own label
+          // configuration). The row is
           // always present so the entries exist even with no outputs.
           Row(
             children: [
