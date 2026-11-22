@@ -122,7 +122,8 @@ class OwntoneApi {
   /// `GET /api/search?type=tracks&query=` where the server's empty-query
   /// branch is `title LIKE '%%'` (source: `search_tracks`), i.e. every
   /// track, `Q_ITEMS` sorted by name (`title_sort`). Verified live
-  /// 2026-11-20: total 3265, page 2 (`offset=100`) serves distinct rows.
+  /// 2026-11-20: total 3265; `offset=100` (page 3 at the default limit 50)
+  /// serves distinct rows.
   /// Do NOT "simplify" this onto `/api/library/tracks` — it does not exist.
   Future<Paging<Track>> tracks({int offset = 0, int limit = 50}) =>
       _searchGroup('tracks', '', Track.fromJson, offset: offset, limit: limit);

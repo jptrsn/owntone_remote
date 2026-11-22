@@ -15,7 +15,11 @@ import 'queue_item.dart';
 ///
 /// Same slice contract as OutputsController (unit 004): refetch on the
 /// relevant WS event, refetch on reconnect, typed action errors for the
-/// snackbar.
+/// snackbar — PLUS (PR #67) an awaiter hand-off layer here that
+/// Player/Outputs intentionally do not have: [_refresh] coalesces onto the
+/// actual in-flight fetch so `await _refresh()` guarantees a settled
+/// slice (addUris' cold-start guard depends on it). Do not "tidy" the
+/// three controllers back to one shared shape.
 class QueueController extends ChangeNotifier {
   QueueController({required ConnectionController connection})
     : _conn = connection,
@@ -110,8 +114,32 @@ class QueueController extends ChangeNotifier {
   /// `await api.getQueue()`.
   bool _refreshing = false;
   bool _pendingRefresh = false;
+  Future<void>? _inFlight;
 
-  Future<void> _refresh() async {
+  Future<void> _refresh() {
+    final running = _inFlight;
+    if (_refreshing && running != null) {
+      // Coalesce onto the ACTUAL fetch (awaiting this must wait for the
+      // list, not return while the in-flight GET lands — addUris' cold-
+      // start guard depends on it), while still booking the trailing
+      // re-read (unit-011).
+      _pendingRefresh = true;
+      return running;
+    }
+    final f = _doRefresh();
+    _inFlight = f;
+    unawaited(
+      f.whenComplete(() {
+        // Round-2 review minor: never null a SUCCESSOR's slot (a
+        // coalescer can register between body-completion and this queued
+        // callback).
+        if (identical(_inFlight, f)) _inFlight = null;
+      }),
+    );
+    return f;
+  }
+
+  Future<void> _doRefresh() async {
     if (_refreshing) {
       _pendingRefresh = true;
       return;
@@ -175,10 +203,30 @@ class QueueController extends ChangeNotifier {
   /// (live-verified 2026-11-20, see OwntoneApi.addUris). No optimistic
   /// edit: the server's `queue` WS event + the [_action] trailing refresh
   /// land the post-commit list (unit-011 single-flight).
-  Future<bool> addUris(List<String> uris, {bool ahead = false}) => _action(
-    ahead ? 'Play next' : 'Add to queue',
-    (api) => api.addUris(uris, position: ahead ? 0 : _queue.length),
-  );
+  Future<bool> addUris(List<String> uris, {bool ahead = false}) async {
+    if (!ahead && !_hasLoaded) {
+      // PR #58 retroactive review minor: the tail pins _queue.length —
+      // cold-start/reconnect before the first GET /api/queue lands would
+      // pin position=0 and silently place "Add to Up Next" at the HEAD of
+      // a non-empty server queue. Omitting position is no fallback either
+      // (server-random slot while shuffle is on — live-verified).
+      await _refresh();
+      if (!_hasLoaded) {
+        // Round-2 review minor: a FAILED cold refresh must not degrade to
+        // the head-insert the veto exists to prevent — refuse the action
+        // (same error-surfacing convention as _action's catch).
+        _logger.w('addUris aborted: queue never loaded (cold refresh failed)');
+        _actionError = 'Add to Up Next failed — queue not loaded.';
+        _actionErrorSeq++;
+        if (!_disposed) notifyListeners();
+        return false;
+      }
+    }
+    return _action(
+      ahead ? 'Play next' : 'Add to Up Next',
+      (api) => api.addUris(uris, position: ahead ? 0 : _queue.length),
+    );
+  }
 
   /// R-19 (issue #41) — Shuffle: play [uris] in a CLIENT-side shuffled
   /// order, replacing the queue (same replace-and-start contract as

@@ -92,6 +92,9 @@ void main() {
       SharedPreferences.setMockInitialValues({'theme.mode': 'light'});
       await pumpThemeApp(tester);
       expect(probeBrightness(tester), Brightness.light);
+      // Platform is light here too — pin the selector so this half is
+      // discriminating (system-on-light would also render light).
+      expect(appOf(tester).themeMode, ThemeMode.light);
     });
 
     testWidgets('R-26 default is System — follows a platform brightness '
