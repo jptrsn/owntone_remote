@@ -66,6 +66,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<DiscoveredServer> _hits = const [];
   String? _scanError;
 
+  // Generation token (PR #61 retroactive review major). Reachability note
+  // (round-2 review): today's reachable races are all covered by mounted
+  // alone — a timed-out scan's completion is dropped by the .timeout
+  // wrapper itself, and "Try again" cannot fire mid-flight (phase guard).
+  // The gen is defence-in-depth for exactly those two wrappers: if either
+  // ever changes, an orphaned completion must still not clobber a fresh
+  // scan. Every post-await setState in _startScan requires its own gen
+  // to still be current.
+  int _scanGen = 0;
+
   @override
   void initState() {
     super.initState();
@@ -90,6 +100,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    // Abandon any in-flight scan with the route: bumps the generation so a
+    // late completion cannot setState, and stops the live multicast socket
+    // (PR #61 retroactive review major — orphaned scans kept firing QU
+    // queries after pop; rapid enter/exit stacked them).
+    _scanGen++;
+    _discovery.cancel();
     _host.dispose();
     _port.dispose();
     super.dispose();
@@ -116,6 +132,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final canPop = Navigator.of(context).canPop();
     unawaited(() async {
       await store.save(cfg);
+      // State.mounted is the sanctioned guard for State.context here
+      // (use_build_context_synchronously); it is _element != null, the
+      // same liveness test context.mounted performs.
       if (canPop && mounted) Navigator.of(context).pop();
       await conn.connectTo(cfg);
     }());
@@ -135,6 +154,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// design.
   Future<void> _startScan() async {
     if (_scanPhase == _ScanPhase.scanning) return;
+    final gen = ++_scanGen;
+    bool current() => mounted && gen == _scanGen;
     setState(() {
       _scanPhase = _ScanPhase.scanning;
       _scanError = null;
@@ -142,23 +163,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
     try {
       final hits = await _discovery.discover().timeout(kScanTimeout);
-      if (!mounted) return;
+      if (!current()) return;
       setState(() => _hits = hits);
     } on TimeoutException {
-      if (!mounted) return;
+      if (!current()) return;
       setState(
         () => _scanError =
             'Scan timed out — no OwnTone server answered. '
             'You can still enter the address manually.',
       );
     } on DiscoveryException catch (e) {
-      if (!mounted) return;
+      if (!current()) return;
       setState(() => _scanError = e.message);
     } catch (e) {
-      if (!mounted) return;
+      if (!current()) return;
       setState(() => _scanError = 'Scan failed: $e');
     } finally {
-      if (mounted) setState(() => _scanPhase = _ScanPhase.done);
+      if (current()) setState(() => _scanPhase = _ScanPhase.done);
     }
   }
 
@@ -166,8 +187,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// *existing* R-01 connect flow — same validation, same persist, same
   /// error surface. No discovery-specific connect path.
   void _useHit(DiscoveredServer hit) {
-    _host.text = hit.host;
-    _port.text = hit.port.toString();
+    final cfg = hit.config;
+    _host.text = cfg.host;
+    _port.text = cfg.port.toString();
     _saveAndConnect();
   }
 

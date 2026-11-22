@@ -10,7 +10,11 @@
 /// R-20.
 library;
 
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multicast_dns/multicast_dns.dart';
 import 'package:owntone_remote/src/discovery/mdns_discovery.dart';
 
 void main() {
@@ -81,4 +85,78 @@ void main() {
       expect(ownToneInstanceName('_http._tcp.local.'), '_http._tcp.local');
     });
   });
+
+  group('R-20 scan cancellation (PR #61 retroactive review major)', () {
+    // Future.timeout does NOT cancel the scan future, and discover() owns
+    // its client — so post-pop / post-timeout the QU queries kept firing.
+    // The fake mirrors the real MDnsClient contract (start/lookup/stop);
+    // stop() closing the browse stream is what the resolver's
+    // clearPendingRequests does for the real client.
+    test(
+      'cancel() stops the live client and discover() resolves empty',
+      () async {
+        final client = _FakeMDnsClient();
+        final discovery = MdnsOwnToneDiscovery(
+          clientFactory: () => client,
+          browseWindow: const Duration(seconds: 30),
+        );
+        final fut = discovery.discover();
+        await pumpEventQueue();
+        expect(client.starts, 1, reason: 'scan actually started');
+
+        discovery.cancel();
+        final hits = await fut; // must NOT need the 30 s browse window
+
+        expect(hits, isEmpty);
+        expect(client.stops, greaterThanOrEqualTo(1));
+      },
+    );
+
+    test('cancel() before any scan is a safe no-op (idempotent)', () {
+      final discovery = MdnsOwnToneDiscovery(
+        clientFactory: _FakeMDnsClient.new,
+      );
+      expect(discovery.cancel, returnsNormally);
+      discovery.cancel();
+    });
+  });
+}
+
+class _FakeMDnsClient extends MDnsClient {
+  int starts = 0;
+  int stops = 0;
+
+  @override
+  Future<void> start({
+    InternetAddress? listenAddress,
+    NetworkInterfacesFactory? interfacesFactory,
+    int mDnsPort = 5353,
+    InternetAddress? mDnsAddress,
+    Function? onError,
+  }) async {
+    starts++;
+  }
+
+  @override
+  Stream<T> lookup<T extends ResourceRecord>(
+    ResourceRecordQuery query, {
+    Duration timeout = const Duration(seconds: 5),
+  }) {
+    // Never emits: only stays open until stop() closes it (mirrors the
+    // real client with a silent network inside the browse window).
+    final controller = StreamController<T>();
+    _open.add(controller);
+    return controller.stream;
+  }
+
+  @override
+  void stop() {
+    stops++;
+    for (final c in _open) {
+      if (!c.isClosed) c.close();
+    }
+    _open.clear();
+  }
+
+  final List<StreamController<Object?>> _open = [];
 }
