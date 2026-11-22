@@ -119,6 +119,7 @@ class ConnectionController extends ChangeNotifier {
   String? _errorMessage;
   ServerConfig? _config;
   String? _serverVersion;
+  String? _serverName;
   Uri? _wsUri;
 
   Dio? _dio;
@@ -166,6 +167,13 @@ class ConnectionController extends ChangeNotifier {
   /// `version` from `/api/config` (null until the first successful connect).
   String? get serverVersion => _serverVersion;
 
+  /// `library_name` from `/api/config` — the server's display name
+  /// ("My Music on hp-server"), the R-21 drawer header's identity line
+  /// (ReTune's "Connected To" row). Kept while [ConnectionPhase.offline]
+  /// (identity survives a network drop); null until the first successful
+  /// connect, cleared by [disconnect].
+  String? get serverName => _serverName;
+
   /// The discovered websocket URL (`ws://host:<wsPort>/`), or null when the
   /// server has WS disabled (`websocket_port: 0`).
   Uri? get wsUri => _wsUri;
@@ -192,6 +200,7 @@ class ConnectionController extends ChangeNotifier {
     _config = config;
     _errorMessage = null;
     _serverVersion = null;
+    _serverName = null;
     _setPhase(ConnectionPhase.connecting);
 
     final options = BaseOptions(
@@ -206,6 +215,7 @@ class ConnectionController extends ChangeNotifier {
     try {
       final serverConfig = await api.getConfig();
       _serverVersion = serverConfig['version'] as String?;
+      _serverName = serverConfig['library_name'] as String?;
       final wsPort = (serverConfig['websocket_port'] as num?)?.toInt() ?? 0;
       if (wsPort > 0) {
         _wsUri = Uri(scheme: 'ws', host: config.host, port: wsPort, path: '/');
@@ -245,6 +255,7 @@ class ConnectionController extends ChangeNotifier {
     _teardownClient();
     _errorMessage = null;
     _serverVersion = null;
+    _serverName = null;
     _setPhase(ConnectionPhase.idle);
   }
 

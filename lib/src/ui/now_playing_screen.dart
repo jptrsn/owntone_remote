@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../connection/connection_controller.dart';
 import '../core/artwork_probe.dart';
+import '../library/library_models.dart';
 import '../outputs/outputs_controller.dart';
 import '../outputs/output.dart';
 import '../player/player_controller.dart';
@@ -13,6 +14,7 @@ import '../player/player_state.dart';
 import '../queue/queue_controller.dart';
 import '../rating/rating_controller.dart';
 import '../settings/settings_store.dart';
+import 'app_drawer.dart';
 import 'browse_screens.dart';
 import 'connection_banner.dart';
 import 'outputs_screen.dart';
@@ -111,6 +113,42 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
     if (p != null && p.isPlaying && _ticker == null) _startTicker(p);
     if (p != null && !p.isPlaying) _stopTicker();
 
+    // R-17 (issue #39): browse-context targets for the current track,
+    // rebuilt each frame. The queue item carries no plain `artist_id` —
+    // `album_artist_id` is the id `/api/library/artists/{id}/albums`
+    // accepts (verified live 2026-11-20). An entry with no id behind it is
+    // not rendered (the frozen spec's "absent" option — no dead menu row);
+    // offline keeps them visible but inert, matching the entry row's
+    // disabled-while-offline pattern.
+    final np = controller.nowPlaying;
+    final artistId = np?.albumArtistId;
+    final albumId = np?.albumId;
+    final artistTarget = (np != null && artistId != null && artistId.isNotEmpty)
+        ? Artist(
+            id: artistId,
+            // ALBUM artist name with albumArtistId (PR #53 review minor):
+            // ArtistAlbumsScreen titles itself artist.name while listing
+            // artist.id's albums — on compilations the TRACK artist (np
+            // .artist) would otherwise name the screen while the albums
+            // belong to e.g. "Various artists".
+            name: np.albumArtist ?? np.artist ?? 'Unknown artist',
+            albumCount: 0,
+            trackCount: 0,
+            lengthMs: 0,
+          )
+        : null;
+    final albumTarget = (np != null && albumId != null && albumId.isNotEmpty)
+        ? Album(
+            id: albumId,
+            name: np.album ?? 'Unknown album',
+            artist: np.albumArtist ?? np.artist ?? '',
+            artistId: artistId ?? '',
+            trackCount: 0,
+            lengthMs: np.lengthMs ?? 0,
+            uri: 'library:album:$albumId',
+          )
+        : null;
+
     final syncLabel = switch (conn.wsPhase) {
       WsPhase.open => 'sync: live',
       WsPhase.reconnecting => 'sync: reconnecting…',
@@ -119,23 +157,41 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
     };
 
     return Scaffold(
+      // R-21 (issue #44): the drawer on the root screen. NP is not pushed,
+      // so drawerAwareLeading collapses to the bare hamburger (no back
+      // arrow on the root — AppBar would otherwise swap in its own
+      // DrawerButton, same result; the helper keeps all Scaffolds on one
+      // leading path).
       appBar: AppBar(
         title: const Text('OwnTone Remote'),
+        leading: drawerAwareLeading(context),
+        leadingWidth: drawerAwareLeadingWidth(context),
         actions: [
-          if (conn.serverVersion != null) ...[
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
+          // The 'OwnTone <version>' label moved to the drawer header with
+          // the R-21 hamburger: the app bar must fit the narrowest
+          // supported viewport (360 logical px — unit-004's overflow
+          // budget) once the 56-px leading slot is taken, and server
+          // identity belongs next to "Connected To" (it is also on the
+          // About screen). Do not move it back — mutation-verified
+          // overflow (test/app_drawer_test.dart takeException checks).
+          // PR #53 round-2 review: the 'More' button (browse ids mounted)
+          // pushes the actions Row past the toolbar at narrow widths — the
+          // initially-claimed 9 px at the 360 floor was NOT reproducible
+          // (round-2 measurement: +33.5 px headroom at 360, Ahem test font
+          // ~2x real Roboto); the guard demonstrably bites at 320 logical
+          // px (base overflows 6.5 px) and at 360 with textScaler 1.3
+          // (29.2 px). NavigationToolbar collapses the title first (it can
+          // reach w=0), so this label is the last compressible member
+          // before the Row itself throws. Do not remove.
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12),
               child: Text(
-                'OwnTone ${conn.serverVersion}',
+                syncLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall,
               ),
-            ),
-          ],
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Text(
-              syncLabel,
-              style: Theme.of(context).textTheme.labelSmall,
             ),
           ),
           IconButton(
@@ -149,8 +205,38 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
               ),
             ),
           ),
+          if (artistTarget != null || albumTarget != null)
+            PopupMenuButton<String>(
+              key: const ValueKey('now-playing-overflow'),
+              tooltip: 'More',
+              onSelected: (value) {
+                if (!enabled) return;
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => value == 'artist'
+                        ? ArtistAlbumsScreen(artist: artistTarget!)
+                        : AlbumTracksScreen(album: albumTarget!),
+                  ),
+                );
+              },
+              itemBuilder: (context) => [
+                if (artistTarget != null)
+                  PopupMenuItem<String>(
+                    value: 'artist',
+                    enabled: enabled,
+                    child: const Text('Go to Artist'),
+                  ),
+                if (albumTarget != null)
+                  PopupMenuItem<String>(
+                    value: 'album',
+                    enabled: enabled,
+                    child: const Text('Go to Album'),
+                  ),
+              ],
+            ),
         ],
       ),
+      drawer: const AppDrawer(selected: DrawerDestination.nowPlaying),
       body: Column(
         children: [
           if (!enabled)
@@ -315,8 +401,11 @@ class _NowPlayingBodyState extends State<NowPlayingBody> {
           // remote's "current speaker" indicator (ReTune IA, D6) and opens
           // the Outputs screen; "Queue · N" opens the queue (R-11);
           // "Library" opens the browse section. All live here — not in the
-          // app bar — because a second app-bar icon overflows the
-          // 360-logical-pixel viewport by 9px (unit 004 finding). The row is
+          // app bar — because a third actions icon overflows the narrowest
+          // supported viewport (PR #69 re-measure: actions sum 374.5 vs
+          // 360.0 at 360 logical px with the long sync label, Ahem font;
+          // unit 004's contemporaneous note said +9 px with its own label
+          // configuration). The row is
           // always present so the entries exist even with no outputs.
           Row(
             children: [
@@ -761,13 +850,23 @@ class _ArtworkBoxState extends State<ArtworkBox> {
               Image.network(
                 artworkUrl.toString(),
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const Center(
-                  child: Icon(Icons.music_note, size: 96, color: Colors.grey),
+                // R-26: scheme-derived (was Colors.grey) — stays legible on
+                // the dark surface.
+                errorBuilder: (_, _, _) => Center(
+                  child: Icon(
+                    Icons.music_note,
+                    size: 96,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               )
             else
-              const Center(
-                child: Icon(Icons.music_note, size: 96, color: Colors.grey),
+              Center(
+                child: Icon(
+                  Icons.music_note,
+                  size: 96,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
           ],
         ),

@@ -13,6 +13,7 @@ import 'src/player/player_controller.dart';
 import 'src/queue/queue_controller.dart';
 import 'src/rating/rating_controller.dart';
 import 'src/settings/settings_store.dart';
+import 'src/settings/theme_preference.dart';
 import 'src/ui/root_screen.dart';
 
 /// Debug handle for the UI-debug loop (evaluate_expression).
@@ -47,6 +48,7 @@ Future<void> main() async {
   _logger.i('pending runtime permissions after request: ${pending.keys}');
 
   final store = await SettingsStore.create();
+  final themePreference = ThemePreference(store);
   final conn = ConnectionController(logger: _logger);
   final player = PlayerController(connection: conn);
   final outputs = OutputsController(connection: conn);
@@ -62,6 +64,7 @@ Future<void> main() async {
     'outputs': outputs,
     'queue': queue,
     'rating': rating,
+    'theme': themePreference,
   };
 
   // Call handling (D9): pause on ringing, auto-resume on idle when the call
@@ -102,6 +105,7 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         Provider<SettingsStore>.value(value: store),
+        ChangeNotifierProvider<ThemePreference>.value(value: themePreference),
         ChangeNotifierProvider<ConnectionController>.value(value: conn),
         ChangeNotifierProvider<PlayerController>.value(value: player),
         ChangeNotifierProvider<OutputsController>.value(value: outputs),
@@ -145,18 +149,40 @@ Future<void> _initAudio(PlayerController player, SettingsStore store) async {
   }
 }
 
+/// R-26: the one seed both schemes derive from (issue #43 — "no bespoke
+/// palette"; the dark scheme is `fromSeed` with this seed and
+/// `brightness: dark`, nothing else).
+const _seedColor = Color(0xFF7C5CBF);
+
 class OwntoneRemoteApp extends StatelessWidget {
-  const OwntoneRemoteApp({super.key});
+  const OwntoneRemoteApp({super.key, this.home = const RootScreen()});
+
+  /// Injectable for widget tests: the theme wiring ([themeMode] watching
+  /// [ThemePreference]) is testable without every controller [RootScreen]
+  /// needs. Production passes no `home`.
+  final Widget home;
 
   @override
   Widget build(BuildContext context) {
+    // R-26: watch the listenable (not the store) so a picker change rebuilds
+    // MaterialApp — applies on the next frame, no app restart. ThemeMode
+    // .system follows platformBrightness live (WidgetsApp rebuilds on the
+    // platform brightness change).
+    final themeMode = context.watch<ThemePreference>().mode;
     return MaterialApp(
       title: 'OwnTone Remote',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF7C5CBF)),
+        colorScheme: ColorScheme.fromSeed(seedColor: _seedColor),
       ),
-      home: const RootScreen(),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: _seedColor,
+          brightness: Brightness.dark,
+        ),
+      ),
+      themeMode: themeMode,
+      home: home,
     );
   }
 }

@@ -1,6 +1,6 @@
 ---
 name: 003-static-analysis
-status: pending
+status: done
 intent: retune-ux-capture
 supervised_steps: []
 ---
@@ -43,7 +43,18 @@ table). Purely offline work — no server, no device, no audio risk.
 3. Every layout either walked, marked out (itunes-only/widget), or marked
    `missed` with a reason — zero unexplained layouts.
 
-## Result
+## Result — DONE 2026-11-19
 
-*(fill: mapping table highlights, missed layouts + resolution, anything
-that changes the inventory)*
+Full write-up: `docs/retune-capture/static-notes.md`. Tooling: REA
+`rea-agents` 6.7.0 (`decode-android-resources`, evidence
+`ev_86fc59ef…`, subject sha256 `b1279ad6…4b98`; apktool lane client 3.0.3)
++ `apktool d -s` → `tools/retune/decoded/` (gitignored).
+Manifest inventory (activities incl. exported trio NowPlaying/Speakers/
+VideoDevice; MEDIA_BUTTON + VolumeChange receivers; 4 home-screen widgets
+→ out: scope; permissions incl. CHANGE_WIFI_MULTICAST_STATE = discovery
+evidence). Preferences: 12 keys w/ defaults — all match runtime capture
+(no hidden prefs). Layout reconciliation: **132 layouts, zero unexplained**
+(covered ≈40 incl. row templates; 46 `out: itunes-only`; 4 widget; 2
+pairing-out; deferred 3: connecting/ratings_dialog/select_library).
+Mapping-table highlights + drops feed `feature-inventory.md`; nothing found
+that requires a DAAP-only capability (D5 holds — no fallback spike needed).

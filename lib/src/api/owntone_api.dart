@@ -111,6 +111,30 @@ class OwntoneApi {
     return Paging.fromJson(res.data as Map<String, dynamic>, Track.fromJson);
   }
 
+  /// Every library track, in server (name) order — the Songs list (R-15).
+  ///
+  /// There is **no `GET /api/library/tracks` collection route** on this
+  /// server: the 29.3 JSON-API route table carries only
+  /// `/api/library/tracks/{id}` (GET/PUT), the batch PUT, and the
+  /// track→playlists GET (source-checked + live 400 for every parameter
+  /// combination, 2026-11-20). The all-tracks list therefore rides the
+  /// proven search endpoint — the same route [genreAlbums] uses:
+  /// `GET /api/search?type=tracks&query=` where the server's empty-query
+  /// branch is `title LIKE '%%'` (source: `search_tracks`), i.e. every
+  /// track, `Q_ITEMS` sorted by name (`title_sort`). Verified live
+  /// 2026-11-20: total 3265; `offset=100` (page 3 at the default limit 50)
+  /// serves distinct rows.
+  /// Do NOT "simplify" this onto `/api/library/tracks` — it does not exist.
+  /// Media kind: `?media_kind=music` is deliberately NOT sent — whether
+  /// `type=tracks&query=` already excludes non-music items was never
+  /// verified server-side (PR #55 review F4; documented-untested). The
+  /// user's library is music-only (AGENTS §5 keeps podcasts/radio out of
+  /// scope), so the filter is invisible today; if a media-kind-bearing
+  /// library is ever served, add the param AND verify live before
+  /// trusting the Songs list.
+  Future<Paging<Track>> tracks({int offset = 0, int limit = 50}) =>
+      _searchGroup('tracks', '', Track.fromJson, offset: offset, limit: limit);
+
   /// `GET /api/library/genres` — this server ignores `offset`/`limit`
   /// (verified live 2026-10-23: `limit=3` returned all 79 genres), so no
   /// paging parameters are sent; the response is still modeled as
@@ -280,6 +304,40 @@ class OwntoneApi {
     ];
   }
 
+  /// Queue add WITHOUT playback change (R-19, issue #41): `POST
+  /// /api/queue/items/add` with `playback=add` and **no `clear`** — Play
+  /// Next / Add to Up Next. `playback=add` verified live 2026-11-20:
+  /// accepted (200), player state stays `pause`.
+  ///
+  /// [position] is sent ONLY when non-null. Official json-api docs
+  /// (docs-mcp 2026-11-20): "new items are inserted starting from this
+  /// position" — the first added item ENDS UP at [position]. R-19 uses it
+  /// for 0 (Play Next, list head) and the current length (Add to Up Next,
+  /// tail); R-24's queue-row Play Next (issue #47, QueueController.playNext)
+  /// reuses THIS method with `position = current + 1` — one position
+  /// variant, deliberately not a duplicated add method. It must also stay
+  /// the no-clear path: live-verified 2026-11-20, a position beyond the real length is treated like an
+  /// omitted one — and with the server's shuffle mode on, an omitted/
+  /// out-of-range position inserts at a RANDOM slot inside the unplayed
+  /// region (observed 640/597/1061 in a 1396-item queue), not the tail.
+  /// The caller (QueueController.addUris) passes its live queue length;
+  /// do not "simplify" the tail case to omitting the position.
+  /// The add-time `shuffle` param is deliberately never sent: it is the
+  /// GLOBAL shuffle-mode setter (live-verified 2026-11-20 — `shuffle=false`
+  /// on an add flipped `/api/player`'s shuffle), so using it would mutate
+  /// the server-wide flag R-19 says to leave alone.
+  Future<List<QueueItem>> addUris(List<String> uris, {int? position}) async {
+    final query = <String, dynamic>{'uris': uris.join(','), 'playback': 'add'};
+    if (position != null) query['position'] = position;
+    final res = await _dio.post('/api/queue/items/add', queryParameters: query);
+    final data = res.data as Map<String, dynamic>;
+    final items = data['items'] as List<dynamic>? ?? const [];
+    return [
+      for (final e in items)
+        QueueItem.fromJson(e as Map<String, dynamic>, _baseUrl),
+    ];
+  }
+
   /// Queue-skip (issue #21, R-11): make an already-queued entry the current
   /// track, IN PLACE — the queue content is untouched (no add, no clear),
   /// only the current item moves. This is the OwnTone web UI's own queue-row
@@ -293,6 +351,29 @@ class OwntoneApi {
   /// SUPERVISED: it starts/keeps playback on a track (real speakers).
   Future<void> skipToQueueItem(String entryId) =>
       _put('/api/player/play', {'item_id': entryId});
+
+  /// Drag-reorder (R-23, issue #46): move a queue entry to an absolute
+  /// position — `PUT /api/queue/items/{id}?new_position=N` (`docs/API.md:94`;
+  /// param name + QUERY placement verified 2026-11-20 against the official
+  /// ownTone-server json-api docs via docs-mcp — `new_position` is the
+  /// entry's FINAL 0-based index, the server move is remove + insert-at-N,
+  /// not a delta and not a swap; the optimistic reorder in
+  /// `QueueController.moveItem` mirrors exactly that). 204 on success. A
+  /// queue edit WITHOUT `playback=start` — safe while paused (AGENTS safe
+  /// list). The now-playing entry is pinned client-side (R-23: the web UI
+  /// never drags it; server-side behaviour deliberately unprobed on the
+  /// shared fixture — issue-46 report ASSUMPTIONS).
+  Future<void> moveQueueItem(String entryId, int newPosition) =>
+      _put('/api/queue/items/$entryId', {'new_position': newPosition});
+
+  /// Per-row Remove (R-24, issue #47): delete ONE queue entry —
+  /// `DELETE /api/queue/items/{id}` (`docs/API.md:95`; official json-api
+  /// docs via docs-mcp 2026-11-20 — 204 on success). A queue edit WITHOUT
+  /// `playback=start`: safe while paused (AGENTS safe list). Keyed on the
+  /// queue-entry `id` (never an index) — the hide-cut can shift indices
+  /// between build and tap, it cannot shift ids.
+  Future<void> deleteQueueItem(String entryId) =>
+      _dio.delete('/api/queue/items/$entryId');
 
   Future<void> play() => _put('/api/player/play');
   Future<void> pause() => _put('/api/player/pause');

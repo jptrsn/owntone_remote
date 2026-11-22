@@ -100,6 +100,9 @@ class NowPlayingItem {
     required this.title,
     required this.artist,
     required this.album,
+    this.albumArtist,
+    this.albumId,
+    this.albumArtistId,
     this.lengthMs,
     this.artworkUrl,
     this.uri,
@@ -111,6 +114,20 @@ class NowPlayingItem {
   final String? title;
   final String? artist;
   final String? album;
+
+  /// The ALBUM artist's display name (`album_artist` on the wire). On
+  /// compilations it differs from [artist] (live doc example: track
+  /// `artist: "Tom Odell"` on a `Various artists` album) — the R-17 Go to
+  /// Artist entry pairs this name with [albumArtistId] so the pushed
+  /// screen's title matches the albums it lists (PR #53 review minor).
+  final String? albumArtist;
+
+  /// Browse ids for the R-17 context entries (issue #39). The queue item
+  /// carries them as strings; `album_artist_id` is the id
+  /// `GET /api/library/artists/{id}/albums` takes as the artist (verified
+  /// live 2026-11-20 — queue items carry no plain `artist_id`).
+  final String? albumId;
+  final String? albumArtistId;
   final int? lengthMs;
 
   /// Absolute artwork URL (resolved), or null.
@@ -124,6 +141,9 @@ class NowPlayingItem {
         title: json['title'] as String?,
         artist: json['artist'] as String?,
         album: json['album'] as String?,
+        albumArtist: json['album_artist'] as String?,
+        albumId: json['album_id']?.toString(),
+        albumArtistId: json['album_artist_id']?.toString(),
         lengthMs: json['length_ms'] as int?,
         artworkUrl: PlayerState.resolveArtwork(
           webRoot,

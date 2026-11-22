@@ -3,11 +3,13 @@ import 'dart:async';
 
 import 'package:provider/provider.dart';
 
+import '../api/owntone_api.dart';
 import '../connection/connection_controller.dart';
 import '../queue/queue_controller.dart';
 import '../rating/rating_controller.dart';
 import '../library/library_models.dart';
 import '../library/paged_list.dart';
+import 'app_drawer.dart';
 import 'browse_rows.dart';
 import 'browse_screen_scaffold.dart';
 import 'paged_browse_screen.dart';
@@ -26,6 +28,96 @@ Future<String?> Function(int newRating) rateTrack(
   return ok ? null : (rating.actionError ?? 'Rating failed.');
 };
 
+/// R-19 (issue #41) — the app-bar overflow ReTune's detail screens carry
+/// (`09-album-detail`, `18b-overflow-playlist`): **Play All · Shuffle ·
+/// Play Next · Add to Up Next** for the whole set the screen shows.
+///
+/// The two playback-starting entries (Play All, Shuffle) keep [QueueController]'s
+/// replace-and-start contract — **supervised** actions, never triggered in
+/// tests against the real server or on device unattended. Play Next / Add
+/// to Up Next are the no-clear `playback=add` path.
+///
+/// Empty-set rule (minimal, chosen for the issue): while the list has not
+/// loaded or is empty the WHOLE button is disabled — every entry would be
+/// a no-op, and a stable (disabled) app bar beats a menu of dead entries.
+class SetPlaybackOverflow extends StatelessWidget {
+  const SetPlaybackOverflow({
+    super.key,
+    required this.empty,
+    required this.onPlayAll,
+    required this.onShuffle,
+    required this.onPlayNext,
+    required this.onAddToUpNext,
+  });
+
+  final bool empty;
+  final VoidCallback onPlayAll;
+  final VoidCallback onShuffle;
+  final VoidCallback onPlayNext;
+  final VoidCallback onAddToUpNext;
+
+  static const _entries = [
+    ('play-all', 'Play All'),
+    ('shuffle', 'Shuffle'),
+    ('play-next', 'Play Next'),
+    ('add', 'Add to Up Next'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      key: const ValueKey('detail-overflow'),
+      tooltip: 'Playback options',
+      enabled: !empty,
+      onSelected: (value) {
+        switch (value) {
+          case 'play-all':
+            onPlayAll();
+          case 'shuffle':
+            onShuffle();
+          case 'play-next':
+            onPlayNext();
+          case 'add':
+            onAddToUpNext();
+        }
+      },
+      itemBuilder: (context) => [
+        for (final (value, label) in _entries)
+          PopupMenuItem<String>(value: value, child: Text(label)),
+      ],
+    );
+  }
+}
+
+/// R-19: the Shuffle entry's client-side pre-shuffle path. The full set is
+/// materialized as item URIs first (one unbounded `limit=-1` page —
+/// `limit=-1` verified live against this server 2026-11-20 on the
+/// album-tracks and playlist-tracks routes only; the artist-albums route
+/// rides OwnTone's generic paging and is NOT separately verified —
+/// PR #58 review), shuffled by
+/// [QueueController.playUrisShuffled], then replace-and-started. The
+/// add-time `?shuffle` param is NOT used: it is the server's GLOBAL
+/// shuffle-mode setter (live-verified 2026-11-20), and R-19 requires
+/// leaving that flag untouched. A load failure gets a snackbar — no
+/// silent no-op.
+Future<void> _shufflePlaySet(
+  BuildContext context,
+  Future<List<String>> Function(OwntoneApi api) loadUris,
+) async {
+  final api = context.read<ConnectionController>().api;
+  if (api == null) return;
+  final uris = await loadUris(api).catchError((e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load the tracks to shuffle.')),
+      );
+    }
+    return <String>[];
+  });
+  if (uris.isEmpty || !context.mounted) return;
+  await context.read<QueueController>().playUrisShuffled(uris);
+}
+
 /// R-10 (unit 005a): the library home — the browse menu (Search, Playlists,
 /// Artists, Albums, Genres), reached from the now-playing app bar. Search
 /// lives here (R-13, unit 007), not in the now-playing app bar: a second
@@ -38,6 +130,7 @@ class LibraryHomeScreen extends StatelessWidget {
     (Icons.queue_music, 'Playlists'),
     (Icons.person, 'Artists'),
     (Icons.album, 'Albums'),
+    (Icons.music_note, 'Songs'),
     (Icons.label_outline, 'Genres'),
   ];
 
@@ -47,6 +140,9 @@ class LibraryHomeScreen extends StatelessWidget {
     final enabled = conn.phase == ConnectionPhase.connected;
     return BrowseScreenScaffold(
       title: 'Library',
+      // R-18: outputs one tap away from every browse screen (D-09).
+      actions: const [OutputsAppBarAction()],
+      drawer: const AppDrawer(selected: DrawerDestination.library),
       body: ListView.separated(
         padding: const EdgeInsets.all(8),
         itemCount: _sections.length,
@@ -67,6 +163,7 @@ class LibraryHomeScreen extends StatelessWidget {
                         'Playlists' => const PlaylistsScreen(),
                         'Artists' => const ArtistsScreen(),
                         'Albums' => const AlbumsScreen(),
+                        'Songs' => const TracksScreen(),
                         _ => const GenresScreen(),
                       },
                     ),
@@ -86,6 +183,7 @@ class PlaylistsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return PagedBrowseScreen<Playlist>(
       title: 'Playlists',
+      drawer: const AppDrawer(selected: DrawerDestination.playlists),
       what: 'playlists',
       emptyMessage: 'No playlists in the library.',
       emptyIcon: Icons.queue_music,
@@ -132,6 +230,35 @@ class PlaylistTracksScreen extends StatelessWidget {
         },
         keyOf: (track) => track.id.toString(),
       ),
+      // R-19 (issue #41): whole-set actions. Play All / Play Next / Add
+      // ride the CONTAINER uri (server expands it, order preserved);
+      // Shuffle expands to track URIs client-side (see _shufflePlaySet).
+      appActions: (context, list) => [
+        SetPlaybackOverflow(
+          empty: !list.hasLoaded || list.total == 0,
+          onPlayAll: () => unawaited(
+            context.read<QueueController>().playUris([playlist.uri]),
+          ),
+          onShuffle: () => unawaited(
+            _shufflePlaySet(context, (api) async {
+              final all = await api.playlistTracks(
+                playlist.id,
+                offset: 0,
+                limit: -1,
+              );
+              return [for (final t in all.items) t.uri];
+            }),
+          ),
+          onPlayNext: () => unawaited(
+            context.read<QueueController>().addUris([
+              playlist.uri,
+            ], ahead: true),
+          ),
+          onAddToUpNext: () => unawaited(
+            context.read<QueueController>().addUris([playlist.uri]),
+          ),
+        ),
+      ],
       itemBuilder: (context, i, track, enabled) => TrackRow(
         track: track,
         enabled: enabled,
@@ -151,6 +278,7 @@ class ArtistsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return PagedBrowseScreen<Artist>(
       title: 'Artists',
+      drawer: const AppDrawer(selected: DrawerDestination.artists),
       what: 'artists',
       emptyMessage: 'No artists in the library.',
       emptyIcon: Icons.person,
@@ -162,6 +290,11 @@ class ArtistsScreen extends StatelessWidget {
         },
         keyOf: (artist) => artist.id,
       ),
+      // R-25: group by the server's sort key (name_sort), not the display
+      // name — the server orders by name_sort ("Daniela Andrade" lands
+      // under Andrade; verified live 2026-11-20), so only it yields
+      // contiguous letter groups.
+      groupKeyOf: (artist) => artist.sortName,
       itemBuilder: (context, i, artist, enabled) => ArtistRow(
         artist: artist,
         enabled: enabled,
@@ -200,6 +333,42 @@ class ArtistAlbumsScreen extends StatelessWidget {
         },
         keyOf: (album) => album.id,
       ),
+      // R-19 (issue #41): the whole-set uri is the artist container
+      // (`library:artist:…`, same as ArtistsScreen's row play). Shuffle
+      // here shuffles the ALBUM URIs — a block shuffle (album order),
+      // not a per-track shuffle across the discography: expanding every
+      // album's tracks would be an N+1 fetch for a judgement call the
+      // issue does not ask for (recorded as an assumption).
+      appActions: (context, list) => [
+        SetPlaybackOverflow(
+          empty: !list.hasLoaded || list.total == 0,
+          onPlayAll: () => unawaited(
+            context.read<QueueController>().playUris([
+              'library:artist:${artist.id}',
+            ]),
+          ),
+          onShuffle: () => unawaited(
+            _shufflePlaySet(context, (api) async {
+              final all = await api.artistAlbums(
+                artist.id,
+                offset: 0,
+                limit: -1,
+              );
+              return [for (final a in all.items) a.uri];
+            }),
+          ),
+          onPlayNext: () => unawaited(
+            context.read<QueueController>().addUris([
+              'library:artist:${artist.id}',
+            ], ahead: true),
+          ),
+          onAddToUpNext: () => unawaited(
+            context.read<QueueController>().addUris([
+              'library:artist:${artist.id}',
+            ]),
+          ),
+        ),
+      ],
       itemBuilder: (context, i, album, enabled) => AlbumRow(
         album: album,
         enabled: enabled,
@@ -222,6 +391,7 @@ class AlbumsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return PagedBrowseScreen<Album>(
       title: 'Albums',
+      drawer: const AppDrawer(selected: DrawerDestination.albums),
       what: 'albums',
       emptyMessage: 'No albums in the library.',
       emptyIcon: Icons.album,
@@ -248,6 +418,50 @@ class AlbumsScreen extends StatelessWidget {
   }
 }
 
+/// The Songs view (R-15, issue #38 / diff-list D-02): every library track
+/// as one paged two-line list (`title` / `artist - album`, ReTune's Songs
+/// tab, `docs/retune-capture/12-songs/`). Rows are the existing
+/// [TrackRow]s — row tap plays (R-10), stars rate (R-12) — with the #48
+/// alphabetical section headers enabled (the deferred "Songs when #38
+/// lands" clause): grouped by the server's `title_sort`, the order the
+/// endpoint serves in (see `OwntoneApi.tracks`).
+class TracksScreen extends StatelessWidget {
+  const TracksScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return PagedBrowseScreen<Track>(
+      title: 'Songs',
+      drawer: const AppDrawer(selected: DrawerDestination.songs),
+      what: 'tracks',
+      emptyMessage: 'No tracks in the library.',
+      emptyIcon: Icons.music_note,
+      buildList: (conn) => PagedList(
+        fetch: (offset, limit) async {
+          final api = conn.api;
+          if (api == null) throw StateError('no api');
+          return api.tracks(offset: offset, limit: limit);
+        },
+        keyOf: (track) => track.id.toString(),
+      ),
+      // R-25 (via #48's deferral): group by the server's sort key
+      // (title_sort), not the display title — the endpoint orders by it
+      // ("The A Team" with title_sort "A Team" opens the list, verified
+      // live 2026-11-20), so only it yields contiguous letter groups.
+      groupKeyOf: (track) => track.sortTitle,
+      itemBuilder: (context, i, track, enabled) => TrackRow(
+        track: track,
+        enabled: enabled,
+        showArtist: true,
+        showAlbum: true,
+        onRate: rateTrack(context, track.id),
+        onPlay: () =>
+            unawaited(context.read<QueueController>().playUris([track.uri])),
+      ),
+    );
+  }
+}
+
 class AlbumTracksScreen extends StatelessWidget {
   const AlbumTracksScreen({super.key, required this.album});
 
@@ -268,6 +482,27 @@ class AlbumTracksScreen extends StatelessWidget {
         },
         keyOf: (track) => track.id.toString(),
       ),
+      // R-19 (issue #41): see PlaylistTracksScreen — same contract,
+      // container uri for the ordered actions, track uri expansion for
+      // the client-side shuffle.
+      appActions: (context, list) => [
+        SetPlaybackOverflow(
+          empty: !list.hasLoaded || list.total == 0,
+          onPlayAll: () =>
+              unawaited(context.read<QueueController>().playUris([album.uri])),
+          onShuffle: () => unawaited(
+            _shufflePlaySet(context, (api) async {
+              final all = await api.albumTracks(album.id, offset: 0, limit: -1);
+              return [for (final t in all.items) t.uri];
+            }),
+          ),
+          onPlayNext: () => unawaited(
+            context.read<QueueController>().addUris([album.uri], ahead: true),
+          ),
+          onAddToUpNext: () =>
+              unawaited(context.read<QueueController>().addUris([album.uri])),
+        ),
+      ],
       itemBuilder: (context, i, track, enabled) => TrackRow(
         track: track,
         enabled: enabled,
@@ -286,6 +521,7 @@ class GenresScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return PagedBrowseScreen<Genre>(
       title: 'Genres',
+      drawer: const AppDrawer(selected: DrawerDestination.genres),
       what: 'genres',
       emptyMessage: 'No genres in the library.',
       emptyIcon: Icons.label_outline,
@@ -297,6 +533,9 @@ class GenresScreen extends StatelessWidget {
         },
         keyOf: (genre) => genre.name,
       ),
+      // R-25: same sort-key grouping as ArtistsScreen (name_sort verified
+      // contiguous live 2026-11-20).
+      groupKeyOf: (genre) => genre.sortName,
       itemBuilder: (context, i, genre, enabled) => GenreRow(
         genre: genre,
         enabled: enabled,

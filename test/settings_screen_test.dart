@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:owntone_remote/main.dart';
 import 'package:owntone_remote/src/connection/connection_controller.dart';
 import 'package:owntone_remote/src/core/server_config.dart';
 import 'package:owntone_remote/src/settings/settings_store.dart';
+import 'package:owntone_remote/src/settings/theme_preference.dart';
 import 'package:owntone_remote/src/ui/about_screen.dart';
 import 'package:owntone_remote/src/ui/settings_screen.dart';
 import 'package:provider/provider.dart';
@@ -37,6 +39,9 @@ void main() {
       MultiProvider(
         providers: [
           Provider<SettingsStore>.value(value: store),
+          ChangeNotifierProvider<ThemePreference>.value(
+            value: ThemePreference(store),
+          ),
           ChangeNotifierProvider<ConnectionController>.value(value: conn),
         ],
         child: MaterialApp(
@@ -49,6 +54,36 @@ void main() {
     );
     await tester.pump();
     return store;
+  }
+
+  /// Same screen under the real [OwntoneRemoteApp] MaterialApp so
+  /// `Theme.of(...).brightness` is the app's actual scheme (R-26 rows).
+  Future<void> pumpScreenInApp(
+    WidgetTester tester, {
+    Object tag = 'app',
+  }) async {
+    final store = await SettingsStore.create();
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<SettingsStore>.value(value: store),
+          ChangeNotifierProvider<ThemePreference>.value(
+            value: ThemePreference(store),
+          ),
+          ChangeNotifierProvider<ConnectionController>.value(value: conn),
+        ],
+        child: OwntoneRemoteApp(
+          home: SettingsScreen(
+            key: ValueKey(tag),
+            initial: const ServerConfig(host: '10.0.0.5', port: 3689),
+          ),
+        ),
+      ),
+    );
+    // pumpAndSettle: the AnimatedTheme wrap in MaterialApp (R-26) needs the
+    // 200 ms theme animation to land before Theme.of reports the resolved
+    // scheme.
+    await tester.pumpAndSettle();
   }
 
   IconButton stepButton(WidgetTester tester, String key) =>
@@ -72,17 +107,23 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       final store = await pumpScreen(tester);
 
-      await tester.tap(find.byKey(const ValueKey('rocker-step-increase')));
-      await tester.pump();
+      // The R-20 scan row (issue #42) pushes the rocker row below the
+      // 600-px fold — same off-screen-tap rule as the about-entry test.
+      Future<void> stepTap(String key) async {
+        await tester.ensureVisible(find.byKey(ValueKey(key)));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey(key)));
+        await tester.pump();
+      }
+
+      await stepTap('rocker-step-increase');
       expect(find.text('6'), findsOneWidget);
       expect(store.rockerStep, 6, reason: 'store already at 6 (keypress read)');
       // Survives a "relaunch" (fresh store over the same prefs).
       expect((await SettingsStore.create()).rockerStep, 6);
 
-      await tester.tap(find.byKey(const ValueKey('rocker-step-decrease')));
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('rocker-step-decrease')));
-      await tester.pump();
+      await stepTap('rocker-step-decrease');
+      await stepTap('rocker-step-decrease');
       expect(find.text('4'), findsOneWidget);
       expect(store.rockerStep, 4);
     });
@@ -123,6 +164,65 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(AboutScreen), findsOneWidget);
       expect(find.text('About'), findsWidgets);
+    });
+  });
+
+  group('R-26 theme picker', () {
+    Finder segment(WidgetTester tester, String label) => find.descendant(
+      of: find.byKey(const ValueKey('theme-mode-picker')),
+      matching: find.text(label),
+    );
+
+    SegmentedButton<ThemeMode> picker(WidgetTester tester) =>
+        tester.widget<SegmentedButton<ThemeMode>>(
+          find.byKey(const ValueKey('theme-mode-picker')),
+        );
+
+    Brightness brightness(WidgetTester tester) =>
+        Theme.of(tester.element(find.byType(SettingsScreen))).brightness;
+
+    testWidgets('three-way picker renders next to the rocker step, System '
+        'selected by default', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await pumpScreenInApp(tester);
+      expect(find.text('Volume rocker step'), findsOneWidget);
+      expect(picker(tester).segments.map((s) => s.value), [
+        ThemeMode.light,
+        ThemeMode.dark,
+        ThemeMode.system,
+      ]);
+      expect(picker(tester).selected, {ThemeMode.system});
+      expect(brightness(tester), Brightness.light);
+    });
+
+    testWidgets('tapping Dark re-skins without restart and persists; '
+        'relaunch (new tree over the same prefs) keeps Dark', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await pumpScreenInApp(tester);
+
+      // Below the fold in the default 800x600 test viewport — a raw tap on
+      // an unfound-by-hit-test widget is a silent miss (about-entry lesson).
+      await tester.ensureVisible(segment(tester, 'Dark'));
+      await tester.pumpAndSettle();
+      await tester.tap(segment(tester, 'Dark'));
+      await tester.pumpAndSettle();
+      expect(
+        brightness(tester),
+        Brightness.dark,
+        reason: 'same widget tree — no app restart happened',
+      );
+      // "Kill/relaunch": fresh store + fresh tree over the same prefs.
+      await pumpScreenInApp(tester, tag: 'relaunch');
+      expect(brightness(tester), Brightness.dark);
+      expect(picker(tester).selected, {ThemeMode.dark});
+      expect((await SettingsStore.create()).themeMode, ThemeMode.dark);
+
+      await tester.ensureVisible(segment(tester, 'System'));
+      await tester.pumpAndSettle();
+      await tester.tap(segment(tester, 'System'));
+      await tester.pumpAndSettle();
+      expect(brightness(tester), Brightness.light); // platform is light
+      expect((await SettingsStore.create()).themeMode, ThemeMode.system);
     });
   });
 

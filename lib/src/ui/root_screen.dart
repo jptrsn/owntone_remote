@@ -19,6 +19,21 @@ import 'settings_screen.dart';
 void showNowPlaying(BuildContext context) =>
     Navigator.of(context).popUntil((route) => route.isFirst);
 
+/// Land on a drawer destination without ever stacking a duplicate (R-21,
+/// issue #44). Same trap as [showNowPlaying]'s warning: every listen screen
+/// is *pushed on top of* the Now Playing root route, so a drawer tap from a
+/// pushed screen that only pushed would leave the old stack below the new
+/// screen — the back gesture would walk the duplicates. `popUntil(isFirst)`
+/// collapses to the root first, then a single push: the stack is always
+/// [root, target] (depth 2) no matter how deep the source screen was. The
+/// regression test asserts exactly this depth (test/app_drawer_test.dart) —
+/// do not replace with a bare push.
+void showDrawerDestination(BuildContext context, Widget Function() screen) {
+  final navigator = Navigator.of(context);
+  navigator.popUntil((route) => route.isFirst);
+  navigator.push(MaterialPageRoute<void>(builder: (_) => screen()));
+}
+
 /// Switches the app on the connection phase (R-01, unit 001 criterion 6):
 ///   idle       → settings (first launch / after disconnect)
 ///   connecting → spinner
@@ -73,6 +88,11 @@ class _ConnectingScreen extends StatelessWidget {
 }
 
 /// R-01 criterion: a *specific, readable* error — DNS vs refused vs 401.
+///
+/// PR #56 review (LOW) adjudication: these phase screens carry no
+/// hamburger on purpose — R-21 enumerates the *main* screens; transient
+/// connect/error states are not navigation surfaces. The error screen's
+/// retry affordance is its own button (not the drawer).
 class _ConnectionErrorScreen extends StatelessWidget {
   const _ConnectionErrorScreen({required this.message});
 

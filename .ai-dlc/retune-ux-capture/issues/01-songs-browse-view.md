@@ -1,0 +1,33 @@
+---
+title: "Songs (all-tracks) browse view is missing from the library"
+labels: enhancement, area:ui
+---
+
+## Change
+The library home offers Search / Playlists / Artists / Albums / Genres —
+there is no way to browse the whole track list. The ReTune reference has a
+dedicated **Songs** tab (two-line rows: title, `artist - album`) and it is
+the single most-used browse view in that app (`docs/retune-capture/12-songs/`).
+
+## Expected
+Library home gains a **Songs** section → paged `TrackRow` list of every
+library track via `GET /api/library/tracks` (paginated). Rows behave like
+the existing track rows: play accessory (replace queue + start), rating
+stars (R-12). Same paging/reconnect/offline contract as the other browse
+screens (`PagedBrowseScreen` — thin declarative wrapper).
+
+## Where
+`lib/src/ui/browse_screens.dart` (`_sections`, ~line 36) + a
+`TracksScreen` mirroring `AlbumsScreen`; add the `tracks()` fetch to the
+API layer if absent (`lib/src/api/`).
+
+## Requirements
+R-15 (`docs/REQUIREMENTS.md` § v1.1 additions). Diff-list D-02;
+evidence `docs/retune-capture/12-songs/` + `feature-inventory.md`.
+
+## Repro / verification
+Widget test on the fake provider (derive from R-15 acceptance, not the
+implementation): list renders two-line rows; page-2 loads at the fake's
+page boundary; play accessory calls `playUris` with the track uri;
+reconnect triggers refetch. `flutter analyze` + `dart format` +
+`flutter test --exclude-tags live` green.

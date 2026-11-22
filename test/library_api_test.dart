@@ -107,6 +107,28 @@ void main() {
       expect(page.items.single.rating, 20);
     });
 
+    test('tracks: all-tracks rides the search endpoint (R-15) — '
+        'GET /api/library/tracks has no collection route on this server '
+        '(source + live 400, 2026-11-20)', () async {
+      final page = await api.tracks(offset: 100, limit: 50);
+      expect(
+        adapter.requests.single,
+        'GET /api/search?type=tracks&query=&offset=100&limit=50',
+      );
+      expect(page.total, 3265);
+      expect(page.items.first.title, 'The A Team');
+      expect(page.items.first.titleSort, 'A Team', reason: 'title_sort');
+      expect(page.items.first.sortTitle, 'A Team');
+      expect(page.items.first.rating, 100);
+      expect(page.items.first.uri, 'library:track:1488');
+    });
+
+    test('Track.sortTitle falls back to title without title_sort', () async {
+      final page = await api.tracks();
+      expect(page.items[1].titleSort, '');
+      expect(page.items[1].sortTitle, page.items[1].title);
+    });
+
     test('genres: no paging params (the server ignores them)', () async {
       final page = await api.genres();
       expect(adapter.requests.single, 'GET /api/library/genres');
@@ -277,6 +299,43 @@ Map<String, dynamic> dataFor(RequestOptions o) {
         'limit': -1,
       };
     case '/api/search':
+      if (o.uri.queryParameters['type'] == 'tracks') {
+        // Songs (R-15): the empty-query tracks group. FIRST item is the
+        // live capture of 2026-11-20 (total 3265; "The A Team" /
+        // title_sort "A Team" opens the name-sorted list). SECOND item is
+        // SYNTHESIZED to exercise the sortTitle fallback — live items all
+        // carry title_sort/rating, so a wire-shaped capture cannot cover
+        // the missing-field path (PR #55 review F2).
+        return const {
+          'tracks': {
+            'items': [
+              {
+                'id': 1488,
+                'title': 'The A Team',
+                'title_sort': 'A Team',
+                'artist': 'Daniela Andrade',
+                'album': 'Covers, Vol. 1',
+                'album_id': '6578051330382747448',
+                'length_ms': 271159,
+                'rating': 100,
+                'uri': 'library:track:1488',
+              },
+              {
+                'id': 2858,
+                'title': 'No Sort Key Song',
+                'artist': 'Boyce Avenue',
+                'album': 'New Acoustic Sessions, Volume 3',
+                'album_id': '2267323265829613588',
+                'length_ms': 276119,
+                'uri': 'library:track:2858',
+              },
+            ],
+            'total': 3265,
+            'offset': 100,
+            'limit': 50,
+          },
+        };
+      }
       return const {
         'albums': {
           'items': [

@@ -22,6 +22,9 @@ class PagedBrowseScreen<T> extends StatefulWidget {
     required this.emptyMessage,
     required this.emptyIcon,
     required this.what,
+    this.groupKeyOf,
+    this.drawer,
+    this.appActions,
   });
 
   final String title;
@@ -41,6 +44,23 @@ class PagedBrowseScreen<T> extends StatefulWidget {
   /// Noun for the error text: "Could not load artists."
   final String what;
 
+  /// R-25: forwarded to [PagedBrowseList] — set to get alphabetical
+  /// section headers (Artists/Genres; Songs when #38 lands).
+  final String Function(T item)? groupKeyOf;
+
+  /// R-21: forwarded to [BrowseScreenScaffold] — the drawer with this
+  /// screen's `selected:` destination (null → plain hamburger, e.g. the
+  /// detail screens that are not drawer destinations).
+  final Widget? drawer;
+
+  /// R-19 (issue #41): extra app-bar actions built with the live
+  /// [PagedList] — the detail screens' Play All / Shuffle / Play Next /
+  /// Add to Up Next overflow gates its entries on emptiness, so it needs
+  /// the list state. [_PagedBrowseScreenState] listens to the list, so the
+  /// app bar rebuilds when the first page lands.
+  final List<Widget> Function(BuildContext context, PagedList<T> list)?
+  appActions;
+
   @override
   State<PagedBrowseScreen<T>> createState() => _PagedBrowseScreenState<T>();
 }
@@ -53,9 +73,17 @@ class _PagedBrowseScreenState<T> extends State<PagedBrowseScreen<T>> {
     super.initState();
     final conn = context.read<ConnectionController>();
     _list = widget.buildList(conn);
+    // R-19: the app-bar overflow gates on list emptiness, so the app bar
+    // must rebuild when the first page lands — PagedBrowseList listens to
+    // the list for the body, but the scaffold actions are built here.
+    _list.addListener(_onListChanged);
     if (conn.phase == ConnectionPhase.connected) {
       unawaited(_list.loadFirst());
     }
+  }
+
+  void _onListChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onReconnect() {
@@ -74,6 +102,15 @@ class _PagedBrowseScreenState<T> extends State<PagedBrowseScreen<T>> {
     final enabled = conn.phase == ConnectionPhase.connected;
     return BrowseScreenScaffold(
       title: widget.title,
+      // R-18: outputs one tap away from every browse screen (D-09). The
+      // paged app bar carries at most title + back + this icon — the
+      // 360-logical-px overflow constraint (unit 004 finding) is pinned by
+      // test/outputs_appbar_test.dart.
+      actions: [
+        const OutputsAppBarAction(),
+        if (widget.appActions != null) ...widget.appActions!(context, _list),
+      ],
+      drawer: widget.drawer,
       onReconnect: _onReconnect,
       onLibraryChanged: _list.started ? () => unawaited(_list.reload()) : null,
       body: PagedBrowseList(
@@ -82,6 +119,7 @@ class _PagedBrowseScreenState<T> extends State<PagedBrowseScreen<T>> {
         emptyMessage: widget.emptyMessage,
         emptyIcon: widget.emptyIcon,
         what: widget.what,
+        groupKeyOf: widget.groupKeyOf,
         itemBuilder: (context, i, item) =>
             widget.itemBuilder(context, i, item, enabled),
       ),

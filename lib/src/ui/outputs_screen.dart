@@ -7,7 +7,9 @@ import '../connection/connection_controller.dart';
 import '../outputs/output.dart';
 import '../outputs/outputs_controller.dart';
 import '../player/player_controller.dart';
+import 'app_drawer.dart';
 import 'connection_banner.dart';
+import 'mini_player.dart';
 
 /// R-09 outputs / speakers screen (unit 004, SCREENS.md "Outputs").
 ///
@@ -200,7 +202,15 @@ class _OutputsScreenState extends State<OutputsScreen> {
     final enabled = conn.phase == ConnectionPhase.connected;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Outputs')),
+      // R-21 (issue #44): hamburger on the standalone Outputs Scaffold too
+      // (drawerAwareLeading keeps the BackButton — AppBar would otherwise
+      // replace it with the DrawerButton alone).
+      appBar: AppBar(
+        title: const Text('Outputs'),
+        leading: drawerAwareLeading(context),
+        leadingWidth: drawerAwareLeadingWidth(context),
+      ),
+      drawer: const AppDrawer(selected: DrawerDestination.outputs),
       body: Column(
         children: [
           if (!enabled)
@@ -223,6 +233,9 @@ class _OutputsScreenState extends State<OutputsScreen> {
           Expanded(child: _buildBody(enabled, outputs)),
         ],
       ),
+      // R-22 (issue #45): mini transport bar here too (own Scaffold — see
+      // browse_screen_scaffold.dart for the layering contract).
+      bottomNavigationBar: const MiniPlayer(),
     );
   }
 

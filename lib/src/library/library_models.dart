@@ -73,6 +73,7 @@ class Artist {
     required this.albumCount,
     required this.trackCount,
     required this.lengthMs,
+    this.nameSort = '',
   });
 
   final String id;
@@ -81,12 +82,21 @@ class Artist {
   final int trackCount;
   final int lengthMs;
 
+  /// The server's sort key (`name_sort`, docs/API.md) — the list order is
+  /// by THIS, not [name] ("Daniela Andrade" sorts as "Andrade, Daniela",
+  /// verified live 2026-11-20). Section headers (R-25) group by it.
+  final String nameSort;
+
+  /// [nameSort] with the [name] fallback for servers/fixtures without it.
+  String get sortName => nameSort.isNotEmpty ? nameSort : name;
+
   factory Artist.fromJson(Map<String, dynamic> json) => Artist(
     id: (json['id'] ?? '').toString(),
     name: json['name'] as String? ?? '',
     albumCount: (json['album_count'] as num?)?.toInt() ?? 0,
     trackCount: (json['track_count'] as num?)?.toInt() ?? 0,
     lengthMs: (json['length_ms'] as num?)?.toInt() ?? 0,
+    nameSort: json['name_sort'] as String? ?? '',
   );
 }
 
@@ -143,6 +153,7 @@ class Track {
     this.discNumber,
     this.rating,
     required this.uri,
+    this.titleSort = '',
   });
 
   /// Wire id is an int; the rating endpoint (R-12) takes it as-is.
@@ -157,6 +168,15 @@ class Track {
   final int? rating;
   final String uri;
 
+  /// The server's sort key (`title_sort`, docs/API.md) — the Songs list
+  /// (R-15) is served in THIS order (`search_tracks` sorts `Q_ITEMS` by
+  /// name, source-verified 2026-11-20: "The A Team" with `title_sort`
+  /// "A Team" opens the list), so the section headers (R-25) group by it.
+  final String titleSort;
+
+  /// [titleSort] with the [title] fallback for servers/fixtures without it.
+  String get sortTitle => titleSort.isNotEmpty ? titleSort : title;
+
   factory Track.fromJson(Map<String, dynamic> json) => Track(
     id: (json['id'] as num?)?.toInt() ?? 0,
     title: json['title'] as String? ?? '',
@@ -168,6 +188,7 @@ class Track {
     discNumber: (json['disc_number'] as num?)?.toInt(),
     rating: (json['rating'] as num?)?.toInt(),
     uri: json['uri'] as String? ?? '',
+    titleSort: json['title_sort'] as String? ?? '',
   );
 }
 
@@ -179,6 +200,7 @@ class Genre {
     required this.trackCount,
     required this.albumCount,
     required this.artistCount,
+    this.nameSort = '',
   });
 
   final String name;
@@ -186,11 +208,19 @@ class Genre {
   final int albumCount;
   final int artistCount;
 
+  /// See [Artist.nameSort] — same sort-key role on this endpoint too
+  /// (verified live 2026-11-20, contiguous letter groups by `name_sort`).
+  final String nameSort;
+
+  /// [nameSort] with the [name] fallback for servers/fixtures without it.
+  String get sortName => nameSort.isNotEmpty ? nameSort : name;
+
   factory Genre.fromJson(Map<String, dynamic> json) => Genre(
     name: json['name'] as String? ?? '',
     trackCount: (json['track_count'] as num?)?.toInt() ?? 0,
     albumCount: (json['album_count'] as num?)?.toInt() ?? 0,
     artistCount: (json['artist_count'] as num?)?.toInt() ?? 0,
+    nameSort: json['name_sort'] as String? ?? '',
   );
 }
 

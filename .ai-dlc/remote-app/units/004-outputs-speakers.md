@@ -349,3 +349,20 @@ Note for later units: the Chromecast remote outputs on this server fail
 to select server-side (user-observed; consistent with the C3 attempts)
 — treat Volumio Kitchen (AirPlay) and Server (ALSA) as the two
 reliable outputs for any future audio-routing test.
+
+## Corrections — 2026-11-21 (PR #69 round-2 review)
+
+- The two "third app-bar icon overflows the 360-logical viewport by
+  **+9 px**" notes (Implementation § app bar, and the Result-deviations
+  "app-bar cast-icon" entry) could **not be reproduced** with the
+  current code + test fonts (PR #69 re-measure at base: title + sync
+  label + 3 icons = actions sum **374.5 vs 360.0**, i.e. +14.5 px,
+  Ahem font, longest `syncLabel`; unit 004's contemporaneous layout
+  predates the R-21 drawer leading and the sync label, so its exact
+  configuration — and its 9 px figure — are no longer reconstructable).
+  The **behavioural conclusion stands** (a third actions icon does not
+  fit the narrowest supported viewport; the entry-point placement is
+  correct) and is now pinned by `test/now_playing_screen_test.dart`
+  ('R-17 hardening' test) and by the re-measured comment at
+  `lib/src/ui/now_playing_screen.dart` (entry-rows comment). The 9 px
+  figure itself is retired.

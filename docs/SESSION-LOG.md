@@ -2389,3 +2389,665 @@ screenshot closures CLOSED here; remaining candidates are the PR-comment
 follow-ups (#20 post-dialog predicate re-check, failed-toggle test,
 checkbox ValueKey; #24 browse/queue nav; #19 mid-drag hardening; #26
 mm:ss formatter).
+
+## 2026-11-19 — retune-ux-capture: ReTune revived on Pixel 6 + screen walk (opencode)
+
+**Why.** Capture units (retune-ux-capture 001–004) never ran; user wants a
+UX diff list vs owntone_remote. ReTune (com.squallydoc.retune 3.5.23,
+targetSdk 19) is blocked on modern Android by the targetSdk<24 install
+floor — **`adb install --bypass-low-target-sdk-block` installs it on the
+Pixel 6 (Android 17)**; user had used it pre-OTA (installs pre-dating the
+floor survive). Retune_API_33 AVD was tried first but emulator NAT drops
+mDNS multicast (JmDNS discovery dead) → killed; real LAN on Pixel 6
+discovers OwnTone in 0.4 s and pairing completes (code entered in OwnTone
+web UI). Pairing intact — device is now the read-only ReTune reference.
+
+**INCIDENT (audio safety).** During now-playing capture, an `input tap
+350 2070` intended as a mini-player-bar tap hit the **previous-track
+button** (its bounds [222,1969][390,2137] overlap x=350; button bounds
+were read from the hierarchy but the tap was aimed at the mini-bar
+geometry assumed from the library screen). OwnTone transitioned `pause →
+play` — item 210493 played ~35 s through selected outputs
+(ESP-68F8/ESP-CAAC64/Volumio Kitchen) before `PUT /api/player/pause`
+(204). What played: item 210493 (queue entry, The Flatliners album
+context), first ~35 s. Contained at 21:02:10Z. No unattended risk (user
+present). Restores: volume 41→31 (204; ReTune rocker step = **5** per
+press, R-14 parity datum), shuffle/repeat/visualizer reverted during walk,
+queue untouched (1432 items; read-only walk). Player current-item restore
+(210493→209359@145947) needs `play?item_id` = SUPERVISED — requested, see
+below. Lesson logged: tap coordinates must come from the CURRENT
+screen's hierarchy, never remembered geometry.
+
+**Second playback observation (external, not harness-caused).** While
+restoring device settings (stayon), the player was found `play` on a NEW
+item (211169, 54.5 s) with ESP-CAAC64 deselected — no ReTune transport
+input had been issued; this matches the AGENTS-noted concurrent session
+driving the server. Paused via API at 21:16:48Z (204; ~9 s audible on the
+other session's cue before detection). Outputs left as the other session
+set them (their change — not "restored").
+
+**Units 003+004/005 done-in-progress (2026-11-19, same session).** REA
+(`rea-agents` 6.7.0, global npm) + apktool 3.0.3 static pass →
+`docs/retune-capture/static-notes.md` (manifest/prefs/132-layout
+reconciliation, zero unexplained). Inventory →
+`docs/retune-capture/feature-inventory.md`; actionable proposals →
+`docs/retune-capture/diff-list.md` (D-01…D-19). **Gate: user to prune
+diff list** — unit 004 stays in_progress until then; REQUIREMENTS.md
+scope notes update on that pass. Shortlist rec: D-02 (Songs tab), D-05
+(playlist artwork+smart badge), D-04 (Go to Artist/Album), D-09 (global
+outputs action) — all S; then D-06 (detail Play All/Shuffle/Play Next/Add
+to Up Next — needs QueueController add-only + shuffle-first), D-01
+(discovery, pre-approved), D-03/D-10 taste calls.
+
+**retune-ux-capture GATE CLOSED 2026-11-19 (user).** Verbatim: "confirm
+drops, save everything to the project using the ai-dlc approach, then we
+need to draft a series of github issues that report each change that is
+required to the existing project." → diff-list decisions recorded
+(D-01/02/04/05/06/09 accepted → R-15…R-20 in REQUIREMENTS.md; drops
+confirmed; D-03/D-10 deferred as taste); mDNS moved INTO scope (R-20 —
+was listed out-of-scope pre-gate); unit 004 done — **intent complete**.
+Issue drafts: `.ai-dlc/retune-ux-capture/issues/` (6, repo issue style;
+publish pending user go).
+
+**Issues published (2026-11-19):** #38 Songs view (R-15), #39 Go to
+Artist/Album (R-17), #40 global outputs action (R-18), #41 detail context
+actions (R-19), #42 mDNS discovery (R-20). #02 draft (playlist artwork,
+D-05/R-16) **declined by user at review** ("skip it, I don't care about
+this one") — R-16 withdrawn in REQUIREMENTS, diff-list D-05 marked
+SKIPPED, draft kept unposted for the record. retune-ux-capture fully
+closed; build work now tracked by #38–#42 (units off develop per GitFlow).
+
+**Inventory correction pass (2026-11-19, same session, user-prompted).**
+User challenged the navigation rows; reading `lib/src` falsified five
+v1 claims: there is **no bottom nav and no mini-player** (NP is the root
+route, everything else pushed — `root_screen.dart:11-20`), **no queue
+drag-reorder** (R-11 never required it), while browse counts and the
+smart-playlist text marker **do** exist. `feature-inventory.md` rewritten
+as v2 with file:line verification for every row; diff-list D-03/D-07
+corrected and **D-07 reopened**; new navigation-family rows **N-01
+(mini-player) N-02 (nav architecture) N-03 (queue reorder) N-04
+(remove item) N-05 (section headers)** added awaiting the user gate.
+Issue comments/edits: #38 (Songs rows must show artist + album), #40
+(BrowseScreenScaffold already supports `actions:` — `queue_screen.dart:111`).
+Lesson recorded: parity comparisons read the CODE, not unit-doc memory.
+
+**Supervised navigation audit + N-rows gate (2026-11-19, user present).**
+User: do all N-rows; **N-02 = option B (drawer + bottom bar when
+playing)**; audit ReTune on the Pixel 6 for anything unsure, mind
+auto-hiding transitions. Findings (evidence `23-playing-audit/notes.md`):
+mini bar on every activity (playing/paused/stopped states byte-diffed;
+stopped = transport only, metadata hidden); drawer sections Connected To/
+Playing/Libraries/Views, **no a11y selected state**, no drawer on
+UpNextActivity; volume keys app-wide with center toaster **auto-hide
+~1–2.5 s** (machine-verified via band diffs — 22-volume-toaster regraded
+from deferred to verified); queue row accessory = **Play Next · Remove**
+popup, header accessory = Clear; long-press drag visual-only. **Third
+external-playback observation**: found play 211617@183.8 s vol 100
+(concurrent session), paused ~15 s audible; supervised window (user
+"proceed") then restored pause@199001 + vol 100. Device stayon restored.
+R-21…R-25 written into REQUIREMENTS; issue drafts 07–11 pending user
+review one-by-one (same flow as #38–#42).
+
+**N-issues published (2026-11-19):** #44 drawer (R-21, option B), #45
+mini transport bar (R-22), #46 queue drag-reorder (R-23), #47 queue
+remove/play-next (R-24), #48 section headers (R-25) — all reviewed
+one-by-one at the CLI and approved verbatim. retune-ux-capture closed
+again, this time with the navigation family properly captured (the v1
+inventory's false "bottom nav / mini player / reorder" claims corrected
+the same day). Open build queue now: #38–#42, #44–#48.
+
+**Overnight unattended run 2026-11-19/20 — issue #43 theme switcher (unit
+#43, night pipeline).** Light/Dark/System theme preference shipped on
+`fix/issue-43-theme-switcher`: `SettingsStore.theme.mode` (untyped read —
+`getString` THROWS on a wrongly-typed legacy value and "corrupt → System,
+never crash" is the R-26 acceptance), `ThemePreference` ChangeNotifier
+mirrored to `MaterialApp.themeMode` + `darkTheme` from the same seed
+(0xFF7C5CBF, `fromSeed`, no bespoke palette), `SegmentedButton` picker in
+Settings under the rocker row, now-playing placeholders → `onSurfaceVariant`.
+R-ID adjudicated **R-26** (issue proposed R-21; R-21..R-25 are the
+retune-ux-capture navigation family). Device pass on the unit's own
+disposable AVD `OwnToneNight_API_36` (created + deleted by the unit; the
+issue's Pixel-6 line superseded by the night device policy): picker renders,
+Dark luma 243→26.5 without restart, kill/relaunch keeps dark,
+`cmd uimode night yes|no` flips live (243→26.6→243), sed-corrupted pref
+boots clean (0 crash-buffer hits). Server `pause` verified before/after;
+zero playback actions. Gates: analyze 0, format clean, 486/486 (14 new
+R-26 tests), debug APK builds. Harness facts worth keeping: MaterialApp
+wraps the resolved theme in an **AnimatedTheme (200 ms)** — theme widget
+tests must `pumpAndSettle`, a single `pump` reads a mid-lerp `Theme.of`;
+`platformBrightnessTestValue` needs `handlePlatformBrightnessChanged()`;
+agent-lens/inspector trees and flutter_driver were unavailable on this
+run — uiautomator (labels in content-desc, works on the API-36 AVD unlike
+the Pixel 6) + screencap-luma + logcat carried the evidence. Report
+`.ai-dlc/night-2026-11-19/reports/43.md`.
+
+**Overnight unattended run 2026-11-19/20 — issue #40 outputs app-bar action
+(unit #40, night pipeline).** R-18 shipped on `fix/issue-40-outputs-appbar`:
+`OutputsAppBarAction` (`Icons.speaker`, tooltip + semantics label 'Outputs',
+same `OutputsScreen` destination as now-playing) on the library home and all
+eight paged browse screens — ReTune's one-tap Speakers action (D-09).
+`BrowseScreenScaffold` already had `actions:` (unit 005b); the action is
+wired at the `LibraryHomeScreen`/`PagedBrowseScreen` call sites, NOT baked
+into the scaffold — scaffold-level would give QueueScreen a third action and
+reproduce the dv unit-004 360-px overflow R-18 explicitly warns about
+(Search/Queue deliberately out of scope: R-18 enumerates "library home + all
+paged browse lists"). Pressable while offline on purpose (queue
+hide-toggle precedent; the destination renders the offline state itself).
+4 new R-18 widget tests (`test/outputs_appbar_test.dart`): 360×800 pumps
+(takeException null + tooltip + semantics label) and tap-through/back with
+the fake provider proving the real OutputsScreen and its output names.
+Gates: analyze 0, format clean (one real reformat pass), 490/490 (+4), debug
+APK builds. Device pass on the unit's own disposable AVD
+`OwnToneNight_API_36` (created + deleted): connected to the real server
+(paused throughout, selection byte-compared before/after the sheet —
+untouched), icon present on library home + Albums, tap opens the real
+outputs list (Bathroom display/ESP-CAAC64 selected/…), back returns to the
+list; **360-dp check on-device via `wm density 300`** (1080 px = exactly 360
+logical px): app bar title/icon non-overlapping, fully on-screen, console 0
+overflow lines — same 0-hit grep at the 411-dp default. [CORRECTION
+2026-11-21, retroactive review of PR #52: the parenthetical is
+arithmetically wrong — `wm density 300` gives 1080 × 160/300 = **576 dp**,
+so the device row measured a 576-dp viewport; exact-360-logical-px stays
+pinned by the deterministic widget test (`test/outputs_appbar_test.dart`,
+360×800 @ dpr 1.0). See `.ai-dlc/night-2026-11-19/reports/40.md`
+§ Corrections — 2026-11-21.] Harness same as #43:
+agent-lens/inspector trees + flutter_driver dead on this run, uiautomator
+content-desc + screencap + console carried it (and this model has no image
+input — screencaps are on-disk-only evidence). Report
+`.ai-dlc/night-2026-11-19/reports/40.md`.
+
+**Overnight unattended run 2026-11-19/20 — issue #39 now-playing context
+navigation (unit #39, night pipeline).** R-17 shipped on
+`fix/issue-39-nowplaying-go-to`: the now-playing overflow (new
+`PopupMenuButton`, tooltip 'More') gains **Go to Artist → ArtistAlbumsScreen**
+and **Go to Album → AlbumTracksScreen** for the current track (ReTune's np
+context actions, D-04). `NowPlayingItem` gains `albumId`/`albumArtistId`
+from the queue item's `album_id`/`album_artist_id` — live curl-verified
+2026-11-20: queue/track payloads carry **no plain `artist_id`**, and
+`album_artist_id` is the id `/api/library/artists/{id}/albums` accepts
+(doc-commented so it never gets "tidied" to a nonexistent `artist_id`).
+Frozen-spec "absent/disabled" adjudicated: **absent** with no track/ids
+(whole button unmounted — no dead rows), **inert** rows offline (matches the
+entry-row offline pattern). 4 new R-17 widget tests (entries by text, routes
+found by widget type, fake-server real albums/tracks render, stopped/id-less
+absent, offline inert); fixture browse ids are opt-in (null default) because
+a present `album_id` flips the frozen artwork-fallback branch. Gates:
+analyze 0, format clean, 494/494 (+4), debug APK builds. Device pass on the
+unit's own disposable AVD `OwnToneNight_API_36` (created + deleted): real
+server paused throughout (item 211696 unchanged at every check, GETs only) —
+overflow shows both entries, Go to Artist renders Tony Sly's real albums, Go
+to Album renders all 12 Sad Bear tracks with ratings, back returns to a
+living Now Playing, 0 crashes. Harness note: `flutter run` stalled 3×
+tool-side at Installing (manual `adb install -r` of the same APK: 0.5 s) —
+fallback `am start` + VM-service connect + uiautomator content-desc +
+screencap (build/devshots/, no model image input) carried the evidence, the
+same channel as #43/#40. Report `.ai-dlc/night-2026-11-19/reports/39.md`.
+
+## 2026-11-20 — overnight: issue #48 alphabetical section headers (opencode)
+
+Branch `fix/issue-48-section-headers` off develop (`db5b624`). Frozen spec
+`.ai-dlc/night-2026-11-19/issues/48.md` (R-25, N-05): opt-in disabled
+alphabetical header rows in `PagedBrowseList`'s loaded branch (ReTune
+`basic_header`), enabled on **Artists + Genres only** (Songs deferred to
+#38 per orchestrator; Playlists/Albums off per spec). Header emits when an
+item's normalized group key changes vs the **previous loaded item** — once
+across page boundaries (both directions) and across `PagedList.reload`;
+style `labelLarge` + `colorScheme.secondary`, 8 px padding;
+`Semantics(header: true, label)` + `ExcludeSemantics(Text)` — structure not
+control (no tap action, not focusable) with the label kept.
+**Sort verified live before deriving** (GETs only): the artists/genres
+endpoints order by the wire `name_sort` ("Daniela Andrade" → "Andrade,
+Daniela"), the `order` param is ignored (asc/desc/name identical), and
+display-name grouping yields 103 broken groups vs 24 contiguous under
+name_sort — so `browseSectionKey` takes `nameSort` (fallback `name`),
+first char uppercased, non-letter → `#`; `nameSort` added to the
+`Artist`/`Genre` models (docs/API.md already documents the field). 12 new
+R-25 tests in `test/paged_browse_headers_test.dart` (frozen repro cases +
+semantics/inertness + derivation). Gates: analyze 0, format clean,
+506/506 (+12), debug APK builds. Device pass on the unit's own disposable
+AVD `OwnToneNight_API_36` (created + deleted, serial resolved by
+avd_name; Pixel 6 present but never targeted): Artists shows one `A`
+header, the real A→B boundary (…`Iggy Azalea` → one `B` → `Bad Religion`)
+renders exactly one header between groups, header taps inert (uiautomator
+content-desc + bounds, screenshots), Genres spot-checks the same at S→T;
+server `pause` at every re-check, reads only. Harness:
+flutter-agent-lens `widget.get_tree` returned null and the driver
+extension is absent → #43/#40/#39 fallback (am start via flutter run
+install + uiautomator + screencap) carried the evidence. Report
+`.ai-dlc/night-2026-11-19/reports/48.md`.
+
+## 2026-11-20 — overnight: issue #38 Songs browse view (opencode)
+
+Branch `fix/issue-38-songs-browse` off develop (`fd24c06`). Frozen spec
+`.ai-dlc/night-2026-11-19/issues/38.md` (R-15, D-02): library home gains
+**Songs** (between Albums and Genres) → `TracksScreen`, a thin
+`PagedBrowseScreen` of the whole library with two-line `TrackRow`s
+(`title` / `artist - album`, new additive `showAlbum` flag) + the R-12
+stars + R-10 row-tap play; the #48 `groupKeyOf` clause **enabled on
+Songs** (orchestrator adjudication). **Spec correction (verified first):**
+`GET /api/library/tracks` has no collection route on 29.3 (upstream
+`httpd_jsonapi.c` route table + live 400 for every param combination) —
+`api.tracks()` rides `GET /api/search?type=tracks&query=` (server's
+`title LIKE '%%'` branch, `title_sort` order; source `search_tracks`;
+live: total 3265, paged, distinct page-2); do-not-revert warning in code
++ API.md. `Track` gains `titleSort`/`sortTitle` (#48 pattern). 14 new
+R-15-cited fake-provider tests (frozen repro incl. playUris-with-track-
+uri, page-2-at-boundary, reconnect refetch, two-line rows, per-row star
+values, A-header-by-title_sort-not-T, B boundary header once). Gates:
+analyze 0, format clean, 520/520 (+14), debug APK. Device pass on own
+disposable AVD `OwnToneNight_API_36` (created+deleted, serial by
+avd_name, Pixel 6 never targeted): Songs section on home; rows
+`<title>, <artist> - <album>, M:SS, N stars`; scroll renders items past
+the 50-page (pages 2–3 fetched — bottom rows title-sort index >103); the
+curl-pinned live A→B boundary (`Avf` → one `B` header → `B for My Name`)
+renders exactly one header; stars + play rows visually present —
+play-accessory tap AUDIO-SAFETY withheld, star tap NO-MUTATION withheld
+(playUris/star-value proven by widget tests). `player=pause` at all six
+checks, reads only. Harness: uiautomator + input + screencap
+(build/issue38/), the #43/#40/#39/#48 fallback. Report
+`.ai-dlc/night-2026-11-19/reports/38.md`.
+
+## 2026-11-20 — overnight: issue #44 navigation drawer (opencode)
+
+Branch `fix/issue-44-nav-drawer` off develop (`baa0d4e`). Frozen spec
+`.ai-dlc/night-2026-11-19/issues/44.md` (R-21, N-02 option B): M3 drawer
+behind a hamburger on **every** main screen — new `lib/src/ui/app_drawer.dart`
+(header `Connected To — <library_name from /api/config>` + server version,
+sections Playing/Library/Settings, ten destinations incl. Songs deep link);
+`drawer:` wired into the NP Scaffold, `BrowseScreenScaffold` (new `drawer`
+param mirroring `actions:`, defaults to a plain `AppDrawer()` so no browse
+screen can lack a hamburger) and the standalone Outputs/Settings Scaffolds;
+`showDrawerDestination` (popUntil(isFirst)-then-push) beside
+`showNowPlaying`. Selected destination via `ListTile.selected` →
+`Semantics(selected:)`; offline: drawer opens, server-touching rows inert
+through ListTile's explicit `enabled` flag (a null `onTap` alone does NOT
+disable its semantics — caught by the tests); Now Playing + Settings stay
+live; the drawer's Outputs row is inert offline per the frozen repro while
+the #40 app-bar Outputs action keeps its pressable-while-offline contract
+(separate frozen adjudications — documented, not unified). Two traps,
+pinned in code + tests: AppBar's auto-leading shows DrawerButton
+*instead of* BackButton once a Scaffold has a drawer (→
+`drawerAwareLeading` + paired `drawerAwareLeadingWidth`: the 56-px leading
+slot otherwise overflows the pair by exactly 40 px), and the NP app bar
+overflowed by 65 px at 360 logical px once the hamburger took its slot
+(overflowing actions painted over and swallowed the hamburger's taps) —
+`OwnTone <version>` label moved app bar → drawer header (About still shows
+it). `ConnectionController.serverName` (`library_name`, kept while
+offline). ReTune's UpNext-no-drawer quirk NOT copied. 8 new R-21 tests
+(`test/app_drawer_test.dart`): per-screen hamburger loop, drawer content +
+`serverName`, Queue-from-two-deep **stack-depth-2** regression (Navigator
+observer + popped-stack + back-to-root + no Queue-duplicate),
+selected-semantics pairs, back-closes-drawer-first (local-history
+`maybePop`), offline inert/enabled split + behavioural no-op tap. Gates:
+analyze 0, format clean, **528/528** (+8), debug APK builds. Device pass
+on the unit's own disposable AVD `OwnToneNight_API_36` (created+deleted,
+serial by avd_name, Pixel 6 never targeted): header shows the real
+`My Music on hp-server`, `selected="true"` follows the hosting screen
+(NP/Artists/Settings), Queue-from-two-deep → one back = root, back closes
+the drawer first, offline (airplane mode) rows `enabled=false` + inert
+taps, reconnect clears the banner; `player=pause` item 211696@1490 vol 60
+byte-identical at every check, outputs unchanged, GETs only, zero
+playback/rating/mutation actions. Harness: uiautomator content-desc +
+input + screencap (build/night44/), the #43/#40/#39/#48/#38 fallback —
+the Flutter a11y bridge went quiet after a late background/relaunch
+(documented trap); all drawer assertions captured while alive. Report
+`.ai-dlc/night-2026-11-19/reports/44.md`.
+
+## 2026-11-20 — overnight: issue #45 persistent mini transport bar (opencode)
+
+Branch `fix/issue-45-mini-transport-bar` off develop (`2debde4`). Frozen
+spec `.ai-dlc/night-2026-11-19/issues/45.md` (R-22, N-01): pinned bottom
+mini player on every screen except Now Playing — new
+`lib/src/ui/mini_player.dart` hosted as `Scaffold.bottomNavigationBar`
+(Scaffold's own layer: never scrolls away, never steals row taps) on
+`BrowseScreenScaffold` (Library/Search/Queue/all paged+detail views), the
+standalone Outputs and Settings Scaffolds. Two-line metadata
+(`title` / `artist - album`) + prev/play-pause/next; the play/pause
+**icon mapping goes through `mirror_handler.controlsFor` itself** (first
+entry = the play/pause control — do not re-derive the condition beside
+it). Presses route to `PlayerController` **never** `QueueController.playUris`
+(the issue-#21 `clear=true` lesson — routing tests capture calls on
+recording controller subclasses, `playUrisCalls == 0` in every press test,
+mutation-verified by rerouting the button to `playUris([])`). Metadata
+zone tap → `showNowPlaying` (widget test asserts root depth 1, on-device
+verified from two-deep Songs). Visible iff a current item exists
+(playing or paused), hidden stopped — ReTune's dead-transport-while-stopped
+deliberately not copied (PR-body simplification). All three buttons carry
+tooltip + semantics label (uiautomator content-desc `Previous/Play/Next`
++ `Open now playing` on-device; tooltip+label asserted in an a11y test).
+Offline → the three `onPressed`s null (widget test: null-onPressed ×3,
+no-op tap, ConnectionBanner coexists above the bar). No auto-hide.
+Artwork: **icon-only v1** (a thumbnail would fetch beyond the unit-010
+ArtworkProbe cache → spec's no-extra-fetch gate fails → skipped). Two
+traps pinned in code+tests: `Column(mainAxisSize: max)` inside the bar
+grows to the FULL viewport because Scaffold lays out `bottomNavigationBar`
+with loose constraints (800-px bar, zero-height body — caught live,
+mutation-verified by a new compact-height assertion); and provider-less
+test pumps (89 existing tests) needed the `rateTrack` shape —
+`Provider.of<T?>(context, listen: true)` (nullable = no-throw;
+`context.maybeWatch` does not exist in provider 6). One existing test
+scoped to the `ListView` (now_playing "Go to Album" — the bar legitimately
+re-renders the fixture title on the pushed screen). 11 new R-22 tests
+(`test/mini_player_test.dart`). Gates: analyze 0, format clean,
+**539/539** (+11), debug APK builds. Device pass on the unit's own
+disposable AVD `OwnToneNight_API_36` (created+deleted, serial by
+avd_name, Pixel 6 never targeted): bar **absent** on NP root (single
+title node), present with the two-line fixture metadata + three labelled
+buttons on Library/Queue/Outputs/Settings/paged Songs, row tap navigates
+with the bar shown, bar bounds **invariant** under a 900-px list scroll,
+metadata tap → NP root; `player=pause` item 211696@1490 vol 60
+byte-identical at every check, zero mutation requests, 0 `E/flutter`.
+Harness: MCP-first (agent-lens VM-service connect OK, `get_tree` failed)
+→ accepted #43/#40/#39/#48/#38 fallback (uiautomator content-desc +
+input + screencap, build/scratch/). BLOCKED-PENDING-SUPERVISION (pre-
+declared): bar play/pause LIVE on the real server — morning summary:
+tap bar play → server `play`, tap → `pause`. WITHHELD-with-proof
+(fixture preservation + no-audio): on-device prev/next taps and the
+stopped-state check — each covered by the fake-controller captured-call
+widget tests named in the report. Report
+`.ai-dlc/night-2026-11-19/reports/45.md`.
+
+## 2026-11-20 — overnight: issue #41 detail overflow Play All/Shuffle/Play Next/Add to Up Next (opencode)
+
+Branch `fix/issue-41-play-all-shuffle` off develop (`6148360`). Frozen
+spec `.ai-dlc/night-2026-11-19/issues/41.md` (R-19, D-06): app-bar
+overflow **Play All · Shuffle · Play Next · Add to Up Next** on
+PlaylistTracks/AlbumTracks/ArtistAlbums (new `SetPlaybackOverflow` + a
+`PagedBrowseScreen.appActions` hook that listens to the `PagedList` so the
+overflow gates emptiness — disabled whole button while loading/empty,
+chosen minimal rule). `QueueController.addUris(uris,{ahead})` — POST
+queue/items/add WITHOUT clear, `playback=add`; ahead⇒`position=0`
+(frozen), tail⇒`position=_queue.length`; `playUrisShuffled` = client-side
+pre-shuffle + the existing clear+start contract; both through the unit-011
+`_action` single-flight + trailing refresh. Live findings pinned in code
+(29.3, 2026-11-20, safe adds + exact restore): `playback=add` never
+starts audio; the add-time `?shuffle` param is the **global** shuffle-mode
+setter (flipped the flag to false, restored via PUT + verified) → R-19's
+shuffle-play must pre-shuffle client-side, never send the param; omitted/
+out-of-range `position` with server shuffle ON inserts at a RANDOM slot
+(640/597/1061/710/1072/999999→1072 observed) → the tail add needs the
+position pin; `limit=-1` is a real unbounded page on album/playlist
+tracks. 18 new R-19 tests (`test/detail_overflow_test.dart`, captured
+request lines; Play All/Shuffle taps are fake-API-only). Gates: analyze 0,
+format clean, **557/557** (+18), debug APK builds. Device pass on the
+unit's own disposable AVD `OwnToneNight_API_36` (created+deleted, 0 qemu
+after, serial by avd_name, Pixel 6 never targeted; accepted fallback
+harness — uiautomator + input + screencap): four labelled entries dumped
+on the Playlist AND Album screens; **Play Next** (Sad Bear) → 12 items at
+positions 0..11 (API-verified) + Queue screen rows visible → DELETE ×12 →
+head/tail/total restored byte-exact; **Add to Up Next** → 12 items at the
+tail 1396..1407 (API-verified) + Now Playing chip 1396→1408→1396 via WS →
+restored; `pause`/shuffle=true/60/211696/1490 byte-identical at every
+check. BLOCKED-PENDING-SUPERVISION (pre-declared, audible, never tapped):
+Play All and Shuffle LIVE rows — substitute proofs are the named
+captured-request tests in the report. Report
+`.ai-dlc/night-2026-11-19/reports/41.md`.
+
+## 2026-11-20 — overnight: issue #46 queue drag-reorder (opencode)
+
+Branch `fix/issue-46-queue-drag-reorder` off develop (`431971a`). Frozen
+spec `.ai-dlc/night-2026-11-19/issues/46.md`: R-23 tap-and-hold drag
+reorder. `ReorderableListView.builder` in `_QueueList` with
+**`ReorderableDelayedDragStartListener`** handles (the plain listener is
+IMMEDIATE-drag in 3.47.9 — wrong gesture), `buildDefaultDragHandles:
+false`, `onReorderItem` (the `onReorder` param is deprecated in this
+Flutter — adjusted-index contract; `queueMoveNewPosition` must NOT
+re-decrement, pinned by tests), handle semantics `Reorder <title>`,
+8px separators baked into rows (no `separatorBuilder` on
+ReorderableListView in 3.47.9). `QueueController.moveItem(item,newIndex)`
+= `_action` VERBATIM (optimistic remove+insert-at-N mirroring the
+server MOVE, rollback + typed snackbar, unit-011 trailing refresh, no
+second refresh path). `OwntoneApi.moveQueueItem` =
+`PUT /api/queue/items/{id}?new_position=N` — param + QUERY placement
+verified live via docs-mcp json-api docs 2026-11-20; captured request
+lines in tests. **Hide-played: drops MAP through the cut** (pure fn
+sharing `_hideCutStart` with `visibleQueue`) — adjudicated over
+disable-drag; the honest corner (drop above the anchor ⇒ row enters the
+hidden region) is pinned by the equivalence test. Now-playing row gets
+NO handle (inert rule; server-side current-move probe deliberately
+UNPROBED on the shared fixture). Mid-drag WS event: list FREEZES
+(identical cached list widget + frozen items closure — a rebuild under
+the live overlay trips Flutter 3.47.9's duplicate-GlobalKey assertion,
+reproduced; unfreeze on `onReorderItem`'s NEXT frame + 500 ms timer —
+the framework tears the overlay down AFTER the callback, same-frame
+collision reproduced); drag keeps local order, post-commit refresh
+reconciles (widget test pins freeze + one PUT + server order). 18 new
+R-23 tests (`test/queue_move_test.dart` 10 pure + R-23 group 8 real
+gestures); two R-22 mini_player finders followed the ListView→
+ReorderableListView swap. Gates: analyze 0, format clean, **575/575**
+(+18), debug APK builds. Device pass on the unit's own AVD
+`OwnToneNight_API_36` (created+deleted, 0 qemu after, serial by
+avd_name, Pixel 6 never targeted; fallback harness — motionevent
+hold+drag + uiautomator content-desc + server version/digest oracles;
+0 E/flutter; known a11y-bridge relaunch bug hit and worked around via
+force-stop+cold start): drag Monkeys abs 1→3 (server order verified,
+app rows match), INVERSE drag → id-sequence **byte-identical** to the
+snapshot (`bcf08bfc7b56bb99`, v2617→2619 = exactly the two moves — no
+incident); now-playing row (reached via the app's hide-cut anchor)
+dumps NO_HANDLE while neighbours HAVE it and hold-drags from the handle
+position AND the body fire NOTHING at the server (version/id-seq frozen
+at 2619); hide ON/OFF server-silent; `pause`/shuffle=true/60/211696/1490
+byte-identical at every checkpoint. BLOCKED-PENDING-SUPERVISION
+(pre-declared, run config): **Drag while PLAYING** — audible class,
+substitute proof = the pause-state server-verified drags + fake-API
+tests. Report `.ai-dlc/night-2026-11-19/reports/46.md`.
+
+## 2026-11-20 — overnight: issue #47 queue per-row Remove + Play Next (opencode)
+
+Unattended run (branch `fix/issue-47-queue-row-remove` off develop
+@`5dbefb4`). R-24 (N-04, 23-playing-audit A3) built: per-row
+`PopupMenuButton` accessory (repo M3 overflow precedent — Dismissible
+rejected per adjudication: popup simpler, no gesture-arena regression
+risk) offering **Play next · Remove** with tooltips + semantics labels
+(`Queue options <title>`, `Play next <title>`, `Remove <title> from
+queue` — ReTune's popup is a11y-invisible, R-24 says do better);
+**now-playing row renders NO menu** (neither action reachable).
+`QueueController.removeItem` = `DELETE /api/queue/items/{id}` via
+`_action` VERBATIM — ID-keyed optimistic splice (a hide-cut index-splice
+would remove the wrong row), rollback + typed snackbar, unit-011
+trailing refresh, no second refresh path. `playNext` = `POST
+queue/items/add` `uris` row-uri `position=current+1` **no clear**,
+`playback=add`, riding the **#41 addUris position variant (extended,
+not duplicated; playUris clear+start contract untouched)**;
+**insert-COPY chosen** (ReTune safe default, frozen adjudication — move
+semantics could half-fail; decision in code + report); pure
+`queuePlayNextPosition` (shares `indexOfNowPlaying`; no current → 0,
+minimal interpretation). API `deleteQueueItem` (204 semantics
+docs-mcp-confirmed 2026-11-20). 16 new R-24 tests (captured request
+lines: `DELETE /api/queue/items/196176` exact; add exact
+`...&playback=add&position=1` without clear/start; fake-500 rollback;
+now-playing exposes neither; hide-played interplay — above-cut rows
+unreachable + id-keyed delete can't touch the hidden region; **row-tap
+#21 non-regression** — body tap fires the skip, opens no popup).
+Gates: analyze 0, format clean, **591/591** (+16), debug APK builds.
+Device pass on the unit's own AVD `OwnToneNight_API_36` (created+
+deleted, 0 qemu after, serial by avd_name, Pixel 6 never targeted;
+fallback harness — uiautomator content-desc + input taps + server
+digests; **popup dumps came back complete — the empty-overlay dump trap
+did NOT reproduce on the AVD**; one a11y-bridge death recovered via
+force-stop+cold start as #46; harness finding: list flings must stay
+inside y∈[296,2253] — y≈2300 hits the mini-player).
+Safe-unattended instantiations, pause-checked at EVERY checkpoint
+(`pause`/shuffle=true/60/211696/1490 byte-identical throughout;
+versions 2619→2623 = exactly the four authorized mutations; 0
+E/flutter): **A1 Remove `Pride` (row 1395) via the app** → server
+count−1 + row gone (app+server) → curl re-add at 1395 (playback=add) →
+**uri-sequence digest == pre-action (`696bebed22030595` == `696bebed22030595`)**
+with the one restored-row id diff recorded honestly (212265→212654);
+**A2 Play Next `Oxy Moronic` (1394) via the app** → NEW id 212655 at
+current+1=492 with matching uri, original row STAYS (insert-COPY
+confirmed on-device) → curl DELETE 212655 (204) → **id-sequence digest
+== pre-action (`e3d1044d70fe65c4` == `e3d1044d70fe65c4`, byte-identical
+restore)**; hide-ON now-playing row content-desc has NO `Queue options`
+and NO `Reorder` while neighbours carry both.
+BLOCKED-PENDING-SUPERVISION (pre-declared, run config): **Remove while
+PLAYING** + supervised-manual-once — audible class; substitute proof =
+the pause-state server-verified round-trips + fake-API captured-request
+tests. On-device row-tap skip deliberately NOT run (play-class endpoint;
+widget test substitutes). Report
+`.ai-dlc/night-2026-11-19/reports/47.md`.
+
+## 2026-11-20 — overnight run (LAST unit): remote-app fix/issue-42-mdns-discovery DONE (R-20 mDNS auto-discovery)
+
+Unit #42 of the 2026-11-19/20 night pipeline, branch off develop @ 886ff3c
+(commits 68ac181 → 7a4d5e3 → aebce1b, all pushed). Pre-flight FIRST (host
+dns-sd, pty-probed): the server advertises **nothing** under
+`_owntone-server._tcp`/`_owntone._tcp`; it publishes its web interface as
+**`_http._tcp`** — instance = `/api/config` library_name
+("My Music on hp-server"), SRV `hp-server.local.:3689` (port == the JSON
+API, cross-checked), TXT `ffid=…/mtd-version=…`; `_dacp._tcp`/`_daap._tcp`
+exist (DAAP — never browsed, AGENTS §5). So the scan browses `_http._tcp`
+and keeps TXT-fingerprinted hits (`ffid`/`mtd-version`/`owntone-version`).
+Plugin: **multicast_dns 0.3.3+1** (flutter.dev verified publisher, BSD-3,
+pure Dart, zero native deps); `mdns_query` recorded as NOT EXISTING on
+pub.dev (API NoSuchKey); platform-NSD plugins rejected (native/unmaintained).
+**No new Android permission** — QU (unicast-response) queries + ephemeral
+source port ⇒ no MulticastLock/CHANGE_WIFI_MULTICAST_STATE needed (docs
+verified). Three measured transport findings (in code + report): no
+trailing dot on the browse domain (resolver mismatch → silent zero),
+ephemeral-port+QU because adb/Chrome 5353 SO_REUSEPORT co-binds starve
+multicast listeners (measured 13/9/0 hits), and the TXT newline-join
+(separator set must include \n). UI: Scan is a side panel below the form
+own loading/empty/error/timeout states (12 s ceiling); one-tap hit
+pre-fills the fields and calls the EXISTING `_saveAndConnect` (R-01, no
+bypass); manual entry asserted usable during/after scan failure. +17
+R-20 tests (607 total); live test on the host PASSES: `R-20 discovered:
+[My Music on hp-server (192.168.1.13:3689)]` + /api/config equality.
+Gates: analyze 0, format 0 (334/0 changed), 607/607, apk ✓, live ✓.
+Device (own AVD OwnToneNight_API_36, avd_name-verified emulator-5554,
+DELETED after, 0 qemu; Pixel 6 untouched): **scan UI present; real scan
+WORKED on the emulator (GOLD — hit `My Music on hp-server
+192.168.1.13:3689` despite the QEMU-NAT mDNS risk); one-tap → logcat
+`idle → connecting → connected`, `ws: none → open`, NowPlaying renders**;
+forced-degradation (own-AVD iptables drop sport 5353, later removed) →
+empty state "…enter the address manually" + manual retype+Connect
+connected (`connecting → connected`) — the full proof standard. Server:
+GETs only; a FOREIGN session was streaming (play, item 211750) during the
+device phase — left untouched, no play-capable action taken. Harness
+notes: evaluate_expression unavailable under am start (used
+debugDumpRenderTree/debugDumpApp + logcat + uiautomator; first dump inert,
+alive after a semantics request; idle-trap under now-playing animation).
+Morning supervised row: **Pixel 6 real-hardware same-LAN scan re-check**.
+Report `.ai-dlc/night-2026-11-19/reports/42.md`.
+
+## 2026-11-20 — supervised pass (user present) + pipeline fixes — Pixel 6
+
+User present, audible authorized. Pixel 6 `25071FDF600953`, debug build
+@ develop `2f6673a`, via `flutter run` + flutter-agent-lens/dart-MCP (VM
+widget-tree reads; uiautomator bridge dead on this device as documented).
+
+**All supervised rows from the 2026-11-19 overnight run executed and PASS**
+(evidence in each report's "Supervised pass" section): #42 same-LAN scan
+real-hardware re-check; #43 theme toggle live render (Light 241.6 / Dark
+45.8 luma, pinned brightness; `system` restored); #45 prev/next-paused +
+play/pause LIVE + stopped-state guards; #41 Play All (1396→15 replace,
+play starts) + Shuffle (client-side pre-shuffle order verified, **global
+shuffle flag untouched**); #46 drag-to-reorder while playing (1→4, reverted
+byte-identical); #47 per-row Remove while playing (1395, re-added
+byte-identical) + row-tap skip-in-place (item advances, count unchanged).
+
+**Server playback note (corrected 2026-11-21 per the owner — an earlier
+version of this entry called this an OwnTone "AUTO-PAUSE ~100 ms after
+play", which was WRONG):** with the AirPlay pair selected (ESP-CAAC64 +
+Volumio Kitchen), state can still read `pause` briefly after a `play` PUT
+while outputs buffer and the synchronous playback stream is established to
+potentially multiple outputs. That is the software working as designed —
+not a pause, stall, or app issue. Practical carry-forward: prefer Server
+(ALSA) output for device assertions that sample playback state right after
+`play` (buffering latency otherwise reads as an inert button). The
+"118 ms window at 400 ms sampling" figure in the old text was also
+nonsense (sampling cannot resolve a sub-sampling-window event) — the
+episode itself (our play taps, server restored to the snapshot pair)
+stands; only the mechanism and that number are corrected. This also
+retires the earlier "external player" red herring — playback attempts
+were ours throughout.
+Final server state: `pause`, shuffle=true, queue 1396 uri-sha
+`7e0650c2ab59ec2c` (byte-identical), outputs = snapshot pair.
+
+**Red-screen error (corrected 2026-11-21):** an earlier version of this
+entry claimed the "Looking up a deactivated widget's ancestor" red screen
+was "seen once … did not reproduce … console EXCEPTION grep both clean
+all session" — FALSE as written. The owner personally witnessed it at
+least three times (twice more after identifying it as an error screen),
+and the session's own logs refute the "clean" claim:
+`build/supervised/flutter-run.log` carries the exception (3075, 3253-3254)
+and `flutter-run2.log` two full EXCEPTION CAUGHT BY WIDGETS LIBRARY blocks
+(98-103, 302-307) with repeats (277-278) — "building Builder" = an
+ancestor lookup during a `Builder` build on a deactivated element, NOT
+setState-after-dispose. Escalated as **issue #64** (cause unidentified);
+the PR-#61 scan-path suspect was exculpated by independent review
+(setStates mounted-guarded, signature wrong for that failure mode).
+Left unrepaired pending a supervised stack-trace capture.
+
+**Pipeline hardening** (`.ai-dlc/overnight/pipeline.md`): (1) Step 3 now
+MANDATES `gh issue close` after squash-merge (at run time `develop` was
+not yet the default branch and GitHub reads `Closes #N` only for
+default-branch-targeting PRs, so nothing auto-closed — all 11 issues
+stayed open overnight and were closed by hand; the explicit close stays
+mandatory even now that develop is the default — guaranteed comment trail
++ state gate independent of keyword semantics); (2) device policy gains four hard interaction rules:
+dump-immediately-before every tap (no remembered coordinates), per-step
+red-screen detection, brightness pinning before luma comparisons, and no
+held presses near the nav-bar edge (hold-to-search system gesture hijack +
+overlay observed).
+
+User UX follow-up filed: issue #62 (auto-discovery first, manual host/port
+behind an Advanced affordance).
+
+Process lesson (user correction, honored): every `input tap` must be
+immediately preceded by its own widget-tree dump — earlier taps taken from
+stale/remembered geometry opened Google account settings, popped the sheet,
+and summoned the hold-to-search overlay before the rule was enforced. The
+rule proved necessary twice over: a LATE tap (theme-restore, coordinates
+one dump old) landed under a Google overlay and launched Calendar while the
+Flutter tree still looked healthy — the tree cannot see system overlays, so
+`topResumedActivity` must be checked before taps (rule now in pipeline.md;
+app re-foregrounded via explicit component intent, pref `system` and player
+`pause` confirmed by read-only checks).
+
+
+## 2026-11-21 — review-remediation workstream closed (overnight run retroactive review)
+
+**What happened:** the 2026-11-19 overnight run's in-session reviewer reports were
+lost to orchestrator context compaction before any review record reached GitHub,
+and PR #63 had no review recorded in-session at all. Two assistant record claims in
+the run's SESSION-LOG entry (an "auto-pause" mechanism story; a one-off red-screen
+characterization) were additionally found false against the session's own logs.
+The owner ruled: every review by sub-agent; iterate until a final review requests
+no changes; post the records; audit all verifiable claims.
+
+**Reviews:** 12 independent read-only sub-agent reviews (squash-commit worktrees,
+gates re-run, targeted tests only — full-suite runs are flake-forbidden): #51–#61
+approve/approve-with-nits (the later adjudication retracted #53's claimed 9 px
+app-bar overflow; the Flexible guard itself is genuine at 320 logical px /
+textScaler 1.3), #61 approve-with-findings (major closed post-merge by #66).
+Full reports posted verbatim as PR comments (header discloses compaction loss +
+regeneration); fix-PR reviews (#65–#70) posted likewise.
+
+**Fix PRs (all merged):** #65 mini-player SafeArea bottom-inset (mutation-verified
+padding test) · #66 mDNS scan cancellation + generation token · #67 #53 compilation
+naming + #58 cold-tail guard + #60 stale-menu veto · #69 app-bar overflow guard +
+verified-discriminating below-floor test + single-entry menu tests · #70 review-
+roundup nits (TrackRow degraded-branch tests, honest fixture/media_kind/limit=-1
+comments, idle-drawer "Not connected" + post-disconnect pin, NP-absence pin,
+semantics uniqueness/label tightening; the #54 reviewer's uppercase-expansion
+hypothesis disproved by measurement and pinned instead of guarded).
+**#68** carries the correction sweep: § Corrections on reports 38–48, SESSION-LOG
+buffering/red-screen/density corrections, REQUIREMENTS R-15/R-25 amendments, API.md
+live facts, pipeline.md review-integrity hard rules (sub-agent-only reviews,
+report MUST be posted to the PR, merge gate checks for the posted comment), and
+retirement of unit-004's +9 px figure (re-measured +14.5 px by #69). Its round-2
+reviewer recomputed the load-bearing figures independently (genre groups, uri-sha
+`7e0650c2ab59ec2c`, dart counts, log line numbers) — all true.
+
+**Open, deliberately:** issue **#64** red-screen crash — needs an owner-present
+`flutter run` capture (cause unidentified; scan path exculpated). Issue **#62**
+discovery-first config UX — untouched. Follow-up candidates recorded from the
+review records: anchor-drop clamp under hide-played (#59), offline accessories-gate
+test (#60), outputs_appbar rect-disjointness (#52), body entry-row overflow at 320
+logical px / textScaler 1.3 (#69), `media_kind` live-probe expectations (#55),
+`serverName` refresh in the probe success path (#56).
+
+**Server/device state:** paused; queue byte-identical (uri-sha `7e0650c2ab59ec2c`,
+1396 items); outputs snapshot pair restored; Pixel 6 idle foregrounded; no audio
+was started this session.
