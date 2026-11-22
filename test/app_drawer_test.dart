@@ -323,6 +323,28 @@ void main() {
       expect(find.text('Not connected'), findsOneWidget);
       expect(find.textContaining('Connected To'), findsNothing);
     });
+
+    testWidgets('PR #70 review (LOW): POST-disconnect idle keeps _config — '
+        'the motivating reachable state (host non-null, phase idle) still '
+        'renders "Not connected" (pre-gate code showed the stale host)', (
+      tester,
+    ) async {
+      await tester.runAsync(wireUp);
+      expect(
+        conn.serverName,
+        'Test Music',
+        reason:
+            'precondition: host is non-null (the pre-gate code '
+            'rendered it in the idle header after disconnect)',
+      );
+      await pumpApp(tester, const LibraryHomeScreen());
+      await tester.runAsync(() async => conn.disconnect());
+      expect(conn.phase, ConnectionPhase.idle);
+      await settle(tester);
+      await openDrawer(tester, LibraryHomeScreen);
+      expect(find.text('Not connected'), findsOneWidget);
+      expect(find.textContaining('Connected To'), findsNothing);
+    });
   });
 
   group('R-21 popUntil-then-push (stack depth, no duplicates)', () {
