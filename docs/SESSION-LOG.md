@@ -3004,3 +3004,50 @@ Flutter tree still looked healthy — the tree cannot see system overlays, so
 `topResumedActivity` must be checked before taps (rule now in pipeline.md;
 app re-foregrounded via explicit component intent, pref `system` and player
 `pause` confirmed by read-only checks).
+
+
+## 2026-11-21 — review-remediation workstream closed (overnight run retroactive review)
+
+**What happened:** the 2026-11-19 overnight run's in-session reviewer reports were
+lost to orchestrator context compaction before any review record reached GitHub,
+and PR #63 had no review recorded in-session at all. Two assistant record claims in
+the run's SESSION-LOG entry (an "auto-pause" mechanism story; a one-off red-screen
+characterization) were additionally found false against the session's own logs.
+The owner ruled: every review by sub-agent; iterate until a final review requests
+no changes; post the records; audit all verifiable claims.
+
+**Reviews:** 12 independent read-only sub-agent reviews (squash-commit worktrees,
+gates re-run, targeted tests only — full-suite runs are flake-forbidden): #51–#61
+approve/approve-with-nits (the later adjudication retracted #53's claimed 9 px
+app-bar overflow; the Flexible guard itself is genuine at 320 logical px /
+textScaler 1.3), #61 approve-with-findings (major closed post-merge by #66).
+Full reports posted verbatim as PR comments (header discloses compaction loss +
+regeneration); fix-PR reviews (#65–#70) posted likewise.
+
+**Fix PRs (all merged):** #65 mini-player SafeArea bottom-inset (mutation-verified
+padding test) · #66 mDNS scan cancellation + generation token · #67 #53 compilation
+naming + #58 cold-tail guard + #60 stale-menu veto · #69 app-bar overflow guard +
+verified-discriminating below-floor test + single-entry menu tests · #70 review-
+roundup nits (TrackRow degraded-branch tests, honest fixture/media_kind/limit=-1
+comments, idle-drawer "Not connected" + post-disconnect pin, NP-absence pin,
+semantics uniqueness/label tightening; the #54 reviewer's uppercase-expansion
+hypothesis disproved by measurement and pinned instead of guarded).
+**#68** carries the correction sweep: § Corrections on reports 38–48, SESSION-LOG
+buffering/red-screen/density corrections, REQUIREMENTS R-15/R-25 amendments, API.md
+live facts, pipeline.md review-integrity hard rules (sub-agent-only reviews,
+report MUST be posted to the PR, merge gate checks for the posted comment), and
+retirement of unit-004's +9 px figure (re-measured +14.5 px by #69). Its round-2
+reviewer recomputed the load-bearing figures independently (genre groups, uri-sha
+`7e0650c2ab59ec2c`, dart counts, log line numbers) — all true.
+
+**Open, deliberately:** issue **#64** red-screen crash — needs an owner-present
+`flutter run` capture (cause unidentified; scan path exculpated). Issue **#62**
+discovery-first config UX — untouched. Follow-up candidates recorded from the
+review records: anchor-drop clamp under hide-played (#59), offline accessories-gate
+test (#60), outputs_appbar rect-disjointness (#52), body entry-row overflow at 320
+logical px / textScaler 1.3 (#69), `media_kind` live-probe expectations (#55),
+`serverName` refresh in the probe success path (#56).
+
+**Server/device state:** paused; queue byte-identical (uri-sha `7e0650c2ab59ec2c`,
+1396 items); outputs snapshot pair restored; Pixel 6 idle foregrounded; no audio
+was started this session.
