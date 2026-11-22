@@ -3051,3 +3051,40 @@ logical px / textScaler 1.3 (#69), `media_kind` live-probe expectations (#55),
 **Server/device state:** paused; queue byte-identical (uri-sha `7e0650c2ab59ec2c`,
 1396 items); outputs snapshot pair restored; Pixel 6 idle foregrounded; no audio
 was started this session.
+
+
+## 2026-11-22 — orchestrated-issue procedure documented + OpenHands maintenance model (opencode)
+
+Docs-only change (no lib/test edits). The 2026-11-19/20/21 overnight saga
+(reviews lost to orchestrator compaction, PR #63 merged unreviewed, false
+SESSION-LOG claims since corrected by #68, issues left open after merge)
+showed the per-issue process was carried in the orchestrator's context and
+evaporated with it. Recorded it as repo artifacts under
+`.ai-dlc/orchestrator/`: `PROCEDURE.md` (state machine: plan →
+checklist-validated plan → build → PR → agentic review → (fix → re-review)*
+→ squash-merge + delete branch + **explicit `gh issue close`**; gates
+table; run-vs-unit blockers — a stuck unit is `BLOCKED-SKIP` + continue,
+safety/config drift stops the run; compaction-survival rules: ledger entry
+around every spawn, artifacts on disk before action, merge gate reads
+GitHub not context; evidence/truthfulness rules) + `contract.md`
+(byte-identical unattended contract) + `roles/{planner,builder,reviewer,fixer}.md`
+(each subagent reads only its own role file — role/task/process/constraints/
+explicit-return format, per the `prompt engineering guide` library; plan
+and review artifacts are persisted context-memory per `ai-dlc-method`) +
+`run-template.md` (per-run config → `.ai-dlc/night-<date>/run.md`, human-
+authorized). `.ai-dlc/overnight/pipeline.md` is now a tombstone pointer
+(history in git). Prompt authoring grounded via docs-mcp: `ai-dlc-method`,
+`ai-dlc`, `prompt engineering guide`.
+
+Maintenance routing (user decision 2026-11-22): **OpenHands Software
+Factory** is the default path for issue work going forward — new AGENTS.md
+§ "Maintenance model" (auto-loaded repo context per OpenHands docs) +
+PROCEDURE.md § factory mapping (triage≈plan-validation, developer≈planner+
+builder, reviewer≈reviewer with the posted-report marker, watchdog≈Step 4
+merge gates + close mandate); device-bound work (AVDs, adb, Pixel 6,
+flutter run, supervised audio) stays **host-only** in this harness —
+trigger-loaded `.agents/skills/device-bound-work/SKILL.md` + the
+`needs-host-tools` label convention; exemplar: #64 stays host-side until
+cause + proposed fix are identified. Review: independent agentic sub-agent
+per this repo's own rules; full report posted to the PR (link appended by
+the review rounds).
