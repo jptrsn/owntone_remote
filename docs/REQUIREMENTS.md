@@ -180,8 +180,11 @@ issues drafted in `.ai-dlc/retune-ux-capture/issues/`.
 ### R-15 Songs (all-tracks) browse — P1
 Library home gains a **Songs** section listing every library track as a
 paged two-line list (`title` / `artist - album`) via
-`GET /api/library/tracks` (paginated); rows use `TrackRow` semantics
-(rate + play accessory per R-12/R-10).
+~~`GET /api/library/tracks`~~ **`GET /api/search?type=tracks&query=`**
+(paginated — spec corrected 2026-11-20: `GET /api/library/tracks` has no
+collection route on OwnTone 29.3, source-checked + live 400; the
+empty-query search branch is the proven equivalent, cf. `docs/API.md`);
+rows use `TrackRow` semantics (rate + play accessory per R-12/R-10).
 **Acceptance:** list pages correctly and survives reconnect refetch
 (same contract as other browse screens); row play replaces the queue and
 starts; row rating flow works.
@@ -311,9 +314,11 @@ cannot be removed; hide-played interplay covered; supervised manual once.
 Artists/Genres/Songs (R-15) paged lists render **alphabetical section
 headers** (ReTune `basic_header` pattern, `03`/`10` evidence): computed
 client-side from the loaded pages (server returns sorted lists — verify
-sort with `cc=` + `order` params live), header row = sticky-ish group
-divider (disabled, non-clickable, semantics-excluded like ReTune's
-disabled rows); paging across a letter boundary must not duplicate the
+sort with `cc=` + `order` params live), header row = group divider
+(disabled, non-clickable, semantics-excluded like ReTune's disabled rows;
+"sticky-ish" dropped at implementation 2026-11-20 — plain scrolling row,
+adjudicated in the frozen issue copy, do not "restore" stickiness);
+paging across a letter boundary must not duplicate the
 header.
 **Acceptance:** widget test: fake pages [A…A, B…] → headers rendered
 once each; rows unchanged (reuse `BrowseRow`); gates green.

@@ -97,6 +97,18 @@ when enabling (R-09).
 
 Add response: `{version, count, items[]}`.
 
+Queue-add live findings (verified 2026-11-20 on 192.168.1.13, run 41 unit
+— the app's queue actions depend on all four):
+- `playback=add` is accepted and **never starts audio** (safe class under
+  AGENTS §1 even unattended, unlike `playback=start`).
+- The add-time `?shuffle` param is the **global shuffle-mode setter**
+  (`shuffle=false` on an add flipped `/api/player`'s shuffle flag) — do
+  not use it for one-shot shuffling; client-side pre-shuffle instead.
+- Omitted or out-of-range `position` while server shuffle is ON inserts at
+  a **random slot** (observed landing at 597/640/710/1061/1072) — always
+  pin `position` for deterministic placement.
+- `limit=-1` serves unbounded pages (used for full-queue snapshots).
+
 ## Library (R-10)
 
 | Method | Endpoint | Notes |
