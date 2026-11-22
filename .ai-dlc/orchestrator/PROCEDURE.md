@@ -188,7 +188,8 @@ from the file, the plan fails):**
    <merge-sha> to <base>)"` → gate `ISSUE_CLOSED`
    (`gh issue view <n> -q .state` → `CLOSED`).
 4. `git checkout develop && git pull`. Confirm this unit's AVD deleted
-   (create/delete is the builder's; the orchestrator verifies none survive).
+   (create/delete is the builder's and fixer's; the orchestrator verifies
+   none survive).
 
 ### Final summary (run end)
 
@@ -228,6 +229,8 @@ the blocker.
 **Unit blockers — `BLOCKED-SKIP` and continue:** planner `PLAN-BLOCKED:` or
 plan fails validation twice; builder `BLOCKED:`; `BUILD_VERIFIED` fails after
 three same-fix attempts; review cap exhausted; CI red after its one re-run.
+Precedence: a `BLOCKED:` return whose cause appears on the run-blocker list
+(e.g. server unreachable > 15 min) is a **run** blocker, not a unit blocker.
 Record in ledger + summary; leave branch/PR for the human. Never merge on a
 skipped gate; never mark a skipped unit done.
 
@@ -310,7 +313,7 @@ against this repo. This document's roles map onto the factory's:
 | factory-triage | run-config intake + plan-validation checklist | acceptance criteria + R-ID trace before `ready-for-dev`; anything needing host tools gets `needs-host-tools`, never `ready-for-dev` |
 | factory-developer | planner + builder | branch off `<base>`, gates green before PR, report-style evidence in the PR body (`SUMMARY`/`GATES`/`OBSERVED`/`ASSUMPTIONS`), SESSION-LOG entry in the final commit |
 | factory-reviewer | reviewer | independent of the developer; posts its FULL report to the PR with the `## Agentic Review — PR #<pr> — round <r>` marker + exactly one `VERDICT:` line; contract = AGENTS.md hard rules + docs/ARCHITECTURE.md + § Evidence and truthfulness rules |
-| delivery watchdog | Step 4 merge gates | merges only with the reviewer's posted `VERDICT: APPROVE` on the current head + green `gates` check; after merge, **explicit `gh issue close` with a comment** (never trust the keyword) |
+| delivery watchdog | Step 4 merge gates | the watchdog is deterministic — it merges only a current branch with passing independent **acceptance statuses** (recorded by the reviewer at the exact head) + green `gates` Actions runs; the reviewer's posted full report (marker + `VERDICT:` line) is its own contract obligation and the durable record the audit trail and the host merge gate read; after merge, **explicit `gh issue close` with a comment** (never trust the keyword) |
 
 What survives the harness change: the Gates table, Review-integrity hard
 rules, Evidence and truthfulness rules, GitFlow, and the close mandate.

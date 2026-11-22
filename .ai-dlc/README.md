@@ -24,8 +24,9 @@ completion criteria, backpressure, file-based memory for handoff.)
 ```
 
 **Unattended runs** (issue list → merged PRs): follow
-`orchestrator/PROCEDURE.md`; the orchestrator spawns planner → builder →
-reviewer →(fixer ↺ reviewer)* per issue per AGENTS.md § "ai-dlc discipline".
+`orchestrator/PROCEDURE.md` — the authoritative flow where the orchestrator
+spawns planner → builder → reviewer →(fixer ↺ reviewer)* per issue;
+AGENTS.md § "ai-dlc discipline" points here.
 **OpenHands Software Factory** is the default maintenance path for issue
 work (AGENTS.md § "Maintenance model"); `orchestrator/PROCEDURE.md` §
 "OpenHands Software Factory mapping" carries its repo contract, and

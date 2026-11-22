@@ -233,7 +233,7 @@ the app.
 | `docs/ARCHITECTURE.md` | Writing code | Layers, `MusicProvider` contract, state flow |
 | `docs/API.md` | Touching the network layer | Endpoint reference, live examples, WS protocol |
 | `docs/retune-capture/CAPTURE-PROTOCOL.md` | Capture intent only | Walk procedure, static pass, output format |
-| `.ai-dlc/orchestrator/PROCEDURE.md` | Issue-driven maintenance (any agent) | Per-issue lifecycle: plan → build → PR → agentic review → iterate → merge → close |
+| `.ai-dlc/orchestrator/PROCEDURE.md` | Issue-driven maintenance | Per-issue lifecycle: plan → build → PR → agentic review → iterate → merge → close. Host harness reads it whole; factory agents read § Maintenance model + § OpenHands Software Factory mapping (device work is host-only) |
 
 ## Maintenance model (OpenHands primary, host harness for devices — 2026-11-22)
 
@@ -258,9 +258,11 @@ steps: build and verify everything possible without hardware (fakes,
 widget tests, gates), record each hardware-dependent criterion as
 `BLOCKED-PENDING-HOST-VERIFICATION` (action → expected observation →
 substitute proof) in the PR body, and comment requesting the
-`needs-host-tools` label so the host session takes the device pass.
-Exemplar: issue #64 (red-screen capture needs a connected device) stays
-host-side until cause + proposed fix are identified there.
+`needs-host-tools` label so the host session takes the device pass (the
+`needs-host-tools` and `ready-for-dev` labels are maintainer-created —
+they exist as of 2026-11-22). Exemplar: issue #64 (red-screen capture
+needs a connected device) stays host-side until cause + proposed fix are
+identified there.
 
 ## Environment (host+CI aligned on 3.47.9, 2026-11-14)
 
@@ -375,7 +377,9 @@ A unit is **done** only when ALL of:
   **`pubspec`'s `+N` is Android versionCode: it must be strictly greater
   than every release ever tagged — never reset it on a version bump**
   (`release.sh` enforces this and the guards above).
-- Branch naming: `feature/*`, `fix/*`, `release/v*`, `hotfix/*`.
+- Branch naming: `feature/*`, `fix/*`, `release/v*`, `hotfix/*`; OpenHands
+  factory automations use their configured `factory/issue-*` prefix (the
+  one sanctioned exception).
 - Red CI with a network/runner signature (known: Gradle NDK zip-download
   flake — gates.yml retries the network-touching steps once internally) →
   re-run the job once; still red after the in-step retry = real failure,

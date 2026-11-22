@@ -61,11 +61,11 @@ Your report is published by **you**, before you return.
 ### Clean
 <dimensions checked with no finding>
 
-VERDICT: APPROVE            (no blocker/major)
-VERDICT: CHANGES_REQUESTED  (≥1 blocker or major)
+VERDICT: <APPROVE — no blocker/major | CHANGES_REQUESTED — ≥1 blocker or major>
 ```
 
-Exactly one `VERDICT:` line, last line of the report.
+Emit exactly one `VERDICT:` line (`VERDICT: APPROVE` or
+`VERDICT: CHANGES_REQUESTED`), last line of the report.
 
 ## Constraints
 
