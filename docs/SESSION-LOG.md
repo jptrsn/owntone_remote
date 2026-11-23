@@ -3177,3 +3177,26 @@ lands the typed "could not be resolved (DNS)" error, not a generic one.
 Gates on this head: analyze 0, format 0 (113/0), targeted files 23/23.
 Host-bound rows remain `BLOCKED-PENDING-HOST-VERIFICATION` — device pass is
 the maintainer host session's, per the Maintenance model.
+
+## 2026-11-23 — #62 host verification pass + round-3 review + PR #75 merged (opencode host session)
+
+Host session ran the three `BLOCKED-PENDING-HOST-VERIFICATION` rows of PR #75
+(issue #62) on the physical Pixel 6 `25071FDF600953`, debug APK from head
+`953a0c2`, fresh-install legs via `pm clear`. All three **PASS**, evidence
+comment + reviewer handoff + round-3 report on
+https://github.com/jptrsn/owntone_remote/pull/75 (final `VERDICT: APPROVE`
+at `953a0c2`; gates green at head; squash-merge `940642c` to develop; issue
+#62 closed with audit comment). Harness facts worth keeping: **`input tap`
+is inert against this app's window** (swipe/keyevent DO reach it) — in-app
+activation went through DPAD focus + DPAD_CENTER/IME-ENTER with the focused
+semantics node dumped before every interaction; the first-frame-is-loading
+proof used a scripted hot-restart + 150 ms `debugDumpApp` timeline (first
+mounted tree already shows `Searching the local network…`, no idle frame).
+Row-2 substitution: stock device has no root (`su` absent, unlike the
+night-run AVDs) → discovery blocked via `svc wifi disable` with no cellular
+route; `input text` lands in the focused field; Wi-Fi restored (`enabled`),
+`stayon false`, `forward --remove`, no play-class app calls (shared-session
+`play` state left untouched throughout). GitHub refuses same-author
+APPROVE-reviews (both factory stations and this host authenticate as the PR
+author, jptrsn) — the contract is the **posted report + `VERDICT:` line**,
+which is what the merge gate read.
