@@ -239,6 +239,14 @@ fallback and default. No pairing ceremony (OwnTone JSON has none).
 **Acceptance:** on a LAN with the server running, the server appears
 without typing an IP; picking it connects (R-01 flow); discovery timeout
 never blocks manual entry.
+**Amended by issue #62 (2026-11-22): prominence flipped.** Auto-discovery is
+the **primary** flow — on first display (no saved config) setup scans by
+itself and the scan panel (loading / hits / none / error) is the first thing
+presented. Manual host/port entry is the fallback, hidden behind an explicit
+**Advanced** affordance that gates visibility only. It stays reachable in
+every scan state (running / timed out / errored), so the original
+"discovery never blocks manual entry" acceptance holds even harder. A
+Settings visit with a saved config does not broadcast a scan unasked.
 
 ### R-21 Drawer navigation — P1 (user decision 2026-11-19, N-02 option B)
 Add a Material 3 **NavigationDrawer**, ReTune-style (`23-playing-audit`

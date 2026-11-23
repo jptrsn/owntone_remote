@@ -3088,3 +3088,49 @@ trigger-loaded `.agents/skills/device-bound-work/SKILL.md` + the
 cause + proposed fix are identified. Review: independent agentic sub-agent
 per this repo's own rules; full report posted to the PR (link appended by
 the review rounds).
+
+## 2026-11-22 — issue #62: connection setup leads with auto-discovery (OpenHands factory)
+
+Factory-developer run, branch `openhands/issue-62` off develop @ 3f39259.
+R-20 shipped discovery as a **side panel below** the manual host/port form
+(issue #42); #62 flips the prominence in `lib/src/ui/settings_screen.dart`.
+
+UI: the screen now leads with discovery — radar icon, "Find your OwnTone
+server", the leading **Scan** button, and the scan panel; the R-01 manual
+form moved into an **Advanced** `ExpansionTile` ("Enter the server address
+yourself"). The tile gates *visibility only* — same fields, same validators,
+same `_saveAndConnect`, same enclosing `Form`, so no second connect path
+exists to drift from R-01. Auto-start: `initState` flips the phase to
+`scanning` (so the FIRST frame is the loading panel — no idle frame) and
+calls `discover()` from a post-frame callback, **only when `initial ==
+null`** — the unconfigured first-launch view (RootScreen's `ConnectionPhase.
+idle`). A configured Settings visit (rocker step / theme) must not pay
+multicast traffic unasked; the leading button stays its affordance, and
+`_ScanPhase.idle` renders no verdict panel at all. `discover()` moved out of
+`_startScan` into `_runScan` so the auto-start can own the phase without
+double-setState; the generation token, 12 s `kScanTimeout`, per-state
+`cancel()` and the never-block-manual-entry contract are untouched. Empty
+state now points at Advanced, as does the timeout copy.
+
+Tests: `test/discovery_scan_test.dart` rewritten for the new prominence —
+auto-scan on first display (fake `DiscoverySource` call counted, no tap),
+loading panel is the first thing presented and sits ABOVE the tile,
+host/port/Connect absent until Advanced is tapped, Advanced opens and is
+*editable while a scan is in flight*, error + timeout states still expose
+the tile and the revealed form connects end-to-end through the real
+`ConnectionController` + `ScriptedAdapter`, a configured visit does not
+scan, plus the preserved #42 legs (hits listing, one-tap pre-fill + R-01
+persist/connect, retry, re-scan, 360-px no-overflow) and the PR #61
+cancellation legs (dispose-during-scan cancels; late completion cannot
+clobber; pushed-route pop branch). 14 tests, all green.
+
+Docs: `docs/REQUIREMENTS.md` R-20 carries an explicit #62 amendment (the
+old "manual entry … remains the fallback **and default**" is superseded, so
+the file must not keep asserting the flipped behaviour).
+
+Gates: `flutter analyze` 0 issues; `dart format --set-exit-if-changed` clean;
+`flutter test --exclude-tags live` — see the PR body for the final count.
+**BLOCKED-PENDING-HOST-VERIFICATION** (host-bound per AGENTS § Maintenance
+model): the same-LAN scan on the Pixel 6 and the morning supervised re-check
+recorded by the #42 entry. Substitutes here: fake-source widget tests over
+the real connect path, including the "discovery dead, manual works" leg.
