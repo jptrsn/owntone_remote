@@ -3134,3 +3134,24 @@ Gates: `flutter analyze` 0 issues; `dart format --set-exit-if-changed` clean;
 model): the same-LAN scan on the Pixel 6 and the morning supervised re-check
 recorded by the #42 entry. Substitutes here: fake-source widget tests over
 the real connect path, including the "discovery dead, manual works" leg.
+
+### Review round 1 remediation (2026-11-23, OpenHands factory)
+
+Independent factory review (head `dc04819`) returned **CHANGES REQUESTED** on
+the evidence gate, not on code: the three host-bound rows in
+`BLOCKED-PENDING-HOST-VERIFICATION` (zero-tap auto-scan on a real first launch,
+the discovery-blocked escape hatch, and the #42 morning Pixel 6 re-check) are
+still unrecorded and can only be produced by the maintainer host session (AGENTS
+§ Maintenance model — a sandboxed agent must not attempt device steps).
+
+One non-blocking finding filed inline and fixed here: `docs/SCREENS.md` listed
+`Disconnect` inside the **Advanced** row, but the code renders it as a
+`TextButton` *below* the tile, gated on `conn.isConnected` only. The row now
+states that position explicitly.
+
+No code change: the reviewer verified the Advanced tile gates visibility only,
+the `initial == null` auto-start scope, and the `_runScan` generation/cancel
+discipline, and ran the 21 discovery/settings legs green with `flutter analyze`
+and `dart format` clean. R-01 validator coverage (AC5) stays a named follow-up:
+the reviewer measured all three validators from inside Advanced and confirmed
+nothing on `develop` asserted them either, so it is not a blocker for this PR.

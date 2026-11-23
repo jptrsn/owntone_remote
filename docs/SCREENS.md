@@ -493,7 +493,8 @@ screen while idle (then titled `Connect`, no back/cancel).
 | Element | Detail |
 |---|---|
 | **Discovery (primary, #62)** | radar icon + `Find your OwnTone server` + explainer · leading `Scan for servers` button (`Scanning…` while in flight) · scan panel below it: loading `Searching the local network…` → hit rows (name + `host:port`, one tap = pre-fill + R-01 connect) / `No OwnTone server found on this network…` + `Scan again` / error + `Try again` (12 s ceiling). Auto-starts on first display with no saved config; a configured visit stays quiet until the button is tapped |
-| **Advanced** (manual fallback) | `ExpansionTile` `Advanced` / `Enter the server address yourself` — collapsed by default, so `Host` / `JSON port` + `Connect` are absent until tapped (same R-01 fields, validators and connect path; `Disconnect` while connected). Always visible in every scan state |
+| **Advanced** (manual fallback) | `ExpansionTile` `Advanced` / `Enter the server address yourself` — collapsed by default, so `Host` / `JSON port` + `Connect` are absent until tapped (same R-01 fields, validators and connect path). Always visible in every scan state |
+| **Disconnect** | `TextButton` below the Advanced tile, rendered only while connected — outside the tile, so it never hides behind the collapsed state |
 | **Volume rocker step** | label + helper `Server volume change per press (1–10), while the app is open.` · `−` button (tooltip `Decrease rocker step`, disabled at 1) · value `1–10` · `+` button (tooltip `Increase rocker step`, disabled at 10) |
 | **About** | list row `About` / `App and server versions`, chevron → pushes the [About](#about-r-14) screen |
 
