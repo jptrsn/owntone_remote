@@ -16,6 +16,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -65,20 +66,26 @@ void main() {
 
   /// Controller whose only "server" is the scripted `/api/config` — the
   /// R-01 path runs for real without a wire. `websocket_port: 0` keeps the
-  /// WsClient out of the picture (R-02 REST-only mode).
-  ConnectionController scriptedConn() => ConnectionController(
+  /// WsClient out of the picture (R-02 REST-only mode). [responder] replaces
+  /// the script (issue #62 AC5: a wrong host must surface the TYPED
+  /// ConnectionController error through the same path).
+  ConnectionController scriptedConn({
+    FutureOr<Response<dynamic>> Function(RequestOptions options)? responder,
+  }) => ConnectionController(
     dioFactory: (options) => Dio(options)
       ..httpClientAdapter = ScriptedAdapter(
-        responder: (o) async => o.uri.path == '/api/config'
-            ? Response(
-                requestOptions: o,
-                data: const {
-                  'version': '29.3',
-                  'websocket_port': 0,
-                  'library_name': 'My Music on hp-server',
-                },
-              )
-            : Response(requestOptions: o, data: null, statusCode: 404),
+        responder:
+            responder ??
+            (o) async => o.uri.path == '/api/config'
+                ? Response(
+                    requestOptions: o,
+                    data: const {
+                      'version': '29.3',
+                      'websocket_port': 0,
+                      'library_name': 'My Music on hp-server',
+                    },
+                  )
+                : Response(requestOptions: o, data: null, statusCode: 404),
       ),
   );
 
@@ -95,10 +102,11 @@ void main() {
     DiscoverySource discovery, {
     Object tag = 1,
     ServerConfig? initial,
+    FutureOr<Response<dynamic>> Function(RequestOptions options)? responder,
   }) async {
     SharedPreferences.setMockInitialValues({});
     final store = await SettingsStore.create();
-    final conn = scriptedConn();
+    final conn = scriptedConn(responder: responder);
     opened.add(conn);
     // Tall viewport: the scan panel and an EXPANDED Advanced tile have to be
     // on screen together (several tests edit the manual fields while a scan
@@ -274,6 +282,84 @@ void main() {
       // The affordance is still there for the user to take.
       expect(find.byKey(const ValueKey('server-scan-button')), findsOneWidget);
       expect(find.text('Scan for servers'), findsOneWidget);
+    });
+  });
+
+  // Issue #62 AC5: R-01 preserved behind Advanced, now pinned by widget
+  // tests (on develop these legs were only ever checked by hand, and the
+  // round-1/2 reviews measured them with throwaway probes — this group
+  // makes them permanent).
+  group('R-01 behind Advanced (issue #62 AC5)', () {
+    testWidgets('validators fire from inside Advanced and nothing persists '
+        'or connects: empty host → Required, non-numeric port → Enter a '
+        'number, out-of-range → 1–65535', (tester) async {
+      final (store, conn) = await pumpScreen(
+        tester,
+        FakeDiscovery(() async => const []),
+      );
+      await tester.pumpAndSettle();
+
+      await connectManually(tester, '', '3689');
+      await tester.pump();
+      expect(find.text('Required'), findsOneWidget);
+      expect(find.text('Enter a number'), findsNothing);
+      expect(store.config, isNull);
+      expect(conn.phase, ConnectionPhase.idle);
+
+      await tester.enterText(editable('Host'), 'h');
+      await tester.enterText(editable('JSON port'), 'x');
+      await tester.pump();
+      await tapKey(tester, 'manual-connect');
+      await tester.pump();
+      expect(find.text('Required'), findsNothing);
+      expect(find.text('Enter a number'), findsOneWidget);
+      expect(store.config, isNull);
+      expect(conn.phase, ConnectionPhase.idle);
+
+      // The out-of-range leg surfaces the `1–65535` validator through the
+      // Form.validate() path (empty host → _parsed() null → every field
+      // validates) — byte-identical R-01 behaviour on develop, which the
+      // round-1/2 reviews measured the same way. Pre-existing quirk, out of
+      // this issue's scope (non-goals: no _saveAndConnect change):
+      // _parsed() does not range-check, so a *complete* form with an
+      // out-of-range port would still connect — same on develop, not
+      // weakened here.
+      await tester.enterText(editable('Host'), '');
+      await tester.enterText(editable('JSON port'), '70000');
+      await tester.pump();
+      await tapKey(tester, 'manual-connect');
+      await tester.pump();
+      expect(find.text('Required'), findsOneWidget);
+      expect(find.text('1–65535'), findsOneWidget);
+      expect(store.config, isNull);
+      expect(conn.phase, ConnectionPhase.idle);
+    });
+
+    testWidgets('a wrong host surfaces the specific DNS error through the '
+        'existing ConnectionController error surface (not a generic one)', (
+      tester,
+    ) async {
+      final (_, conn) = await pumpScreen(
+        tester,
+        FakeDiscovery(() async => const []),
+        responder: (o) => throw networkError(
+          o,
+          // The shape the VM produces for a failed host lookup (see
+          // connection_error.dart and connection_controller_test.dart).
+          const SocketException('Failed host lookup: ghost'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await connectManually(tester, 'ghost', '3689');
+      await tester.pumpAndSettle();
+
+      expect(conn.phase, ConnectionPhase.error);
+      expect(
+        conn.errorMessage,
+        contains('could not be resolved (DNS)'),
+        reason: 'the typed DNS error, not a generic connection failure',
+      );
     });
   });
 

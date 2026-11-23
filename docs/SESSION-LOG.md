@@ -3155,3 +3155,25 @@ discipline, and ran the 21 discovery/settings legs green with `flutter analyze`
 and `dart format` clean. R-01 validator coverage (AC5) stays a named follow-up:
 the reviewer measured all three validators from inside Advanced and confirmed
 nothing on `develop` asserted them either, so it is not a blocker for this PR.
+
+### Review round 2 remediation (2026-11-23, OpenHands factory)
+
+Independent re-review at head `1c50354` (the round-1 fix): no new finding, the
+SCREENS.md correction confirmed against `settings_screen.dart`, verdict still
+gated solely on the three outstanding host-bound rows (correctly routed:
+`needs-host-tools`, no device evidence fabricated). This pass closed the one
+code-side item the issue's own acceptance criteria demand and the reviews had
+flagged as unasserted: **AC5 — R-01 behind Advanced pinned by widget tests.**
+
+New group in `test/discovery_scan_test.dart` (2 tests, file now 16; the two
+settings/discovery files together 23/23): validators fire from inside the
+Advanced tile (empty host → `Required`; `x` → `Enter a number`; `70000` with
+empty host → `1–65535`, surfaced via the same `Form.validate()` path the
+reviews measured — `_parsed()` does not range-check, pre-existing on develop
+and inside this issue's non-goals, so left untouched and documented at the
+assert), and a scripted DNS failure through the REAL `ConnectionController`
+lands the typed "could not be resolved (DNS)" error, not a generic one.
+`scriptedConn`/`pumpScreen` gained an optional `responder` for that leg.
+Gates on this head: analyze 0, format 0 (113/0), targeted files 23/23.
+Host-bound rows remain `BLOCKED-PENDING-HOST-VERIFICATION` — device pass is
+the maintainer host session's, per the Maintenance model.
