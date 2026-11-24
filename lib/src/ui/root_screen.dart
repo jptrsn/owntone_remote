@@ -28,10 +28,31 @@ void showNowPlaying(BuildContext context) =>
 /// [root, target] (depth 2) no matter how deep the source screen was. The
 /// regression test asserts exactly this depth (test/app_drawer_test.dart) —
 /// do not replace with a bare push.
-void showDrawerDestination(BuildContext context, Widget Function() screen) {
+///
+/// **`screen` runs deferred — it is the pushed route's page builder, not a
+/// tap-time factory** (issue #64). It is first invoked when the new route
+/// builds, i.e. *after* [Navigator.popUntil] has popped the caller's own
+/// route, and it is re-invoked on **every** later rebuild of that route's
+/// `_ModalScopeState` (theme change, websocket event storm, hot reload). So
+/// a closure that resolves providers through the *caller's* `BuildContext`
+/// reads through an element that is `defunct` by then — debug builds answer
+/// with the red screen `Looking up a deactivated widget's ancestor is
+/// unsafe` (`Element._debugCheckStateIsActiveForAncestorLookup`), release
+/// builds with undefined behaviour. Hence the [BuildContext] this hands back:
+/// it belongs to the pushed route, so a builder that needs a context takes
+/// it from here and cannot reproduce that crash. Anything else the builder
+/// needs must be resolved by the caller **before** calling this, and captured
+/// as a plain value. `State.mounted`-style guards do not help: the closure is
+/// not State-bound and the failure is deferred past the check anyway.
+void showDrawerDestination(
+  BuildContext context,
+  Widget Function(BuildContext routeContext) screen,
+) {
   final navigator = Navigator.of(context);
   navigator.popUntil((route) => route.isFirst);
-  navigator.push(MaterialPageRoute<void>(builder: (_) => screen()));
+  navigator.push(
+    MaterialPageRoute<void>(builder: (routeContext) => screen(routeContext)),
+  );
 }
 
 /// Switches the app on the connection phase (R-01, unit 001 criterion 6):
@@ -100,7 +121,14 @@ class _ConnectionErrorScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Both read in build, like `conn` above: the "Change server…" callback
+    // must resolve the pre-fill WITHOUT a context lookup of its own — it
+    // pushes a route whose page builder re-runs on every later rebuild, long
+    // after this element can have gone defunct (issue #64, same shape as the
+    // drawer's). `SettingsStore` is not listenable, so reading the instance
+    // here (rather than its `.config` at press time) loses no freshness.
     final conn = context.read<ConnectionController>();
+    final store = context.read<SettingsStore>();
     return Scaffold(
       appBar: AppBar(title: const Text('Cannot connect')),
       body: Center(
@@ -130,14 +158,21 @@ class _ConnectionErrorScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => SettingsScreen(
-                        initial:
-                            conn.config ?? context.read<SettingsStore>().config,
+                  onPressed: () {
+                    // Resolved at tap time, not in the route builder: the
+                    // builder is re-run on every rebuild of the pushed
+                    // route's `_ModalScopeState`, long after this screen's
+                    // element can have gone defunct (issue #64). Both
+                    // providers are plain (non-listenable) reads hoisted to
+                    // build, so no context lookup happens here or in the
+                    // builder.
+                    final initial = conn.config ?? store.config;
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => SettingsScreen(initial: initial),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                   child: const Text('Change server…'),
                 ),
               ],

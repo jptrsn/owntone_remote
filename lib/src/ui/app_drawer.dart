@@ -73,9 +73,20 @@ class AppDrawer extends StatelessWidget {
       showNowPlaying(context);
       return;
     }
+    // issue #64: Settings is the only destination that needs app state, and
+    // it must be read HERE, at tap time. The closure below is the pushed
+    // route's page builder — `showDrawerDestination` already popped this
+    // drawer's own route by the time it first runs, and re-runs it on every
+    // later rebuild of that route, so a `context.read` inside it resolves
+    // against a defunct element and red-screens the app. See the doc comment
+    // on [showDrawerDestination].
+    final settingsInitial = dest == DrawerDestination.settings
+        ? (context.read<ConnectionController>().config ??
+              context.read<SettingsStore>().config)
+        : null;
     showDrawerDestination(
       context,
-      () => switch (dest) {
+      (routeContext) => switch (dest) {
         DrawerDestination.queue => const QueueScreen(),
         DrawerDestination.library => const LibraryHomeScreen(),
         DrawerDestination.playlists => const PlaylistsScreen(),
@@ -83,11 +94,7 @@ class AppDrawer extends StatelessWidget {
         DrawerDestination.albums => const AlbumsScreen(),
         DrawerDestination.songs => const TracksScreen(),
         DrawerDestination.genres => const GenresScreen(),
-        DrawerDestination.settings => SettingsScreen(
-          initial:
-              context.read<ConnectionController>().config ??
-              context.read<SettingsStore>().config,
-        ),
+        DrawerDestination.settings => SettingsScreen(initial: settingsInitial),
         DrawerDestination.outputs => const OutputsScreen(),
         DrawerDestination.nowPlaying => throw StateError(
           'handled by the pop above',

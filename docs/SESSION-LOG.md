@@ -3200,3 +3200,101 @@ route; `input text` lands in the focused field; Wi-Fi restored (`enabled`),
 APPROVE-reviews (both factory stations and this host authenticate as the PR
 author, jptrsn) — the contract is the **posted report + `VERDICT:` line**,
 which is what the merge gate read.
+
+## 2026-11-23 — issue #64: drawer's deferred page builder red-screens on a popped route (OpenHands factory)
+
+Factory-developer run, branch `openhands/issue-64` off develop @ 5290583. The
+2026-11-23 host device pass put the RCA on the issue (cause + deterministic
+repro + fix plan); this unit implements steps 1–4 of that plan. Sandbox build
+only — no device, no server contact (AGENTS § Maintenance model).
+
+Cause: `AppDrawer._open` handed `showDrawerDestination` a closure that did
+`context.read<ConnectionController>()` / `context.read<SettingsStore>()` with
+the AppDrawer element's own context. That closure is the *pushed route's page
+builder*: `showDrawerDestination` first evaluates it after
+`popUntil((route) => route.isFirst)` has popped the drawer's own route, and
+re-evaluates it on **every** later rebuild of that route's `_ModalScopeState`
+(theme change, ws event storm, hot reload). Once the popped subtree unmounted,
+the next rebuild read through a `defunct` element → debug assert
+`Looking up a deactivated widget's ancestor is unsafe` → red screen. Only the
+`settings` branch touched the context (every other destination is `const`),
+which is why every recorded occurrence was a Settings navigation.
+
+Fix (shape, not behaviour):
+- `lib/src/ui/app_drawer.dart` — the Settings pre-fill is read eagerly at tap
+  time into `settingsInitial` before the call; the closure captures a plain
+  `ServerConfig?`, no `BuildContext`.
+- `lib/src/ui/root_screen.dart` — `showDrawerDestination` now takes
+  `Widget Function(BuildContext routeContext)` and hands the **route's**
+  context to the builder, so a future caller that needs a context inside the
+  builder cannot reproduce the crash; the doc comment states the deferred-run
+  contract (and why a `State.mounted` guard would not help). The same-shape
+  site at `_ConnectionErrorScreen`'s "Change server…" reads both providers in
+  `build` (plain, non-listenable reads) and captures the value at press time —
+  no context lookup inside its page builder either.
+
+Navigation semantics unchanged: still `popUntil(isFirst)` + one push, stack
+always `[root, target]`.
+
+Tests: `test/drawer_deferred_builder_test.dart` (new, 4 tests) — the gap the
+RCA named: Settings tapped from a **pushed** screen, `pumpAndSettle` (pop
+completes), *then* rebuild the route content via the R-26 theme toggle under
+the real `OwntoneRemoteApp` (its MaterialApp watches `ThemePreference` — a
+bare MaterialApp would not re-skin and the test would pass vacuously; the
+assertion that the pushed route really went dark is there for that reason).
+Plus: `SettingsScreen.initial` equals the `ConnectionController.config` value
+captured at tap time (the provider is then moved to a second config and the
+route rebuilt — a live read would drift), the root-drawer leg, and the R-21
+depth/no-duplicate contract re-asserted through the Settings route.
+**Mutation-verified twice** (restored from a `/tmp` copy, never `git checkout`,
+per the AGENTS trap list): restoring the lazy `context.read` inside the closure
+turns the first three tests red with the exact RCA message ("Looking up a
+deactivated widget's ancestor is unsafe", 5 repeats from the rebuild cascade);
+replacing the captured value with a live `routeContext.read` turns the
+`initial`-snapshot test red (`Expected 10.0.0.5:3689, Actual 10.9.9.9:3689`).
+
+One correction to the RCA's framing, learned from the harness: the root-drawer
+control is NOT safe-by-construction the way the device pass read it.
+`DrawerController._buildDrawer` drops the drawer subtree once the close
+animation settles (`if (_controller.isDismissed)` → a drag-strip
+`GestureDetector` / `SizedBox.shrink`), so the AppDrawer element is defunct
+after *any* drawer tap, not only after one whose host route was popped. The
+pushed-host-route condition is what the device pass could *observe* (the
+drawer is mid-transition under the incoming route there); the widget harness
+reaches the defunct element in both cases. The fix covers both — recorded here
+rather than by editing the device entry, which is append-only history.
+
+Gates: `flutter analyze` 0 issues; `dart format --set-exit-if-changed .` clean.
+`flutter test --exclude-tags live` in this container is load-flaky: the
+real-timer WS/backoff tests (`now_playing_screen_test`, `mini_player_test`,
+`queue_screen_test`, `player_controller_test`, `outputs_screen_test`,
+`rating_*`, `app_drawer_test`'s offline leg, `connection_controller_test`,
+`connection_offline_recovery_test`) fail nondeterministically **on unmodified
+`develop` too**. Apples-to-apples on the same 11 files, `--concurrency=1`:
+baseline worktree @ 5290583 = 142 pass / **25 fail**; this branch = 148 pass /
+**23 fail** (+4 = the new file, all green) — and the two failing sets are not
+the same 23, i.e. which test loses its timing race moves between runs. Most of
+them pass when their own file runs alone (`app_drawer_test.dart` 10/10,
+`connection_offline_recovery_test` 5/5, `outputs_controller_test` 13/13,
+`drawer_deferred_builder_test` 4/4 observed here — though `app_drawer_test`'s
+offline leg and the Doze leg did flake on one solo re-run each even without
+load). Two exceptions are **not** load flakes: `rating_controller_test.dart`'s
+"now-playing rating: now_playing → track_id → track (C2 flow)" fails
+deterministically in this container (`Expected <100>, Actual <60>`) on **both**
+the baseline worktree and this branch, and the `app_drawer_test` offline leg
+repeats it often — pre-existing environment failures, not caused by this unit.
+No device and no server was contacted by any of them (`live`-tagged tests
+excluded). `flutter build apk --debug` could not be run here at all — no
+Android SDK in this container (`flutter doctor`: "Unable to locate Android
+SDK"); CI's `gates` job supplies it. Final counts are in the PR body; the CI
+`gates` run on the branch is the authoritative green.
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (host-bound, `needs-host-tools`): the
+issue's criterion 8 — re-run the two positive triggers (theme segment on the
+pushed Settings screen; hot reload) and the root-drawer control on the Pixel 6
+debug `flutter run`, expecting no `EXCEPTION CAUGHT BY WIDGETS LIBRARY` block
+and `grep -c "deactivated widget's ancestor"` = 0 over the console, server
+paused throughout. Substitutes here: the widget-level repro of the identical
+frame chain (the same `_ModalScopeState` → `buildContent` → `Builder` →
+`AppDrawer._open` closure path, byte-for-byte the RCA's stack) plus the two
+mutation checks above.
