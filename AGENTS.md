@@ -260,9 +260,11 @@ widget tests, gates), record each hardware-dependent criterion as
 substitute proof) in the PR body, and comment requesting the
 `needs-host-tools` label so the host session takes the device pass (the
 `needs-host-tools` and `ready-for-dev` labels are maintainer-created —
-they exist as of 2026-11-22). Exemplar: issue #64 (red-screen capture
-needs a connected device) stays host-side until cause + proposed fix are
-identified there.
+they exist as of 2026-11-22). Completed worked example of the split:
+issue #64 / PR #77 (2026-11-23) — factory built and mutation-tested the
+sandbox half; the host session ran the RCA, the Pixel 6 device pass, and a
+full-suite gates re-run, recording every `BLOCKED` row's evidence on the PR
+before the squash-merge (`58746c1`).
 
 ## Environment (host+CI aligned on 3.47.9, 2026-11-14)
 
