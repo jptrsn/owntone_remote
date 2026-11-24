@@ -197,13 +197,24 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
           IconButton(
             tooltip: 'Server settings',
             icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => SettingsScreen(
-                  initial: conn.config ?? context.read<SettingsStore>().config,
+            // issue #78 (#64 shape): the pre-fill is resolved HERE, at press
+            // time. `builder:` is the pushed route's page builder — it re-runs
+            // on every later rebuild of this route's `_ModalScopeState` (R-26
+            // theme change, ws storm, hot reload), so a `context.read` inside
+            // it is a deferred provider lookup: inert today only because this
+            // host is the root route and stays mounted (covered, not popped)
+            // while the route is up. See the doc comment on
+            // [showDrawerDestination] and the `settingsInitial` precedent in
+            // app_drawer.dart (PR #77).
+            onPressed: () {
+              final settingsInitial =
+                  conn.config ?? context.read<SettingsStore>().config;
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SettingsScreen(initial: settingsInitial),
                 ),
-              ),
-            ),
+              );
+            },
           ),
           if (artistTarget != null || albumTarget != null)
             PopupMenuButton<String>(
