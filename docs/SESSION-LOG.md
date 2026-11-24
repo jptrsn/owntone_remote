@@ -3298,3 +3298,56 @@ paused throughout. Substitutes here: the widget-level repro of the identical
 frame chain (the same `_ModalScopeState` → `buildContent` → `Builder` →
 `AppDrawer._open` closure path, byte-for-byte the RCA's stack) plus the two
 mutation checks above.
+
+## 2026-11-23 — #64 closeout: host device pass PASS, PR #77 merged (`58746c1`), issue closed, follow-up #78
+
+Maintainer-host opencode session. Records the half of #64 the entry above
+leaves `BLOCKED-PENDING-HOST-VERIFICATION`, plus the merge. Full evidence
+tables live on PR #77 (device pass comment + round-1 review report); this
+entry is the ledger line, not the evidence.
+
+**Host device pass — AC 8 → PASS.** Run on the physical Pixel 6
+(`25071FDF600953`, Android 17), debug build via `flutter run --debug` from
+head `dea865f` (host toolchain = CI pin 3.47.9). All four host-bound rows
+PASS: (a) Settings-from-pushed-Queue + theme segment, (b) same + hot reload,
+(c) root-drawer control (run per the PR's own "not decoration" correction —
+it matters, as the harness finding above predicted), and the console-grep row
+(count 0 over the full fixed-build console). Harness-sensitivity control
+included: reverting the fix on-device reproduced the issue's verbatim red
+screen with the RCA's frame chain, so the no-exception results mean
+something. Harness fact worth keeping: **hot reload does not replace a
+pushed route's page builder** — after restoring the mutation the control
+needed a hot *restart* before the fixed closure was live. Mutation restored
+from a `/tmp` copy (md5-verified), never `git checkout` (AGENTS trap list).
+Host gates closed the container-flake caveat: full suite **633/633 green**
+on the host — the dev-container WS/backoff flakes above do not reproduce
+here. Safety: server verified `pause` before/during/after, no play-class or
+mutation call; only app-local `ThemePreference` touched, restored to the
+session baseline (`dark`). `needs-host-tools` removed from the issue.
+
+**Review.** Factory `software-factory/review` round 1 on `dea865f`: **VERDICT:
+APPROVE**, full report posted to the PR; the reviewer independently
+re-produced both mutation checks and the baseline-failure claim. GitHub
+`reviewDecision` stays empty by the same-authentication limitation recorded
+under #76 (all stations authenticate as jptrsn) — the merge-gate contract is
+the posted report + `VERDICT:` line + the passing check, all present.
+
+**Merge + close.** Squash-merged PR #77 → develop `58746c1`, branch
+`openhands/issue-64` deleted. `gates` green on the head (analyze/format/test/
+APK build). Issue #64 auto-closed by the `Closes #64` keyword at merge time —
+verified per AGENTS § Branching & CI and given an explicit close-out comment
+(the keyword alone is still never trusted; here it happened to be correct).
+
+**Follow-up filed: #78.** The PR body deliberately left `lib/src/ui/
+now_playing_screen.dart:203` untouched (issue non-goals) — the "Server
+settings" IconButton still does `context.read<SettingsStore>()` *inside* the
+pushed route's `builder:` — the identical deferred-read shape, currently
+inert only because its host is the root route (covered, not popped). Filed
+with the #77 fix pattern and the widget-test recipe. `grep` over `lib/src/ui`
+found no other `context.read` inside a page-builder closure; all other reads
+are tap-time in callbacks.
+
+AGENTS.md § Maintenance model: the host-bound exemplar refreshed — #64/PR #77
+is now the completed worked example of the split (sandbox half by the
+factory, device pass + gates + merge by the host), replacing the
+"stays host-side until identified" forward reference.
