@@ -3351,3 +3351,61 @@ AGENTS.md § Maintenance model: the host-bound exemplar refreshed — #64/PR #77
 is now the completed worked example of the split (sandbox half by the
 factory, device pass + gates + merge by the host), replacing the
 "stays host-side until identified" forward reference.
+
+## 2026-11-24 — issue #78: NowPlaying 'Server settings' reads providers inside the pushed route's page builder (OpenHands factory)
+
+**Did:** hardened the one site PR #77 deliberately left alone. The 'Server
+settings' `IconButton` in `lib/src/ui/now_playing_screen.dart` resolved
+`conn.config ?? context.read<SettingsStore>().config` *inside* the
+`MaterialPageRoute(builder: …)` it hands to `Navigator.push` — byte-for-byte
+the #64 shape. The read now happens in `onPressed` at press time and the
+builder closes over a plain `ServerConfig?`, the `settingsInitial` pattern
+already shipped in `app_drawer.dart` (post-#77). No behaviour change; the
+non-goals held (no `ErrorWidget.builder`, no error boundary, no
+`State.mounted` guard).
+
+**Harness fact worth keeping (why the test presses while disconnected):**
+`conn.config ?? context.read<…>()` **short-circuits**. A test that presses
+while the app is connected evaluates only the left operand, so it stays green
+with the lazy read restored inside the builder — a green suite that proves
+nothing. The discriminating test therefore presses with `conn.config == null`
+(`wireUp(connect: false)`), the leg that actually evaluates the provider read.
+The second leg of the harness is `OwntoneRemoteApp(home:)`: re-pumping with
+`home: SizedBox.shrink()` unmounts the NowPlaying element the pressed button's
+context belongs to while the pushed route stays onstage, so the next
+`_ModalScopeState` re-run (R-26 theme toggle) resolves the deferred lookup
+through a defunct element. `unmountNowPlaying` asserts both halves of that
+(NowPlaying gone from the Navigator, `SettingsScreen` still present) — without
+those assertions every crash test below would be vacuous, which is the failure
+mode #64's suite had.
+
+**Mutation-verified both ways** (from a `/tmp` copy, md5-checked back, never
+`git checkout` — AGENTS trap list): restoring the lazy read inside `builder:`
+turns **two** tests red — the first with the verbatim `Looking up a deactivated
+widget's ancestor is unsafe.` and the second by value drift
+(`Expected: 10.0.0.5:3689 / Actual: 10.9.9.9:3689`, the post-press provider
+value). With the fix in place all four tests and the full suite are green.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7):
+`flutter analyze` → No issues found; `dart format --output=none
+--set-exit-if-changed .` → clean (115 files); `flutter test --exclude-tags
+live` → **637/637** green (633 pre-existing + the 4 new). Container note for
+the next agent: this host is arm64 and the Linux release tarball is x64-only —
+the engine bucket does publish `dart-sdk-linux-arm64.zip` and
+`linux-arm64/artifacts.zip` for the pinned engine hash, and
+`bin/cache/dart-sdk` + the artifacts drop-in let the tool rebuild its own
+snapshot; `flutter test` then runs natively. `unzip` is absent and
+`flutter_tools` shells out to it — a python `zipfile` shim on `PATH` is enough.
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (nothing here needs a device to build or
+verify, but the two rows below are the on-device legs of the same contract;
+`#64`'s host pass is the model):
+
+| Action | Expected observation | Substitute proof |
+|---|---|---|
+| `flutter run --debug`, connect, tap the app-bar 'Server settings', toggle the theme on the pushed screen, hot reload | no `EXCEPTION CAUGHT BY WIDGETS LIBRARY`; console grep `deactivated widget's ancestor` = 0 | widget test re-running the identical frame chain (`_ModalScopeState` → `buildContent` → the route builder) with the host element unmounted, `takeException()` null, and the R-26 brightness assertion proving the re-run happened |
+| Same route with the fix reverted on-device | the #64 red screen appears (harness-sensitivity control) | the mutation above reproduces the verbatim assert in the widget test, on the same frame chain |
+
+No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
+Maintenance model host-bound carve-out). Server untouched — no HTTP call to
+`192.168.1.13` was made by this session.
