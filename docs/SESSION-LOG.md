@@ -3409,3 +3409,60 @@ verify, but the two rows below are the on-device legs of the same contract;
 No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
 Maintenance model host-bound carve-out). Server untouched — no HTTP call to
 `192.168.1.13` was made by this session.
+## 2026-11-25 — open-issue review for factory readiness + #83 host diagnostic spike (opencode host session)
+
+**Scope.** Review all open issues (#81–#85) for agentic-readiness (spec +
+R-ID trace + labels) per AGENTS § Maintenance model / PROCEDURE § OpenHands
+mapping; run the #83 host diagnostic spike (user-authorized). No code merged;
+sandbox half of every issue belongs to the factory.
+
+**Review outcome (labels applied).** #81 (ready-for-dev, area:player,
+openhands — triage block already complete; all referenced files/tests
+verified to exist: `test/mirror_artwork_adversarial_test.dart`,
+`test/notification_mapping_test.dart`, `_wakeMediaSession` consumed
+`_woken` before null check at `mirror_handler.dart:246-248` ✓);
+#82 (ready-for-dev, area:player, openhands — `click()` override genuinely
+absent in `mirror_handler.dart`, Logger convention exists across five
+controllers ✓; sequencing note posted vs #84's dumpsys-equivalence
+criterion); #84 (ready-for-dev, area:volume, priority:medium, openhands —
+mechanism deliberately left to the planner, ACs are behavioural);
+#85 (ready-for-dev, priority:low, openhands — trivial comment fix,
+swapped 87/88 verified at `DebugMediaButtonReceiver.kt:27`). PR-bound work
+takes `openhands-review`, never `ready-for-dev` (user decision — a PR is
+post-development); the factory's own PRs carry it.
+
+**#83 RCA — reproduced, gating hypothesis REFUTED, decided: fix.** Host pass
+on Pixel 6 (Android 17), clean develop debug + instrumented (logs) build,
+server outputs all deselected throughout (audio physically impossible;
+restored to `pause` / item 215483 / vol 55 / ESP-CAAC64 re-selected,
+204-confirmed; queue contents untouched). Measurements: (a) with `active=true
++ PAUSED(2)` mirror, tile taps **dispatch** — `uiautomator` pre-dump showed
+clickable=true transport wrappers, taps logged `[ISSUE82] skipToNext()` and
+server `item_id` moved (`214956→215242`) — so AOSP SystemUI does **not**
+gate transport dispatch on playback state for a no-audio session; (b) the
+reproduced failure is server **`stop`**: `PUT /api/player/next` → 204 silent
+no-op (pointer frozen), `PUT /api/player/previous` → **HTTP 500** — while the
+mirror publishes `PAUSED(2)` + ready + play/next/previous controls and
+stale metadata (`item != null` beats the `isStopped` mediaItem-null branch),
+so the tile reads as a live paused player whose skips do nothing; the
+original PAUSED/PLAYING contrast was incidental (discriminator is
+stop-vs-play, and Skip is reached for exactly when the queue ended); (c)
+second silent path: `PlayerController._action` early-returns **unlogged**
+when `!isConnected` (`player_controller.dart:169`) — one window observed
+(15:27:58, handler logged, pointer frozen) but **downgraded to hypothesis**:
+no pre-tap dump + shared-server churn (the owner's other session moved
+state/item concurrently throughout — every play-class call was made only
+with zero outputs selected, all restorations 204-verified). #81's
+forfeited-wake signature also seen live (app running with no session at
+all). Issue body carries the adjudication + decided ACs (play-only controls
+while stopped, logged dropped actions, no skip-while-stopped emulation —
+web-UI parity — plus dumpsys/logcat host rows); labels moved to
+ready-for-dev/openhands.
+
+**Harness lesson committed (AGENTS trap #5).** Interacted with the screen
+from assumed state twice (taps issued against an open-shade assumption one
+step and a vanished-tile the next; user caught the second). AGENTS.md now
+mandates a fresh `uiautomator`/screenshot dump **before every** scripted
+`input tap`/`swipe`/`keyevent`, confirming the target is on screen at those
+coordinates. Device left clean: instrumented build removed (clean debug
+reinstalled), `svc power stayon false`, deviceidle whitelist entry removed.
