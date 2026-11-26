@@ -3495,3 +3495,32 @@ contradicts the source-chain analysis, the guard is the suspect and belongs
 in a follow-up issue rather than being changed blind here (it is inherited
 from base, pre-#81, and #82's non-goals keep active-state work out of scope).
 Suite now **5/5**; full gates re-run below.
+
+**Review round 2 (review 6077767740 @ `f2ad62df`) — corrected counters and
+the deferred re-run.** This section supersedes the round-1 body's *counters*
+(append-only: the round-1 adjudication text above stays; the numbers in it
+were the state at `c405ab38`, not at this head) — per the round-2 inline
+note on this file:
+
+- `test/mirror_wake_test.dart` has **5** tests (not 3): the three wake
+  clauses plus tests 4–5, the already-playing launches added in `c9f9aab`.
+- **Tests 1, 3 and 5** (not "1 and 3") live-out the real 10 s boot wait —
+  `pump(12_000)` at lines 107, 228 and 340; explicit timeouts 60 s, 60 s
+  and 90 s. The test file's own docstring already said so.
+- The "full gates re-run below" the round-1 section promised is **this
+  block**, executed on this exact head (`f2ad62d`, production blob
+  `5f41f03…` unchanged since `c9f9aab` — the `origin/develop` merge of
+  #85/#90 touches no PR-owned file; blobs compared): container toolchain =
+  CI pin Flutter 3.47.9 / Dart 3.13.7; `flutter analyze` → **No issues
+  found**; `dart format --output=none --set-exit-if-changed .` → **clean
+  (116 files, 0 changed)**; `flutter test --exclude-tags live` →
+  **642/642** (637 pre-existing + the 5 new). This is the file's current
+  tail; no counters elsewhere in this entry are newer.
+- Round 2 **retracted** the round-1 inline note's "already-playing launch
+  stays headless" inference after re-deriving the native-edge chain
+  (`AudioService.java:280`/`:559` + `_observePlaybackState` verbatim
+  forwarding); the inherited `!p.isPlaying` guard therefore stays untouched
+  and the already-playing cold start remains the third
+  `BLOCKED-PENDING-HOST-VERIFICATION` row for the host pass. `needs-host-tools`
+  is still absent from the PR labels (maintainer-created) — re-requested by
+  comment on PR #88; nothing device-related was attempted here.
