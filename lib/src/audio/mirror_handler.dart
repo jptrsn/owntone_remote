@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:logger/logger.dart';
 
 import '../core/artwork_probe.dart';
 import '../player/player_controller.dart';
@@ -79,6 +80,20 @@ AndroidVolumeControlType volumeControlTypeFor(bool appForeground) =>
     ? AndroidVolumeControlType.absolute
     : AndroidVolumeControlType.fixed;
 
+/// The #82 `click()` observability line (R-04/R-07): names the arriving
+/// [MediaButton], whether the app is foregrounded, and the mirrored server
+/// playing state. Kept a free function so the exact line shape is
+/// unit-testable without an audio_service platform
+/// (test/mirror_click_log_test.dart) — the handler just feeds it its own
+/// values and passes it to the logger.
+String clickLogMessage(
+  MediaButton button, {
+  required bool appForeground,
+  bool? serverPlaying,
+}) =>
+    'click(${button.name}) appForeground=$appForeground '
+    'serverPlaying=$serverPlaying';
+
 /// The playback-state mirror. [positionMs] overrides the server progress
 /// (the 1 s extrapolation ticker feeds it while the server plays).
 PlaybackState playbackStateFor(PlayerState p, {int? positionMs}) =>
@@ -108,12 +123,23 @@ PlaybackState playbackStateFor(PlayerState p, {int? positionMs}) =>
 /// `playing: true` once (with the real metadata/controls), then the real
 /// state. `androidStopForegroundOnPause: false` keeps the FGS up afterwards.
 class MirrorAudioHandler extends BaseAudioHandler {
-  MirrorAudioHandler(this._player, {required SettingsStore settings})
-    : _settings = settings,
-      super();
+  MirrorAudioHandler(
+    this._player, {
+    required SettingsStore settings,
+    Logger? logger,
+  }) : _settings = settings,
+       _logger = logger ?? Logger(printer: PrettyPrinter(methodCount: 0)),
+       super();
 
   final PlayerController _player;
   final SettingsStore _settings;
+
+  /// #82 observability: media-key arrivals are the one handler path with no
+  /// observable trace (a genuine head-unit key otherwise disappears into
+  /// [PlayerController]'s HTTP calls, and silently when the server is
+  /// unreachable). Injectable so the mapping is unit-testable; same shape as
+  /// [ConnectionController]'s.
+  final Logger _logger;
 
   /// The rocker step (R-14): 1–10, default 5, from [SettingsStore], read
   /// **at keypress time** — a change in the Settings screen applies to the
@@ -263,6 +289,35 @@ class MirrorAudioHandler extends BaseAudioHandler {
   }
 
   // -- media-session commands → server --------------------------------------
+
+  /// #82 observability (R-04/R-07): every media-key arrival — head-unit or
+  /// headset key, notification/lockscreen button, `cmd media_session
+  /// dispatch` — lands here (audio_service 0.18.19: `onMediaButtonEvent →
+  /// onClick → click`) before being forwarded to the server. The line is
+  /// emitted **before** dispatch on purpose: a key whose server call fails
+  /// or is skipped (phone left the home Wi-Fi, server unreachable)
+  /// otherwise vanished with no trace anywhere, which is what the
+  /// owntone-sync#11 media-button-session investigation needed to see.
+  ///
+  /// Delegation is untouched — [BaseAudioHandler.click] still routes
+  /// `media` → play/pause by the mirrored playing state, `next` →
+  /// [skipToNext], `previous` → [skipToPrevious], and each still awaits the
+  /// [PlayerController] call (which swallows its own errors, so a dead
+  /// server logs the arrival and completes normally: nothing here adds an
+  /// unawaited or rethrowing path).
+  @override
+  Future<void> click([MediaButton button = MediaButton.media]) {
+    _logger.i(
+      clickLogMessage(
+        button,
+        appForeground: _appForeground,
+        serverPlaying: playbackState.hasValue
+            ? playbackState.value.playing
+            : null,
+      ),
+    );
+    return super.click(button);
+  }
 
   @override
   Future<void> play() => _player.play();

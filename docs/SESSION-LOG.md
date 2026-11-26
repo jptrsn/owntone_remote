@@ -3409,3 +3409,56 @@ verify, but the two rows below are the on-device legs of the same contract;
 No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
 Maintenance model host-bound carve-out). Server untouched — no HTTP call to
 `192.168.1.13` was made by this session.
+
+## 2026-11-26 — issue #82: media-key arrivals are invisible — override + log `click()` in MirrorAudioHandler (OpenHands factory)
+
+**Did:** the authorized observability half of #82, per the maintainer's
+2026-11-25 host on-device pass (the decision of record). `MirrorAudioHandler`
+now overrides `click([MediaButton])`, emits **exactly one** log line per
+arrival, and delegates to `super.click(button)` — `BaseAudioHandler.click`
+(audio_service 0.18.19 audio_service.dart:3089) is otherwise untouched, so
+`media` still routes to play/pause by `playbackState.playing` and `next`/
+`previous` to `skipToNext`/`skipToPrevious`, each still reaching the
+`PlayerController` HTTP call. `main.dart`'s `_initAudio` passes the app
+`_logger` through the new optional `logger:` ctor arg (the
+`ConnectionController` shape, defaulting to
+`Logger(printer: PrettyPrinter(methodCount: 0))`), so key arrivals land in
+the same `flutter:*` logcat stream as the rest of the app. The line is built
+by the free `clickLogMessage()` (the repo's pure-function convention) —
+`click(media) appForeground=false serverPlaying=true` — naming the button,
+`_appForeground`, and the mirrored playing state.
+
+**Why this half and not the session policy:** the maintainer's pass settled
+the design question — the remote's focus-free session never wins the AOSP
+`Media button session` pin (stayed `null` across two cold-start wakes and a
+sustained active+PLAYING mirror; the pin follows real per-uid audio
+playback), deactivating does **not** stop routing while another app holds
+the pin, and idle/stop teardown is R-07-violating (stock `deactivateMediaSession`
+also cancels the notification). So: no `setActive(false)`, no session
+teardown, no scoping of the `_wakeMediaSession` wake, no
+activateSessionOnly/deactivateSessionOnly plugin patch, `androidStopForegroundOnPause:
+false` and the D20 volume path left exactly as they were (that is #84's, and
+#82 lands first per the maintainer's ordering note). Read 87/88 per AOSP
+KeyEvent (87=NEXT, 88=PREVIOUS), not the swapped doc-comment (#85).
+
+**Harness fact worth keeping:** a `LogOutput` subclass that captures
+`event.origin.message` proves the log line without stdout, and
+`ProductionFilter` makes the assertion deterministic — `DevelopmentFilter`
+(the logger default) gates on `assert`, which is exactly the edge a green
+suite would miss if the line silently stopped firing. The delegation
+assertions are non-vacuous and mutation-proven both ways (from a `/tmp`
+copy, md5-checked back, never `git checkout` — AGENTS trap list): swallowing
+`super.click` → 4 tests red; deleting the `_logger.i` call → 8 red. Restored
+both; md5 matches the committed file.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7):
+`flutter analyze` → No issues found; `dart format --output=none
+--set-exit-if-changed .` → clean (116 files); `flutter test --exclude-tags
+live` → **646/646** green (637 pre-existing + the 9 new). `flutter build apk
+--debug` is the host/CI leg.
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (device-bound; `needs-host-tools`
+requested — see the PR body's rows for action → expected observation →
+substitute proof). No `adb`, AVD, Pixel 6, ESP32 harness, or supervised-audio
+step was attempted (AGENTS § host-bound carve-out); server untouched — no
+HTTP call to `192.168.1.13` was made by this session.
