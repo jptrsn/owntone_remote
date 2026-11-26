@@ -3425,7 +3425,7 @@ arrival, and delegates to `super.click(button)` — `BaseAudioHandler.click`
 `Logger(printer: PrettyPrinter(methodCount: 0))`), so key arrivals land in
 the same `flutter:*` logcat stream as the rest of the app. The line is built
 by the free `clickLogMessage()` (the repo's pure-function convention) —
-`click(media) appForeground=false serverPlaying=true` — naming the button,
+`click(media) appForeground=false mirroredPlaying=true` — naming the button,
 `_appForeground`, and the mirrored playing state.
 
 **Why this half and not the session policy:** the maintainer's pass settled
@@ -3497,10 +3497,66 @@ routes to `PUT /api/player/pause` against the paused server. Mutation-proof
 three ways (throwaway copy + md5 check-back, never `git checkout` on
 tracked state): read the field from `PlayerController` instead of
 `playbackState` → the fidelity test alone goes red; swallow `super.click` →
-5 red; delete the `_logger.i` call → 10 red.
+5 red; delete the `_logger.i` call → **9** of the 11 red (the 2 survivors are
+the `clickLogMessage (pure, R-04/R-07)` group, which calls the pure function
+directly and never reaches `click()`; the round-1 draft of this line said 10,
+which did not reproduce — corrected in the round-2 pass below).
 
 **Gates:** `flutter analyze` → No issues found; `dart format
 --output=none --set-exit-if-changed .` → clean (116 files); `flutter test
 --exclude-tags live` → **648/648**. The device-bound rows are unchanged and
 still `BLOCKED-PENDING-HOST-VERIFICATION` — this round added no on-device
 evidence, only the debug-build requirement the host pass now has to record.
+
+## 2026-11-26 — #82 PR #89 review round 2: two of my own evidence lines did not reproduce (OpenHands factory)
+
+**Did:** fixed two **documentation-accuracy defects I introduced in the
+round-1 pass**, both on `docs/SESSION-LOG.md`, both filed inline by the
+reviewer at head `5e856ab2` and both confirmed against my own re-measurement
+before editing:
+
+1. `docs/SESSION-LOG.md:3428` still printed the witness as
+   `… serverPlaying=true`. The field was renamed in `9c499af`, so the
+   canonical statement of "what the witness prints" contradicted the shipped
+   line — in the very document that explains why the old name was dangerous.
+   The host device pass reads this file at session start and diffs its
+   `adb logcat -s flutter:*` capture against this string, so a maintainer
+   grepping the documented form would get zero hits on a real key and could
+   conclude the key was never delivered: the exact failure mode #82 exists to
+   remove. Corrected to `mirroredPlaying=true`. (The two later
+   `serverPlaying` mentions in the round-1 entry are the rename narrative —
+   "old name → new name" — and stay.)
+2. `docs/SESSION-LOG.md:3500` claimed deleting the `_logger.i(...)` call
+   turns **10** tests red. It turns **9** of the 11 (`+2 -9`); the 2
+   survivors are the `clickLogMessage (pure, R-04/R-07)` group, which calls
+   the pure function directly and never reaches `click()`. Corrected, with
+   the survivors scoped so the claim is checkable. The PR body's Gates
+   section repeated the same inflated number and is corrected the same way.
+
+**Why this matters more than it looks:** under AGENTS quality gate 1 the
+figures in this file **are** the evidence, and the trap list exists because
+fabricated evidence once reached a commit. An inflated mutation count is
+precisely what the reviewer — not a green suite — is supposed to catch, and
+it did. Before editing I re-measured **all three** mutations at
+`5e856ab2` (throwaway copy + md5 check-back, never `git checkout` on tracked
+state): swallow `super.click` → **5** red ✔ as recorded; re-derive the field
+from `PlayerController` → **1** red (the fidelity test alone) ✔ as recorded;
+delete the `_logger.i` call → **9** red ✘ recorded as 10. Only the last was
+wrong. The round-1 dev entry's separate `4 red / 8 red` figures (line ~3451)
+are also consistent: measured on the 9-test version, and each rises by
+exactly 1 with the fidelity test added — left as recorded history.
+
+**Gate 4 is unchanged and still blocking.** This round added **no**
+on-device evidence and cannot: `adb`, the Pixel 6, the ESP32 `CarHarness` and
+the pre/post-press `dumpsys` reads are host-session-only (AGENTS host-bound
+carve-out). The four `BLOCKED-PENDING-HOST-VERIFICATION` rows stand, and the
+`needs-host-tools` label — which is what actually queues the device pass —
+exists in this repo but is **maintainer-created**, so a sandboxed agent may
+request it and may not apply it. It is requested here and in the PR body; the
+device pass is not queued until the maintainer applies it.
+
+**Gates re-run at this head** (Flutter 3.47.9 / Dart 3.13.7 = the CI pin):
+`flutter analyze` → No issues found (`analysis_options.yaml` md5 unchanged);
+`dart format --output=none --set-exit-if-changed .` → clean (116 files);
+`flutter test --exclude-tags live` → **648/648**; new file alone → 11/11.
+No product code changed this round — documentation-only evidence fixes.
