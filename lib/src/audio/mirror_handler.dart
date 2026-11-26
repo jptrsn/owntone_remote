@@ -51,9 +51,10 @@ MediaItem? mediaItemFor({
 /// `mediaItem.add(null)` never reaches `MediaSessionCompat` and the shade
 /// would keep the last track's title/artist/album. A fresh non-null item
 /// does reach `setMetadata`; the Java builder is rebuilt per notify, so the
-/// null artist/album/duration blank those lines and null `artUri` drops the
-/// large icon on the next publish (residual: on API < 33 a previously
-/// loaded `artBitmap` can persist in the re-raised notification).
+/// null artist/album/duration blank those lines, and the art-less publish
+/// also nulls the service's `artBitmap` (`AudioService.java:795-801`),
+/// clearing the large icon — whether SystemUI re-renders it is the device
+/// question the host row answers.
 MediaItem stoppedMediaItem() =>
     const MediaItem(id: 'owntone:stopped', title: 'Stopped');
 

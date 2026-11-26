@@ -176,9 +176,10 @@ the shade / on the lock screen.
   'Stopped' too). The row is *replaced, not blanked*: audio_service
   0.18.19 discards a null `MediaItem` before any platform call, so the
   app publishes a fresh neutral item (`id: 'owntone:stopped'`) — the only
-  metadata-clear path the pinned plugin has. Documented limitation: the
-  replaced row keeps the tile honest about transport; a previously loaded
-  large-art bitmap may persist on API < 33.
+  metadata-clear path the pinned plugin has. The art-less placeholder also
+  nulls the service's large-icon bitmap at the plugin level
+  (`AudioService.java:795-801`); whether SystemUI re-renders it is settled
+  by the host capture, not by the app.
 - **No duplicates (spike risk #4):** the notification is the FGS
   notification; WS reconnects, refetches and state changes **update it
   in place** — the app must never post a second notification (verify:

@@ -3424,11 +3424,16 @@ reviewer's preferred option 1: `stoppedMediaItem()` publishes the neutral
 row (fresh id `owntone:stopped` so audio_service's per-id handling cannot
 discard it; title 'Stopped' matches `now_playing_screen.dart:486`; null
 artist/album/duration blank those lines because the Java builder is
-rebuilt per notify; null artUri stops the art fetch). Honest caveat
-carried into SCREENS.md and the placeholder's doc comment: the row is
-*replaced, not blanked*, and a previously loaded `artBitmap` can persist
-on API < 33 — the host row now adjudicates exactly that (title-text
-capture). No PlayerController cache change: `_refreshChain` already sets
+rebuilt per notify). Honest caveat carried into SCREENS.md and the
+placeholder's doc comment: the row is *replaced, not blanked* (the title
+guard `if (mediaMetadata != null)` means only a publish changes it — which
+is what the placeholder is). Round-2 correction: the round-1 docs claimed
+a large-art residual "on API < 33"; checked against the pinned plugin
+before repeating it, `setMetadata` with an art-less item nulls `artBitmap`
+outright (`AudioService.java:795-801`), so the app-side art clear is real
+— what remains a device question is only whether SystemUI re-renders the
+icon, which is what host row 4 captures (besides the title-text check of
+rows 1-2). No PlayerController cache change: `_refreshChain` already sets
 `_nowPlaying = null` when stopped (`player_controller.dart:126`) — the
 retained item the review attributed to the cache is really the lagged
 `_player` slice, and the post-await re-read stays as the ordering guard
@@ -3516,7 +3521,7 @@ acceptance criteria — Pixel 6 `25071FDF600953`, request `needs-host-tools`):
 |---|---|---|
 | `PUT /api/player/stop` (outputs deselected), dump the shade tile; then `PUT /api/player/pause`, dump again | stopped dump: tile **title text is `Stopped`** (not the last track's title — the only witness that settles the metadata question, which no Dart-side assertion can reach), artist/album lines blank, no `Next track`/`Previous track` nodes, play control present; paused dump: track title again + both nodes | the controlsFor unit rows pin the published control list per state; the handler legs pin the PUBLISHED STREAM sequence (track row live while paused → Stopped row last after stop), and the paused→stop→pause test proves the session re-publishes in both directions over a live WS notify — the plugin's null-drop sits below all Dart witnesses, which is why the capture must read the rendered title |
 | Press the tile's play while stopped; `dumpsys notification` + `dumpsys activity services` while the server stays stopped | handler log line + `GET /api/player` state change; MediaStyle record still listed, `isForeground=true` | the fake-backed test proves the published play control is wired to `PUT /api/player/play`; `processingState` stays `ready` in all three states (the ready-guard test), which is the audio_service condition for keeping the FGS/notification up |
-| Large-art residual on the API level actually tested (round-2 review row 4): play an item WITH artwork to load the large icon, then `PUT /api/player/stop` and re-dump | record whether the stopped tile still shows the previously loaded large-art bitmap (the documented caveat: `AudioService.artBitmap` is nulled only by a fresh non-null `artUri` publish or `onDestroy()`) — expected: cleared on API >= 33 where the icon is re-resolved, possibly retained below that | none available in-sandbox: `artBitmap` lives in the Java service (`AudioService.java:361-367, 629-630`), below every Dart witness; the placeholder's null `artUri` is pinned by the shape test, which is why the capture must look at the rendered icon |
+| Large-art leg (round-2 review row 4, on the API level actually tested): play an item WITH artwork so the large icon loads, then `PUT /api/player/stop` and re-dump | the stopped tile shows **no large icon** — the art-less placeholder routes through `setMetadata`, which nulls `artBitmap` (`AudioService.java:795-801`); record the rendered result (SystemUI icon caching is the one part no app-level code controls) | the placeholder's null `artUri` is pinned by the shape test; the plugin-level `artBitmap = null` is verified against the pinned source, so only SystemUI's rendered icon remains un-witnessed |
 
 No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
 Maintenance model host-bound carve-out). Server untouched — no HTTP call
