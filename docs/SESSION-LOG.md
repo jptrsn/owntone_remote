@@ -3461,8 +3461,9 @@ stopped forwarding) and the disagreement fails *inert* — one lost key press,
 never a backgrounded server write. Dart's `Future<bool>` return states the same
 rule for the tests to pin.
 
-**Tests** (`test/rocker_foreground_test.dart` rewritten, 14 → 20 rows, all
-citing R-06/D20): every value published on `androidPlaybackInfo` after
+**Tests** (`test/rocker_foreground_test.dart` rewritten, 13 → 19 rows (measured:
+`flutter test` reports `+19` at this head; the base file declares 13), all citing
+R-06/D20): every value published on `androidPlaybackInfo` after
 `start()` is non-absolute across fresh launch + wake + foreground + background;
 the channel-injected rocker steps ±step with `same` making no server call
 (spike Finding 10 stays pinned); backgrounded / never-resumed / service-only
@@ -3481,7 +3482,7 @@ replaced with rows pinning the new mechanism.
 entry): `flutter analyze` → No issues found; `dart format --output=none
 --set-exit-if-changed .` → clean (115 files, 0 changed); `flutter test
 --exclude-tags live` → **643/643** green (baseline at the same base SHA
-`1dcaf1b` in this container: 637/637 — 637 − 14 old rows + 20 new). The APK
+`1dcaf1b` in this container: 637/637 — 637 − 13 old rows + 19 new). The APK
 build gate is CI-only here (no Android SDK in this container).
 
 **Sequencing:** branched from `develop` @ `1dcaf1b`. **#82 has NOT landed**
@@ -3499,6 +3500,7 @@ these, never the sandbox; `needs-host-tools` requested on the PR):
 | Foreground rocker up/down with the server **verified paused first** (AGENTS hard rule 1) | `GET /api/player` `volume` moves by exactly the configured R-14 step (±5 default) | channel-injected `volumeKey` press asserts `PUT /api/player/volume?step=±5` against `ScriptedAdapter`, and the R-14 rows pin ±1/±10 + read-at-press-time |
 | Backgrounded + screen-off rocker, server verified paused | server volume unchanged | never-resumed and service-only-restart tests assert zero `/api/player/volume` requests |
 | Foreground rocker while **another app holds an active absolute-volume session** | record how the keys route — this app's session no longer competes, so the winner is the other session and a press here may be lost | none (new behaviour surface; host records the observation) |
+| Foreground **hold** volume-up ~2 s, server verified paused (review round 2) | count `PUT /api/player/volume?step=` requests — expect one per `ACTION_MULTIPLE` repeat tick the platform delivers, not one per hold | none — pre-#84 the rocker went to the media session, never the Activity, so hold-to-repeat cadence for the volume keys was never measured in the sandbox; `VolumeKeys.onKeyEvent` maps one step per direction-carrying key event and ignores `getRepeatCount()` (per-`repeatCount` is the one-line change if per-event reads wrong) |
 
 No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
 Maintenance model host-bound carve-out). Server untouched — no HTTP call to

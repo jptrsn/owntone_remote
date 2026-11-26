@@ -12,11 +12,14 @@ import io.flutter.embedding.engine.FlutterEngine
 class MainActivity : AudioServiceActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        // configureFlutterEngine runs on every delegate attach — including
-        // the re-attach after a configuration change, when the engine (and
-        // therefore the plugin instance registered below) survives. Register
-        // only once per engine so a rotation cannot stack a second handler on
-        // the volume-key channel and double every rocker step.
+        // NOT load-bearing for volume correctness: FlutterEngineConnectionRegistry.add()
+        // already short-circuits on a duplicate plugin class (it logs "Attempted to
+        // register plugin … already registered" and returns without calling
+        // onAttachedToEngine), and VolumeKeys.attach() is itself idempotent, so a
+        // post-config-change re-attach could never stack a second handler on the
+        // volume-key channel. Kept so the re-attach skips the warning log and the
+        // throwaway plugin instance instead of relying on that behaviour two
+        // layers down.
         if (flutterEngine.plugins.get(OwntoneRemotePlugin::class.java) == null) {
             flutterEngine.plugins.add(OwntoneRemotePlugin())
         }

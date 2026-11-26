@@ -123,9 +123,18 @@ object VolumeKeys : MethodChannel.MethodCallHandler {
             return false
         }
         return when (event.action) {
-            // ACTION_MULTIPLE is the long-press repeat batch; treat it as one
-            // press of the same direction so a held rocker keeps stepping the
-            // server instead of leaking to the phone's stream mid-sequence.
+            // One volumeKey press per key event that carries a direction.
+            // ACTION_MULTIPLE is Android's long-press repeat batch, so a held
+            // rocker maps one server step per ACTION_MULTIPLE the platform
+            // actually delivers. How many batches a ~2 s hold produces for the
+            // VOLUME keys is NOT measured in the sandbox — pre-#84 the keys went
+            // to the media session, never to the Activity — so hold-to-repeat
+            // cadence is a host-pass row (PR BLOCKED table) rather than a claim
+            // here. getRepeatCount() is deliberately ignored: honouring it would
+            // tie the server step to the platform's repeat cadence and
+            // re-introduce the spike Finding 10 cancel-the-press failure mode if
+            // a batch were ever double-counted. Stepping per repeatCount is the
+            // one-line change if the host finds per-event stepping reads wrong.
             KeyEvent.ACTION_DOWN, KeyEvent.ACTION_MULTIPLE -> {
                 messenger.invokeMethod("volumeKey", direction)
                 forwardedKeyCode = keyCode
