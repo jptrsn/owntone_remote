@@ -154,6 +154,15 @@ class MirrorAudioHandler extends BaseAudioHandler {
   }
 
   void _onPlayerChanged() {
+    // #81: while the boot wake is pending (no server state when `start()`
+    // gave up waiting), the first state to land IS the wake moment — the
+    // wake path publishes the real state too, so it replaces the plain
+    // sync rather than racing it. No-op once the one-shot has fired, so
+    // the already-working launch path is untouched.
+    if (_started && !_woken) {
+      unawaited(_wakeMediaSession());
+      return;
+    }
     unawaited(_sync());
   }
 
@@ -242,12 +251,21 @@ class MirrorAudioHandler extends BaseAudioHandler {
 
   /// The one-shot wake described in the class docs. Skipped entirely when
   /// no server state exists yet — a disconnected app must not post a bogus
-  /// "playing" notification.
+  /// "playing" notification — and the one-shot is NOT consumed by such a
+  /// skip (#81): if `start()`'s bounded boot wait expired while the server
+  /// was still unreachable, the wake stays pending and [_onPlayerChanged]
+  /// re-attempts it when the first state lands. Consuming the flag before
+  /// the null check forfeited the wake for the life of the process, so a
+  /// slow server at launch left the session `active=false` with no
+  /// notification until a full restart. The prologue up to `_woken = true`
+  /// is synchronous, so a wake raced from `start()` and a player event can
+  /// still publish `playing: true` at most once.
   Future<void> _wakeMediaSession() async {
+    final p = _player.player;
+    if (p == null) return;
     if (_woken) return;
     _woken = true;
-    final p = _player.player;
-    if (p != null && !p.isPlaying) {
+    if (!p.isPlaying) {
       playbackState.add(
         PlaybackState(
           controls: controlsFor(p),
