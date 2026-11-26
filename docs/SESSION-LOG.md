@@ -3516,7 +3516,104 @@ acceptance criteria — Pixel 6 `25071FDF600953`, request `needs-host-tools`):
 |---|---|---|
 | `PUT /api/player/stop` (outputs deselected), dump the shade tile; then `PUT /api/player/pause`, dump again | stopped dump: tile **title text is `Stopped`** (not the last track's title — the only witness that settles the metadata question, which no Dart-side assertion can reach), artist/album lines blank, no `Next track`/`Previous track` nodes, play control present; paused dump: track title again + both nodes | the controlsFor unit rows pin the published control list per state; the handler legs pin the PUBLISHED STREAM sequence (track row live while paused → Stopped row last after stop), and the paused→stop→pause test proves the session re-publishes in both directions over a live WS notify — the plugin's null-drop sits below all Dart witnesses, which is why the capture must read the rendered title |
 | Press the tile's play while stopped; `dumpsys notification` + `dumpsys activity services` while the server stays stopped | handler log line + `GET /api/player` state change; MediaStyle record still listed, `isForeground=true` | the fake-backed test proves the published play control is wired to `PUT /api/player/play`; `processingState` stays `ready` in all three states (the ready-guard test), which is the audio_service condition for keeping the FGS/notification up |
+| Large-art residual on the API level actually tested (round-2 review row 4): play an item WITH artwork to load the large icon, then `PUT /api/player/stop` and re-dump | record whether the stopped tile still shows the previously loaded large-art bitmap (the documented caveat: `AudioService.artBitmap` is nulled only by a fresh non-null `artUri` publish or `onDestroy()`) — expected: cleared on API >= 33 where the icon is re-resolved, possibly retained below that | none available in-sandbox: `artBitmap` lives in the Java service (`AudioService.java:361-367, 629-630`), below every Dart witness; the placeholder's null `artUri` is pinned by the shape test, which is why the capture must look at the rendered icon |
 
 No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
 Maintenance model host-bound carve-out). Server untouched — no HTTP call
 to `192.168.1.13` was made by this session.
+
+## 2026-11-26 — issue #84: R-06/D20 volume control is foreground-only and app-local; the session never exposes volume (OpenHands factory)
+
+**Did:** removed the media session's volume surface and rebuilt the rocker→server
+mapping as a foreground key path.
+
+- `MirrorAudioHandler` now publishes
+  `RemoteAndroidPlaybackInfo(volumeControlType: sessionVolumeControlType /* fixed */,
+  maxVolume: 100, volume: p.volume)` in **every** app state. The
+  `volumeControlTypeFor(bool)` absolute/fixed flip is gone — `absolute` was
+  precisely what made SystemUI's media tile / output row render a slider for
+  the *server* volume and what routed the rocker to
+  `androidAdjustRemoteVolume`.
+- New path: `MainActivity.onKeyDown/onKeyUp/onKeyMultiple` → `VolumeKeys`
+  (new `android/.../VolumeKeys.kt`, channel `owntone_remote/volume_keys`) →
+  `MirrorAudioHandler.handleVolumeKey` → `PlayerController.stepVolume`
+  (`PUT /api/player/volume?step=`). `main.dart` installs it after
+  `handler.start()`. Registered with the engine/Activity lifecycle
+  (`OwntoneRemotePlugin.onAttachedToEngine/onDetachedFromEngine` +
+  `onAttachedToActivity/onDetachedFromActivity[ForConfigChanges]`) and
+  `startVolumeKeys`/`stopVolumeKeys` on the Dart side, so a process restarted
+  by the audio service with no UI cannot route a rocker press to the server.
+- Foreground is gated **twice**: the platform forwards only while an Activity
+  is attached *and* Dart has said `startForwarding` (driven by the existing
+  `_AppForegroundTracker` → `setAppForeground`), and Dart re-checks its own
+  flag in `handleVolumeKey`. The second layer is what covers the
+  foreground→background window where a key can still arrive for a window
+  Android is just deselecting — the same reason the pre-#84 code kept its
+  overrides as no-ops.
+- `androidAdjustRemoteVolume` now delegates to `handleVolumeKey` and
+  `androidSetRemoteVolume` is a no-op: with a `fixed` provider Android never
+  calls them, so they survive only as a guarded second layer rather than the
+  mechanism (they were the mechanism before).
+- `configureFlutterEngine` gained a `plugins.get(...) == null` guard: it runs
+  on *every* delegate attach (including the post-config-change re-attach, when
+  the engine and its plugin instances survive), so an unconditional `add()`
+  would stack a second handler on the new channel and double every rocker step.
+- Non-goals held: `controlsFor`/`playbackStateFor` and the one-shot wake
+  untouched, no `deactivateMediaSession`/`stopForeground` call, the NowPlaying
+  0–100 slider and R-14 step semantics unchanged, no new `uses-permission`,
+  receiver or service in `AndroidManifest.xml`, no audio_service fork or new
+  dependency.
+
+**Why the take-it-or-leave-it decision lives in Kotlin, not Dart:**
+`MethodChannel.invokeMethod` is asynchronous but Android key consumption must
+be answered synchronously from `onKeyDown`. So `VolumeKeys` decides from its own
+two gates and Dart independently refuses to touch the server. They can disagree
+in exactly one window (Dart has cleared its flag, the platform has not yet
+stopped forwarding) and the disagreement fails *inert* — one lost key press,
+never a backgrounded server write. Dart's `Future<bool>` return states the same
+rule for the tests to pin.
+
+**Tests** (`test/rocker_foreground_test.dart` rewritten, 13 → 19 rows (measured:
+`flutter test` reports `+19` at this head; the base file declares 13), all citing
+R-06/D20): every value published on `androidPlaybackInfo` after
+`start()` is non-absolute across fresh launch + wake + foreground + background;
+the channel-injected rocker steps ±step with `same` making no server call
+(spike Finding 10 stays pinned); backgrounded / never-resumed / service-only
+restart make zero volume requests; register→unregister leaves a delivered key a
+no-op; `androidSetRemoteVolume` never moves the server in either app state;
+R-14 rows unchanged in intent. **Mutation-verified** (from a `/tmp` copy,
+md5-checked back, never `git checkout` — AGENTS trap list): publishing
+`absolute` reddens 4 rows, dropping the `_appForeground` guard 5, mapping
+`same` to a step 2 (incl. `rocker_step_test`), making `androidSetRemoteVolume`
+call the server 1, dropping the not-started guard 1. No assertion was weakened
+to stay green — the three pre-#84 rows that pinned the absolute/fixed flip were
+replaced with rows pinning the new mechanism.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7 at
+`/tmp/fl/flutter`, arm64 dart-sdk + python `unzip` shim per the 2026-11-24
+entry): `flutter analyze` → No issues found; `dart format --output=none
+--set-exit-if-changed .` → clean (115 files, 0 changed); `flutter test
+--exclude-tags live` → **643/643** green (baseline at the same base SHA
+`1dcaf1b` in this container: 637/637 — 637 − 13 old rows + 19 new). The APK
+build gate is CI-only here (no Android SDK in this container).
+
+**Sequencing:** branched from `develop` @ `1dcaf1b`. **#82 has NOT landed**
+(no PR open for it), so per the maintainer's 2026-11-25 note #82's pre/post
+`dumpsys media_session` equivalence criterion must be re-derived against
+post-#84 dumps rather than the pre-#84 citations in that issue.
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (device rows — the host session runs
+these, never the sandbox; `needs-host-tools` requested on the PR):
+
+| Action | Expected observation | Substitute proof |
+|---|---|---|
+| Connect, foreground, open the shade media tile / output row ("This phone" + output settings) | no volume slider rendered; transport + progress remain | unit test: every `androidPlaybackInfo` value after `start()` is non-absolute, and `sessionVolumeControlType` is the single `fixed` constant |
+| `adb shell dumpsys media_session` in each of: fresh launch, during/after the one-shot wake, foregrounded, backgrounded, service-only restart | this app's session `volumeType`/`controlType` never `ABSOLUTE` | same test + `_publishPlaybackInfo` is the only publisher and reads the constant |
+| Foreground rocker up/down with the server **verified paused first** (AGENTS hard rule 1) | `GET /api/player` `volume` moves by exactly the configured R-14 step (±5 default) | channel-injected `volumeKey` press asserts `PUT /api/player/volume?step=±5` against `ScriptedAdapter`, and the R-14 rows pin ±1/±10 + read-at-press-time |
+| Backgrounded + screen-off rocker, server verified paused | server volume unchanged | never-resumed and service-only-restart tests assert zero `/api/player/volume` requests |
+| Foreground rocker while **another app holds an active absolute-volume session** | record how the keys route — this app's session no longer competes, so the winner is the other session and a press here may be lost | none (new behaviour surface; host records the observation) |
+| Foreground **hold** volume-up ~2 s, server verified paused (review round 2) | count `PUT /api/player/volume?step=` requests — expect one per `ACTION_MULTIPLE` repeat tick the platform delivers, not one per hold | none — pre-#84 the rocker went to the media session, never the Activity, so hold-to-repeat cadence for the volume keys was never measured in the sandbox; `VolumeKeys.onKeyEvent` maps one step per direction-carrying key event and ignores `getRepeatCount()` (per-`repeatCount` is the one-line change if per-event reads wrong) |
+
+No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
+Maintenance model host-bound carve-out). Server untouched — no HTTP call to
+`192.168.1.13` was made by this session.

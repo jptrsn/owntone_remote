@@ -521,9 +521,12 @@ screen while idle (then titled `Connect`, no back/cancel).
   reads the store at keypress time (SharedPreferences is an in-memory
   cache). Per-press effect: `raise → +step`, `lower → −step` via
   `PUT /api/player/volume?step=`.
-- **Foreground-only** (D20, unchanged): rocker → server volume happens
-  only while the app is foregrounded; backgrounded the session is
-  `fixed` and the handler's volume paths stay inert — at any step.
+- **Foreground-only** (D20, mechanism reworked by #84): rocker → server
+  volume happens only while the app is foregrounded, and only through the
+  Activity key path (`MainActivity.onKeyDown` → `owntone_remote/volume_keys`
+  → `MirrorAudioHandler.handleVolumeKey`). The session is `fixed` in **every**
+  app state, so it never receives a volume key; backgrounded, the handler's
+  volume paths stay inert — at any step.
 
 ### States
 

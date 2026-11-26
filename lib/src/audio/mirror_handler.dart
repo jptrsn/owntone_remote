@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/services.dart';
 
 import '../core/artwork_probe.dart';
 import '../player/player_controller.dart';
@@ -110,15 +111,30 @@ int? rockerStepFor(AndroidVolumeDirection direction, {required int step}) {
   return null;
 }
 
-/// The session's volume-control type (D20): server-volume mapping only
-/// while the app is foregrounded. `absolute` routes rocker presses to the
-/// session; `fixed` takes the session out of volume-key selection so a
-/// backgrounded app leaves the phone's volume keys to their normal
-/// behaviour — even while the server is playing.
-AndroidVolumeControlType volumeControlTypeFor(bool appForeground) =>
-    appForeground
-    ? AndroidVolumeControlType.absolute
-    : AndroidVolumeControlType.fixed;
+/// The AOSP volume-key direction names the Kotlin hook forwards on the
+/// `owntone_remote/volume_keys` channel (issue #84). `null` for anything
+/// else — an unrecognised name must never reach the server.
+AndroidVolumeDirection? volumeDirectionForName(String name) => switch (name) {
+  'raise' => AndroidVolumeDirection.raise,
+  'lower' => AndroidVolumeDirection.lower,
+  'same' => AndroidVolumeDirection.same,
+  _ => null,
+};
+
+/// The session's volume-control type (D20, reworked by issue #84): **always**
+/// `fixed`. The session must never expose a volume control — not foregrounded
+/// and not backgrounded.
+///
+/// `absolute` was what made SystemUI's media tile / output row render a
+/// slider showing the *server* volume, and what routed the hardware rocker to
+/// [MirrorAudioHandler.androidAdjustRemoteVolume]. There is no audio_service
+/// configuration that keeps that mapping while hiding the slider
+/// (`AudioService.setPlaybackInfo` only rebuilds the `VolumeProviderCompat`
+/// when type/maxVolume change), so the rocker→server path is app-local
+/// instead: the Activity's `onKeyDown` hook → the volume-key channel →
+/// [MirrorAudioHandler.handleVolumeKey]. `fixed` takes the session out of
+/// volume-key selection entirely, in every app state.
+const sessionVolumeControlType = AndroidVolumeControlType.fixed;
 
 /// The playback-state mirror. [positionMs] overrides the server progress
 /// (the 1 s extrapolation ticker feeds it while the server plays).
@@ -167,15 +183,109 @@ class MirrorAudioHandler extends BaseAudioHandler {
   /// D20: whether the app is foregrounded. Conservative default — a
   /// service-restarted process (no UI) is backgrounded until the first
   /// `AppLifecycleState.resumed`.
+  ///
+  /// Since issue #84 this gates the *foreground key path* only: the media
+  /// session is published `fixed` in every state, so the session itself can
+  /// never receive a volume key.
   bool _appForeground = false;
 
-  /// Pushed from main() on every app lifecycle transition. Re-publishes the
-  /// playback info immediately so the session's volume-control type follows
-  /// the app without waiting for the next player change.
+  /// Pushed from main() on every app lifecycle transition.
+  ///
+  /// It used to re-publish the playback info so the session's volume-control
+  /// type could follow the app (`absolute` ↔ `fixed`, the old D20 shape). The
+  /// type is now constant, so instead this gates the foreground key path: the
+  /// Activity-side hook only forwards keys while the app is resumed, which is
+  /// what keeps a backgrounded / screen-off / service-only app from touching
+  /// the server volume at all (R-06).
   void setAppForeground(bool foreground) {
     final changed = _appForeground != foreground;
     _appForeground = foreground;
-    if (changed && _started) unawaited(_publishPlaybackInfo());
+    if (changed && _volumeKeysStarted) {
+      unawaited(_setPlatformForwarding(foreground));
+    }
+  }
+
+  // -- foreground volume key path (R-06/D20, issue #84) ----------------------
+
+  /// Kotlin side: `VolumeKeys` (fed by `MainActivity.onKeyDown`/`onKeyUp`/
+  /// `onKeyMultiple`). The platform forwards a key only while an Activity is
+  /// attached *and* this side has reported the app resumed via
+  /// `startForwarding`, so a backgrounded app never receives one. The
+  /// session's own remote-volume provider is deliberately `fixed`, so Android
+  /// never routes those keys to the media session (see
+  /// [sessionVolumeControlType]).
+  static const volumeKeyChannel = MethodChannel('owntone_remote/volume_keys');
+
+  bool _volumeKeysStarted = false;
+
+  /// Whether the foreground key path is installed. Exposed for tests and for
+  /// main()'s degraded-audio path (an app without a handler must leave the
+  /// phone's volume keys entirely to the system).
+  bool get volumeKeysStarted => _volumeKeysStarted;
+
+  /// Install the foreground key path: listen on [volumeKeyChannel] and ask
+  /// the platform to forward volume keys while the app is resumed.
+  /// Idempotent. The platform is only told to forward once Dart is actually
+  /// listening, so a failed `AudioService.init` (or a handler that was never
+  /// created) can never leave the phone's volume keys swallowed.
+  Future<void> startVolumeKeys() async {
+    if (_volumeKeysStarted) return;
+    _volumeKeysStarted = true;
+    volumeKeyChannel.setMethodCallHandler(_onVolumeKeyCall);
+    await _setPlatformForwarding(_appForeground);
+  }
+
+  /// Tear the foreground key path down — the counterpart of
+  /// [startVolumeKeys], mirroring the Kotlin plugin's detach cleanup. A key
+  /// delivered afterwards is a no-op that the system keeps handling.
+  Future<void> stopVolumeKeys() async {
+    if (!_volumeKeysStarted) return;
+    _volumeKeysStarted = false;
+    await _setPlatformForwarding(false);
+    volumeKeyChannel.setMethodCallHandler(null);
+  }
+
+  Future<void> _setPlatformForwarding(bool forwarding) async {
+    try {
+      await volumeKeyChannel.invokeMethod<void>(
+        forwarding ? 'startForwarding' : 'stopForwarding',
+      );
+    } on MissingPluginException {
+      // No Android side (unit tests, another runner): the path stays a
+      // Dart-side no-op, which is the safe direction.
+    } on PlatformException {
+      // Same treatment; the keys stay with the phone.
+    }
+  }
+
+  Future<bool> _onVolumeKeyCall(MethodCall call) async {
+    if (call.method != 'volumeKey') return false;
+    final name = call.arguments;
+    if (name is! String) return false;
+    final direction = volumeDirectionForName(name);
+    if (direction == null) return false;
+    return handleVolumeKey(direction);
+  }
+
+  /// A forwarded volume key (R-06/D20). Returns whether *this app took the
+  /// key* — `true` only when it moved the server. The key-release marker and
+  /// anything delivered while the app is not resumed answer `false`.
+  ///
+  /// The Kotlin side cannot wait for this answer (`invokeMethod` is async
+  /// while Android key consumption is synchronous), so it decides from its own
+  /// gates; this return value is the Dart-side statement of the same rule and
+  /// is what the tests pin.
+  ///
+  /// The foreground check is the second layer: with no resumed Activity the
+  /// hook is not forwarding at all, but a key can still arrive for the
+  /// window Android is in the middle of deselecting, and that must never move
+  /// the server's volume.
+  Future<bool> handleVolumeKey(AndroidVolumeDirection direction) async {
+    if (!_appForeground || !_volumeKeysStarted) return false;
+    final step = rockerStepFor(direction, step: rockerStep);
+    if (step == null) return false;
+    await _player.stepVolume(step);
+    return true;
   }
 
   Future<void> start() async {
@@ -261,15 +371,19 @@ class MirrorAudioHandler extends BaseAudioHandler {
     }
   }
 
-  /// Remote playback info: this routes volume-rocker presses to
-  /// [androidAdjustRemoteVolume] while foregrounded (D20: `fixed` type
-  /// while backgrounded keeps the keys on the system streams).
+  /// The session's (always `fixed`) remote playback info. Publishing the type
+  /// as a constant — never `absolute` — is what keeps SystemUI's media tile /
+  /// output row from rendering a volume slider for the *server* volume, and
+  /// keeps the session out of the volume-key selection in every app state
+  /// (issue #84). `volume` still mirrors the server so the provider stays
+  /// consistent with the real state; nothing renders it while the type is
+  /// `fixed`.
   Future<void> _publishPlaybackInfo() async {
     final p = _player.player;
     if (p == null) return;
     androidPlaybackInfo.add(
       RemoteAndroidPlaybackInfo(
-        volumeControlType: volumeControlTypeFor(_appForeground),
+        volumeControlType: sessionVolumeControlType,
         maxVolume: 100,
         volume: p.volume,
       ),
@@ -356,23 +470,17 @@ class MirrorAudioHandler extends BaseAudioHandler {
         AudioServiceRepeatMode.one => Repeat.single,
       });
 
-  // Volume rocker (D20, R-06): the session's remote volume provider routes
-  // rocker presses here while foregrounded (`absolute` volume-control type).
-  // Backgrounded, the session is published `fixed`, so Android leaves the
-  // keys to the system streams — and these overrides stay no-ops as a
-  // second layer against the transition window, where a key event could
-  // still arrive for a session the system was just deselecting.
+  // Volume rocker (D20, R-06): since issue #84 the media session is always
+  // published `fixed`, so Android never routes rocker presses here — the
+  // foreground key path ([handleVolumeKey]) owns that mapping. These overrides
+  // stay as a second layer: if the platform ever does deliver a remote-volume
+  // call (a future audio_service change re-advertising a volume provider, for
+  // instance), it must not move the server while the app is backgrounded, and
+  // must not move it at all for the absolute-index form the UI no longer has.
   @override
-  Future<void> androidSetRemoteVolume(int volumeIndex) {
-    if (!_appForeground) return Future.value();
-    return _player.setVolume(volumeIndex);
-  }
+  Future<void> androidSetRemoteVolume(int volumeIndex) => Future.value();
 
   @override
-  Future<void> androidAdjustRemoteVolume(AndroidVolumeDirection direction) {
-    if (!_appForeground) return Future.value();
-    final step = rockerStepFor(direction, step: rockerStep);
-    if (step == null) return Future.value();
-    return _player.stepVolume(step);
-  }
+  Future<void> androidAdjustRemoteVolume(AndroidVolumeDirection direction) =>
+      handleVolumeKey(direction).then((_) {});
 }
