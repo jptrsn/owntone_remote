@@ -24,15 +24,19 @@ import 'fakes/fake_ws_channel.dart';
 ///
 /// The suite drives `handler.playbackState` over a real [PlayerController] +
 /// [FakeWsChannel] (the harness shape of `mirror_artwork_adversarial_test.dart`)
-/// and pins the three clauses:
+/// and pins the five clauses:
 ///  1. delayed first state → NO wake during the boot wait, wake published
 ///     exactly once when the first state lands, followed by the real state;
 ///  2. normal launch → exactly one wake, none afterwards while paused;
 ///  3. server never answers → `playing: true` is NEVER published (the fix
-///     must not "solve" the bug by waking unconditionally).
+///     must not "solve" the bug by waking unconditionally);
+///  4-5. already-playing launch, normal and after a forfeited boot wait →
+///     no synthetic wake (the inherited `!p.isPlaying` guard), and the
+///     server's own `playing: true` slice — the message audio_service's
+///     native `wasPlaying` edge acts on — still reaches the session.
 ///
-/// Tests 1 and 3 each live-out `start()`'s real 10 s boot wait (the wait is
-/// a non-goal to change per the issue); keep the per-test timeout in mind
+/// Tests 1, 3 and 5 each live-out `start()`'s real 10 s boot wait (the wait
+/// is a non-goal to change per the issue); keep the per-test timeout in mind
 /// before adding more of them.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -245,6 +249,123 @@ void main() {
             'notification (class doc / _wakeMediaSession doc)',
       );
     }, timeout: const Timeout(Duration(seconds: 60)));
+
+    // ---------------------------------------------------------------------
+    // Round-1 inline note (mirror_handler.dart:268): the already-playing
+    // cold start, the one launch the three wake tests above do not reach.
+    //
+    // The note measured the Dart publish sequence correctly (`false/idle`
+    // seed replay → `true/ready` → `true/ready`, no synthetic wake) but
+    // inferred no notification from it. The edge that audio_service acts on
+    // is NATIVE: `AudioService.java:280` initialises `playing = false`, and
+    // `setState` (l.523/559) fires `enterPlayingState()` — `setActive(true)`
+    // + `internalStartForeground()` — on the first message carrying
+    // `playing: true`. The server's own playing state IS that message, so
+    // the `!p.isPlaying` guard costs only the synthetic publish, which would
+    // be redundant here. These two tests pin that: every `playing:true`
+    // reaching the session is the REAL slice (updatePosition = server
+    // progress), i.e. the native false→true edge is delivered.
+    // ---------------------------------------------------------------------
+
+    test('already-playing launch (state present before start()): no synthetic '
+        'wake is published, and the real playing:true slice reaches the '
+        'session — the native false→true edge audio_service needs (R-07, '
+        'round-1 inline note)', () async {
+      server.wireState = 'play';
+      server.playerAwake = true;
+      channels.single.serverSend('{"notify":["player"]}');
+      await pump(200);
+      expect(player.player?.isPlaying, isTrue);
+
+      final handler = await buildHandler();
+      final published = <PlaybackState>[];
+      final sub = handler.playbackState.listen(published.add);
+      addTearDown(sub.cancel);
+
+      await handler.start();
+      await pump(200);
+
+      final playing = published.where((s) => s.playing).toList();
+      expect(
+        playing,
+        isNotEmpty,
+        reason:
+            'a playing server must put playing:true on the session — '
+            'that publish, not a synthetic wake, is what triggers '
+            'enterPlayingState() natively',
+      );
+      for (final s in playing) {
+        expect(
+          s.updatePosition,
+          const Duration(milliseconds: 10),
+          reason:
+              'every playing:true is the real slice (server progress); a '
+              'synthetic wake would carry Duration.zero — the guard skips '
+              'it because it would be redundant, not because the edge is '
+              'missing',
+        );
+        expect(s.processingState, AudioProcessingState.ready);
+      }
+      expect(
+        published.last.playing,
+        isTrue,
+        reason: 'the session ends mirrored to the playing server',
+      );
+      expect(
+        published.last.controls,
+        [
+          MediaControl.pause,
+          MediaControl.skipToNext,
+          MediaControl.skipToPrevious,
+        ],
+        reason:
+            'playing controls — audio_service only builds a '
+            'notification from a state with controls + metadata',
+      );
+      expect(handler.mediaItem.value?.title, 'Delayed');
+    }, timeout: const Timeout(Duration(seconds: 60)));
+
+    test('already-playing launch with the boot wait forfeited (server asleep '
+        'through the 10 s window, PLAYING when it wakes): the pending wake '
+        'consumes its flag without publishing (no synthetic state for a '
+        'playing server) and the real playing:true slice still lands (R-07, '
+        'round-1 inline note)', () async {
+      server.wireState = 'play';
+      final handler = await buildHandler();
+      final published = <PlaybackState>[];
+      final sub = handler.playbackState.listen(published.add);
+      addTearDown(sub.cancel);
+
+      final started = handler.start();
+      await pump(12_000); // outlives the 10 s boot wait
+      await started;
+      expect(
+        published.where((s) => s.playing),
+        isEmpty,
+        reason: 'still disconnected through the boot wait — nothing wakes',
+      );
+
+      server.playerAwake = true;
+      channels.single.serverSend('{"notify":["player"]}');
+      await pump(300);
+
+      final playing = published.where((s) => s.playing).toList();
+      expect(
+        playing,
+        isNotEmpty,
+        reason: 'the deferred path must still deliver the playing slice',
+      );
+      for (final s in playing) {
+        expect(
+          s.updatePosition,
+          const Duration(milliseconds: 10),
+          reason:
+              'the real slice only — the wake consumed its flag '
+              'without publishing, exactly as the guard intends',
+        );
+      }
+      expect(published.last.playing, isTrue);
+    }, timeout: const Timeout(Duration(seconds: 90)));
   });
 }
 
@@ -256,6 +377,11 @@ class WakeServer {
   WakeServer();
 
   bool playerAwake = false;
+
+  /// The `/api/player` wire state once awake: `pause` for the wake-path
+  /// tests, `play` for the already-playing launches (round-1 inline note
+  /// on `mirror_handler.dart:268` — the inherited `!p.isPlaying` guard).
+  String wireState = 'pause';
 
   /// How many `/api/player` requests answered (for the never-awake test's
   /// liveness assertion).
@@ -277,7 +403,7 @@ class WakeServer {
           }
           playerAnswers++;
           return jsonResponse(o, {
-            'state': 'pause',
+            'state': wireState,
             'repeat': 'off',
             'consume': false,
             'shuffle': false,

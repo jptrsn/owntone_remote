@@ -3469,3 +3469,29 @@ no HTTP call to `192.168.1.13` was made by this session):
 |---|---|---|
 | Cold-start the debug app on the Pixel 6 (`25071FDF600953`) with the server unreachable/slow enough to trip the 5 s Dio `connectTimeout`, then let it answer; server paused/stopped (no supervised playback needed — AGENTS hard rule 1) | `dumpsys media_session \| grep -A6 owntone_remote` shows `active=true` with a mirrored state once the server replies, and the ongoing notification appears **without restarting the process** | the delayed-state regression test reproduces the exact wire shape (`DioException [connection timeout]` through the whole boot wait, first `player` state via a WS `notify`), asserting `playing:true` publishes exactly once — the false→true transition audio_service's `enterPlayingState` needs to create the FGS/notification — followed by the real mirrored state |
 | Same cold start after the fix, then further paused-time server events | no second notification flap; state stays mirrored | the two single-wake tests pin that paused-time player events never re-publish `playing:true` |
+
+**Review round 1 (PR #88, review 6067843133 @ `c405ab38`) — response:** the
+reviewer found no code defect; the blocker is the two host-owned device rows
+(already carried as `BLOCKED-PENDING-HOST-VERIFICATION`, `needs-host-tools`
+requested by comment — a sandboxed run must not run them per AGENTS §
+Maintenance model + `.agents/skills/device-bound-work`). The inline note on
+`mirror_handler.dart:268` (already-playing launch, inherited `!p.isPlaying`
+guard) prompted two additions: **(a)** the suite now pins the
+already-playing launch, normal and after a forfeited boot wait (tests 4–5,
+`test/mirror_wake_test.dart`; mutation-verified — dropping the guard reddens
+both with the synthetic wake's `updatePosition: 0:00:00.000000` vs the real
+slice's `0:00:00.010000`), and **(b)** a source-check correction: the note's
+Dart-side measurement is right but its no-notification inference is not —
+`audio_service 0.18.19`'s edge is evaluated **natively** (`AudioService.java:280`
+inits `playing = false`; `:523`/`:559` fire `enterPlayingState()` on the first
+message carrying `playing: true`), and every `playbackState` emission is
+forwarded verbatim (`audio_service.dart:1125-1131`, `BaseAudioHandler.playbackState`
+is `BehaviorSubject.seeded(PlaybackState())` at `:2982-2983`). So on the
+already-playing launch the server's own `playing:true` slice IS the false→true
+message — the guard costs only a redundant synthetic publish, not the edge.
+The device pass should observe the notification on the already-playing cold
+start too (third BLOCKED row in the PR body); if the on-device reality
+contradicts the source-chain analysis, the guard is the suspect and belongs
+in a follow-up issue rather than being changed blind here (it is inherited
+from base, pre-#81, and #82's non-goals keep active-state work out of scope).
+Suite now **5/5**; full gates re-run below.
