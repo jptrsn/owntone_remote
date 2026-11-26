@@ -177,25 +177,72 @@ void main() {
         clickLogMessage(
           MediaButton.media,
           appForeground: false,
-          serverPlaying: false,
+          mirroredPlaying: false,
         ),
-        'click(media) appForeground=false serverPlaying=false',
+        'click(media) appForeground=false mirroredPlaying=false',
       );
       expect(
         clickLogMessage(
           MediaButton.next,
           appForeground: true,
-          serverPlaying: true,
+          mirroredPlaying: true,
         ),
-        'click(next) appForeground=true serverPlaying=true',
+        'click(next) appForeground=true mirroredPlaying=true',
       );
       expect(
         clickLogMessage(
           MediaButton.previous,
           appForeground: false,
-          serverPlaying: null,
+          mirroredPlaying: null,
         ),
-        'click(previous) appForeground=false serverPlaying=null',
+        'click(previous) appForeground=false mirroredPlaying=null',
+      );
+    });
+
+    test('the playing field is named `mirroredPlaying`, not `serverPlaying` '
+        '— during the one-shot _wakeMediaSession window playbackState carries '
+        'the wake\'s synthetic playing:true for a server that is actually '
+        'paused, and a capture line must not read as proof the server played '
+        '(PR #89 review)', () {
+      expect(
+        clickLogMessage(
+          MediaButton.media,
+          appForeground: false,
+          mirroredPlaying: true,
+        ),
+        isNot(contains('serverPlaying')),
+      );
+    });
+  });
+
+  group('mirroredPlaying is the value click() routes on (PR #89 review):', () {
+    test('it is read from playbackState, so it can never disagree with the '
+        'media-button routing decision — a wake-window synthetic true is '
+        'logged AND routed to pause() against the paused server (pre-existing '
+        'audio_service behaviour; the line only names it honestly)', () async {
+      // The synthetic value _wakeMediaSession publishes for a PAUSED server.
+      // Injected through the handler's own public playbackState stream — the
+      // wake's own value is consumed by the real _sync that follows it, so a
+      // deterministic witness must set it directly.
+      handler.playbackState.add(
+        PlaybackState(
+          controls: controlsFor(player.player!),
+          processingState: AudioProcessingState.ready,
+          playing: true,
+        ),
+      );
+      expect(server.state, 'pause');
+      expect(handler.playbackState.value.playing, isTrue);
+
+      await handler.click(MediaButton.media);
+
+      // Routed on the mirrored value: pause(), not play().
+      expect(server.state, 'pause');
+      expect(playerPuts(), contains('PUT /api/player/pause'));
+      // And the line reports the same value the routing used.
+      expect(
+        output.matching('click(media)').single,
+        'click(media) appForeground=false mirroredPlaying=true',
       );
     });
   });
@@ -208,7 +255,7 @@ void main() {
       expect(output.matching('click(media)'), hasLength(1));
       expect(
         output.matching('click(media)').single,
-        'click(media) appForeground=false serverPlaying=false',
+        'click(media) appForeground=false mirroredPlaying=false',
       );
     });
 
@@ -218,7 +265,7 @@ void main() {
       await handler.click(MediaButton.next);
       expect(
         output.matching('click(next)').single,
-        'click(next) appForeground=true serverPlaying=false',
+        'click(next) appForeground=true mirroredPlaying=false',
       );
     });
 
@@ -227,7 +274,7 @@ void main() {
       await handler.click();
       expect(
         output.matching('click(').single,
-        'click(media) appForeground=false serverPlaying=false',
+        'click(media) appForeground=false mirroredPlaying=false',
       );
     });
   });
@@ -254,7 +301,7 @@ void main() {
       expect(server.state, 'pause');
       expect(
         output.matching('click(media)').single,
-        'click(media) appForeground=false serverPlaying=true',
+        'click(media) appForeground=false mirroredPlaying=true',
       );
     });
 
@@ -284,7 +331,7 @@ void main() {
       await handler.click(MediaButton.next); // must not throw
       expect(
         output.matching('click(next)').single,
-        'click(next) appForeground=false serverPlaying=false',
+        'click(next) appForeground=false mirroredPlaying=false',
       );
 
       // Not wedged: the next key still logs and still reaches the server.
@@ -304,7 +351,7 @@ void main() {
       expect(playerPuts(), hasLength(putsBefore));
       expect(
         output.matching('click(media)').single,
-        'click(media) appForeground=false serverPlaying=false',
+        'click(media) appForeground=false mirroredPlaying=false',
       );
     });
   });

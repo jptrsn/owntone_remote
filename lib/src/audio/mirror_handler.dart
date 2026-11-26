@@ -81,18 +81,27 @@ AndroidVolumeControlType volumeControlTypeFor(bool appForeground) =>
     : AndroidVolumeControlType.fixed;
 
 /// The #82 `click()` observability line (R-04/R-07): names the arriving
-/// [MediaButton], whether the app is foregrounded, and the mirrored server
-/// playing state. Kept a free function so the exact line shape is
-/// unit-testable without an audio_service platform
+/// [MediaButton], whether the app is foregrounded, and the playing state the
+/// session is currently mirroring. Kept a free function so the exact line
+/// shape is unit-testable without an audio_service platform
 /// (test/mirror_click_log_test.dart) — the handler just feeds it its own
 /// values and passes it to the logger.
+///
+/// [mirroredPlaying] is deliberately named for the **mirrored** value rather
+/// than "server": it is `playbackState`'s current value — the same one
+/// [BaseAudioHandler.click] routes on, so the line can never disagree with
+/// the routing decision — and during the one-shot `_wakeMediaSession` window
+/// that value is the wake's synthetic `playing: true` for a server that is
+/// actually paused. A `mirroredPlaying=true` line in a capture is therefore
+/// NOT proof the server was playing; read the state from
+/// `GET /api/player`, or check the line is not inside the wake window.
 String clickLogMessage(
   MediaButton button, {
   required bool appForeground,
-  bool? serverPlaying,
+  bool? mirroredPlaying,
 }) =>
     'click(${button.name}) appForeground=$appForeground '
-    'serverPlaying=$serverPlaying';
+    'mirroredPlaying=$mirroredPlaying';
 
 /// The playback-state mirror. [positionMs] overrides the server progress
 /// (the 1 s extrapolation ticker feeds it while the server plays).
@@ -305,13 +314,25 @@ class MirrorAudioHandler extends BaseAudioHandler {
   /// [PlayerController] call (which swallows its own errors, so a dead
   /// server logs the arrival and completes normally: nothing here adds an
   /// unawaited or rethrowing path).
+  ///
+  /// DEBUG-BUILD-ONLY WITNESS: the injected app logger
+  /// (`lib/main.dart`'s `_logger`) uses `logger`'s default
+  /// `DevelopmentFilter`, whose `shouldLog` only fires inside an `assert`, so
+  /// with asserts off (`flutter build apk --release` — what `release.sh`
+  /// publishes and Obtainium installs) this line does not exist. Any capture
+  /// for owntone-sync#11 must therefore run on a **debug** build; the absence
+  /// of a line in a release build says nothing about key delivery. Kept at
+  /// `Level.info` on the maintainer's accepted `ConnectionController` logger
+  /// shape rather than promoted to `ProductionFilter`/`Level.warning`: the
+  /// diagnostic is for harness sessions on debug builds, and release log
+  /// volume stays as it was.
   @override
   Future<void> click([MediaButton button = MediaButton.media]) {
     _logger.i(
       clickLogMessage(
         button,
         appForeground: _appForeground,
-        serverPlaying: playbackState.hasValue
+        mirroredPlaying: playbackState.hasValue
             ? playbackState.value.playing
             : null,
       ),

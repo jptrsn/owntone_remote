@@ -3462,3 +3462,45 @@ requested — see the PR body's rows for action → expected observation →
 substitute proof). No `adb`, AVD, Pixel 6, ESP32 harness, or supervised-audio
 step was attempted (AGENTS § host-bound carve-out); server untouched — no
 HTTP call to `192.168.1.13` was made by this session.
+
+## 2026-11-26 — #82 PR #89 review round 1: the log line now names itself honestly (OpenHands factory)
+
+**Did:** addressed both inline findings from the reviewer's `a971e856` pass
+(both non-blocking, both about the *fidelity of the witness this unit exists
+to provide*):
+
+1. `serverPlaying=` → **`mirroredPlaying=`**. The value is `playbackState`'s
+   — the same one `BaseAudioHandler.click` routes on, which is why reading it
+   there is right — but during the one-shot `_wakeMediaSession` window it is
+   the wake's synthetic `playing: true` for a paused server, and a
+   `serverPlaying=true` line in a future #11 capture would read as proof the
+   server was playing. Doc comment on `clickLogMessage` now says so.
+2. A **DEBUG-BUILD-ONLY** note at the `_logger.i` call: the injected app
+   logger is `logger` 2.8.0's default `DevelopmentFilter`, whose `shouldLog`
+   fires only inside an `assert`, so the line does not exist in a
+   `--release` build — and `release.sh` publishes
+   `flutter build apk --release --split-per-abi` (what Obtainium installs).
+   The host pass must capture on a debug build; absence in release says
+   nothing about key delivery.
+
+**Why documentation and not `ProductionFilter`/`Level.warning`:** the
+reviewer's own proportionate option, and the alternative spends the one
+signal this app has on per-key chatter in a shipping release build to serve
+a diagnostic that only a harness session reads. Kept on the maintainer's
+accepted `ConnectionController` logger shape.
+
+**New tests (2, suite 646 → 648):** the pure fn must never emit
+`serverPlaying` again; and a deterministic witness that `mirroredPlaying` is
+read from `playbackState`, not re-derived — inject the wake's synthetic
+`playing: true`, then assert `click(media)` logs `mirroredPlaying=true` AND
+routes to `PUT /api/player/pause` against the paused server. Mutation-proof
+three ways (throwaway copy + md5 check-back, never `git checkout` on
+tracked state): read the field from `PlayerController` instead of
+`playbackState` → the fidelity test alone goes red; swallow `super.click` →
+5 red; delete the `_logger.i` call → 10 red.
+
+**Gates:** `flutter analyze` → No issues found; `dart format
+--output=none --set-exit-if-changed .` → clean (116 files); `flutter test
+--exclude-tags live` → **648/648**. The device-bound rows are unchanged and
+still `BLOCKED-PENDING-HOST-VERIFICATION` — this round added no on-device
+evidence, only the debug-build requirement the host pass now has to record.
