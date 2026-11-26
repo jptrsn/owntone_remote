@@ -43,6 +43,10 @@ class OwntoneRemotePlugin :
         permChannel = MethodChannel(messenger, CHANNEL_PERMISSIONS).also {
             it.setMethodCallHandler(this)
         }
+        // R-06/D20 (issue #84): the foreground volume-key path. Lives on its
+        // own object because MainActivity's onKeyDown hooks it directly
+        // rather than through a listener interface the embedding API offers.
+        VolumeKeys.attach(messenger)
         // Call-state listening needs READ_PHONE_STATE (runtime), so it is
         // deferred until the permission is granted (see
         // ensureCallListening, called from the permission flow).
@@ -155,6 +159,11 @@ class OwntoneRemotePlugin :
         callChannel = null
         permChannel?.setMethodCallHandler(null)
         permChannel = null
+        // A process restarted by the audio service has no Activity and no
+        // engine-side hook: tearing the channel down here means such a
+        // process cannot route a rocker press to the server even if Dart
+        // still held a stale handler reference.
+        VolumeKeys.detach()
     }
 
     private val permissionResultListener =
@@ -181,21 +190,28 @@ class OwntoneRemotePlugin :
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activityBinding = binding
         binding.addRequestPermissionsResultListener(permissionResultListener)
+        VolumeKeys.onActivityAttached()
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
         activityBinding?.removeRequestPermissionsResultListener(permissionResultListener)
         activityBinding = null
+        VolumeKeys.onActivityDetached()
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         activityBinding = binding
         binding.addRequestPermissionsResultListener(permissionResultListener)
+        VolumeKeys.onActivityAttached()
     }
 
     override fun onDetachedFromActivity() {
         activityBinding?.removeRequestPermissionsResultListener(permissionResultListener)
         activityBinding = null
+        // The Activity is gone but the process may live on as the bound audio
+        // service (R-07). With no UI there is no foreground, so the rocker
+        // must be the phone's again (R-06).
+        VolumeKeys.onActivityDetached()
     }
 
     companion object {
