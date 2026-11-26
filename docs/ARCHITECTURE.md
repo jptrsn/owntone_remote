@@ -181,9 +181,15 @@ string-vs-int id types, `uri` fields) live in `mappers.dart`.
   media session exists and controls remote playback. Fallback if Android
   16 rejects it: `dataSync` has a 6 h limit (unacceptable) → Kotlin+Media3
   fallback (PLAN §11).
-- Remote volume: publish `RemoteAndroidPlaybackInfo(max: 100, current: v)`;
-  implement `androidSetRemoteVolume` / `androidAdjustRemoteVolume` →
-  `MusicProvider.setMasterVolume/adjustMasterVolume` (R-06).
+- Volume (R-06/D20, reworked by #84): the session publishes
+  `RemoteAndroidPlaybackInfo(volumeControlType: fixed, max: 100, current: v)`
+  in **every** app state — never `absolute`, so SystemUI's media tile / output
+  row renders no server-volume slider and Android never routes the rocker to
+  the session. The rocker→server mapping is app-local and foreground-only:
+  `MainActivity.onKeyDown` → `MethodChannel("owntone_remote/volume_keys")` →
+  `MirrorAudioHandler.handleVolumeKey` → `PlayerController.stepVolume`
+  (`MusicProvider.adjustMasterVolume`). The `androidSetRemoteVolume` /
+  `androidAdjustRemoteVolume` overrides remain only as a guarded second layer.
 - Notification: `androidNotificationIcon`, media style, artwork, controls
   (play/pause/prev/next). `(spike-dependent)` behaviour while paused.
 

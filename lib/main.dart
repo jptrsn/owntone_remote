@@ -144,6 +144,11 @@ Future<void> _initAudio(PlayerController player, SettingsStore store) async {
       WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
     );
     await handler.start();
+    // R-06/D20 (issue #84): the rocker reaches the server only through this
+    // app-local foreground path — the media session never advertises a
+    // volume control, so SystemUI shows no server-volume slider and Android
+    // never routes the keys to the session.
+    await handler.startVolumeKeys();
   } catch (e) {
     _logger.e('audio init failed (app stays functional)', error: e);
   }
