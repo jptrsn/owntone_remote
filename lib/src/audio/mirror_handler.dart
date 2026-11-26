@@ -39,6 +39,23 @@ MediaItem? mediaItemFor({
   );
 }
 
+/// The row published while the server is `stop`ped (issue #83, PR #87
+/// review): replaces the previous track's metadata on the tile with a
+/// neutral stopped row, matching what the in-app screens render
+/// (`now_playing_screen.dart` shows 'Stopped').
+///
+/// Publishing this instead of `null` is the only metadata-clear path the
+/// pinned audio_service 0.18.19 has: `_observeMediaItem` discards a null
+/// before any platform call (`lib/audio_service.dart:1029-1033`), so
+/// `mediaItem.add(null)` never reaches `MediaSessionCompat` and the shade
+/// would keep the last track's title/artist/album. A fresh non-null item
+/// does reach `setMetadata`; the Java builder is rebuilt per notify, so the
+/// null artist/album/duration blank those lines and null `artUri` drops the
+/// large icon on the next publish (residual: on API < 33 a previously
+/// loaded `artBitmap` can persist in the re-raised notification).
+MediaItem stoppedMediaItem() =>
+    const MediaItem(id: 'owntone:stopped', title: 'Stopped');
+
 /// Same now-playing item across a refetch: `PlayerController` replaces
 /// `_nowPlaying` with a fresh instance on every `GET /api/queue`
 /// (id=now_playing), so [identical] cannot be used across an await —
@@ -182,15 +199,15 @@ class MirrorAudioHandler extends BaseAudioHandler {
   }
 
   /// Push the controller's state into the media session, then keep the
-  /// notification progress bar fresh with a 1 s ticker while the server
+  /// notification progress bar fresh with 1 s ticker while the server
   /// plays (OwnTone sends no periodic `player` events).
   Future<void> _sync() async {
     final p = _player.player;
     final item = _player.nowPlaying;
     // Issue #83: `stop` is authoritative over the item. OwnTone keeps
     // `item_id` set and `GET /api/queue?id=now_playing` keeps answering the
-    // track after a stop, so testing `item != null` first made the clear
-    // below unreachable — the tile kept the previous track's metadata and
+    // track after a stop, so testing `item != null` first made the stopped
+    // branch unreachable — the tile kept the previous track's metadata and
     // looked like a loaded, resumable card while the server was stopped.
     final stopped = p != null && p.isStopped;
 
@@ -209,13 +226,23 @@ class MirrorAudioHandler extends BaseAudioHandler {
       // _sync, so skipping here never drops metadata.
       if (!_sameNowPlaying(_player.nowPlaying, item)) return;
       // Re-read: the await also let the server reach `stop`, and a stopped
-      // publish must not land a fresh item after the clear below.
+      // publish must not land a fresh item after the placeholder below.
+      // (The stop itself re-notifies the controller → _sync, so the
+      // placeholder always arrives; this guard only orders the two.)
       if (_player.player?.isStopped ?? false) return;
       mediaItem.add(
         mediaItemFor(item: item, p: _player.player, hideArtwork: hideArtwork),
       );
     } else if (stopped) {
-      mediaItem.add(null);
+      // PR #87 review (blocking): a `null` publish is discarded by
+      // audio_service 0.18.19 before any platform call — `_observeMediaItem`
+      // early-returns on null (`lib/audio_service.dart:1029-1033`) — so
+      // `mediaItem.add(null)` left the previous track's title/artist/album
+      // on the tile (the Java `mediaMetadata` field is reset only in
+      // `onDestroy()`). Publishing the neutral stopped row is the only
+      // metadata-clear path the pinned plugin has: a fresh non-null id
+      // reaches `setMetadata` and `buildNotification()` re-raises it.
+      mediaItem.add(stoppedMediaItem());
     }
 
     if (p == null) return;

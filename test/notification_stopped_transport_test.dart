@@ -144,28 +144,55 @@ void main() {
       },
     );
 
+    test('R-07 the stopped-row decision lives in MirrorAudioHandler._sync, not '
+        'in the pure mapper: mediaItemFor still maps a stopped slice exactly '
+        'as it maps a paused one (R-07 metadata purity, unit 010) — and the '
+        'neutral row is what _sync publishes instead (stoppedMediaItem)', () {
+      final item = NowPlayingItem.fromJson(itemJson(), webRoot);
+      expect(
+        mediaItemFor(
+          item: item,
+          p: state(s: 'stop'),
+        )?.title,
+        'Killing Me Softly',
+      );
+      expect(
+        mediaItemFor(
+          item: item,
+          p: state(s: 'pause'),
+        )?.title,
+        'Killing Me Softly',
+      );
+    });
+  });
+
+  group('stoppedMediaItem — the only metadata-clear path the pinned plugin '
+      'has (R-07, #83 PR #87 review)', () {
     test(
-      'R-07 the metadata clear lives in MirrorAudioHandler._sync, not in the '
-      'pure mapper: mediaItemFor still maps a stopped slice exactly as it '
-      'maps a paused one (R-07 metadata purity, unit 010)',
+      'R-07 the neutral row carries a fresh id (so audio_service does not '
+      'discard it), the screen-matching title, and null artist/album/artUri/'
+      'duration (so the tile stops advertising a loaded, resumable track)',
       () {
-        final item = NowPlayingItem.fromJson(itemJson(), webRoot);
-        expect(
-          mediaItemFor(
-            item: item,
-            p: state(s: 'stop'),
-          )?.title,
-          'Killing Me Softly',
-        );
-        expect(
-          mediaItemFor(
-            item: item,
-            p: state(s: 'pause'),
-          )?.title,
-          'Killing Me Softly',
-        );
+        final m = stoppedMediaItem();
+        expect(m.id, 'owntone:stopped');
+        expect(m.title, 'Stopped');
+        expect(m.artist, isNull);
+        expect(m.album, isNull);
+        expect(m.artUri, isNull);
+        expect(m.duration, isNull);
       },
     );
+
+    test('R-07 the placeholder id never collides with a real item id: a '
+        'now-playing item published after a stop carries its own uri/id, so '
+        'the restored row is a different id and re-renders', () {
+      final item = NowPlayingItem.fromJson(itemJson(), webRoot);
+      final live = mediaItemFor(
+        item: item,
+        p: state(s: 'pause'),
+      )!;
+      expect(live.id, isNot(stoppedMediaItem().id));
+    });
   });
 
   group('MirrorAudioHandler publishes the honours-only shape (#83)', () {
@@ -229,7 +256,8 @@ void main() {
 
     test('R-07 cold start with the server stopped (queue still answers the '
         'now-playing item, item_id still set — the measured server shape): '
-        'NO metadata ever published, controls = play only', () async {
+        'only the neutral Stopped row is ever published (never the track), '
+        'controls = play only', () async {
       server.state = 'stop';
       server.nowPlaying = itemJson();
       await pump();
@@ -243,15 +271,21 @@ void main() {
       await handler.start();
       await pump(200);
 
+      // PR #87 review: a null publish is discarded by audio_service
+      // 0.18.19 (`_observeMediaItem` early-returns on null) — the tile
+      // keeps whatever non-null row it last received. So the honest
+      // contract is "the last published row is the neutral stopped one",
+      // and NO track-titled item may ever be published.
       expect(
-        published.whereType<MediaItem>(),
+        published.whereType<MediaItem>().where((m) => m.title != 'Stopped'),
         isEmpty,
         reason:
             'a stopped server must not leave the previous track on the '
             'tile — the old code let the `item != null` branch win over '
-            'the isStopped clear, which is what kept the card alive',
+            'the stopped branch, which is what kept the card alive',
       );
-      expect(handler.mediaItem.value, isNull);
+      expect(handler.mediaItem.value, stoppedMediaItem());
+      expect(handler.mediaItem.value?.id, 'owntone:stopped');
       expect(handler.playbackState.value.playing, isFalse);
       expect(handler.playbackState.value.controls, [MediaControl.play]);
       expect(
@@ -297,15 +331,22 @@ void main() {
 
       expect(player.player?.isStopped, isTrue, reason: 'fixture reached stop');
       expect(handler.playbackState.value.controls, [MediaControl.play]);
+      // The published sequence proves BOTH halves of the tile story: the
+      // track row was live while paused…
       expect(
-        published.whereType<MediaItem>().last.title,
-        'Killing Me Softly',
+        published.whereType<MediaItem>().map((m) => m.title),
+        contains('Killing Me Softly'),
         reason: 'the metadata was shown while paused…',
       );
+      // …and the LAST published row is the neutral Stopped one — a null
+      // here would be discarded by audio_service before the platform call
+      // (PR #87 review), so asserting `value == null` would prove nothing
+      // about the tile. Only a fresh non-null id replaces the stale row.
+      expect(handler.mediaItem.value, stoppedMediaItem());
       expect(
-        handler.mediaItem.value,
-        isNull,
-        reason: '…and is cleared on stop',
+        handler.mediaItem.value?.title,
+        'Stopped',
+        reason: '…and the stopped row replaces it on stop',
       );
       await sub.cancel();
     });
@@ -323,6 +364,7 @@ void main() {
         await handler.start();
         await pump(150);
         expect(handler.playbackState.value.controls, [MediaControl.play]);
+        expect(handler.mediaItem.value?.title, 'Stopped');
 
         server.state = 'pause';
         channels.single.serverSend('{"notify":["player"]}');

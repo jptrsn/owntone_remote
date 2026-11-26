@@ -3410,6 +3410,34 @@ No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
 Maintenance model host-bound carve-out). Server untouched — no HTTP call to
 `192.168.1.13` was made by this session.
 
+**Revision addendum (2026-11-26, PR #87 review round 1 — CHANGES
+REQUESTED, resolved):** the review's blocking finding was correct and
+reproduced independently before acting: in the pinned audio_service
+0.18.19, `_observeMediaItem` returns on null before any platform call,
+`AudioService.setMetadata()` (the sole writer of session metadata and of
+the Java `mediaMetadata` field) is reachable only with a non-null item,
+and `buildNotification()` sets title/subtext/subText only
+`if (mediaMetadata != null)` — so `mediaItem.add(null)` left the previous
+track's title/artist/album on the tile, and no Dart-side assertion (all
+the new tests sit above the drop) could show it. Resolution = the
+reviewer's preferred option 1: `stoppedMediaItem()` publishes the neutral
+row (fresh id `owntone:stopped` so audio_service's per-id handling cannot
+discard it; title 'Stopped' matches `now_playing_screen.dart:486`; null
+artist/album/duration blank those lines because the Java builder is
+rebuilt per notify; null artUri stops the art fetch). Honest caveat
+carried into SCREENS.md and the placeholder's doc comment: the row is
+*replaced, not blanked*, and a previously loaded `artBitmap` can persist
+on API < 33 — the host row now adjudicates exactly that (title-text
+capture). No PlayerController cache change: `_refreshChain` already sets
+`_nowPlaying = null` when stopped (`player_controller.dart:126`) — the
+retained item the review attributed to the cache is really the lagged
+`_player` slice, and the post-await re-read stays as the ordering guard
+(the stop's own event always re-fires `_sync`, so the placeholder always
+arrives). Two new tests pin the placeholder's field shape and its
+non-collision with real item ids; the three handler legs were rewritten
+to assert the published STREAM (track row while paused → Stopped row
+last), which is the strongest witness available below the plugin drop.
+
 ## 2026-11-25 — issue #83: media tile shows working transport while the server is stopped (OpenHands factory)
 
 **Did:** made the mirrored media session advertise only what a stopped
@@ -3432,33 +3460,51 @@ in-app buttons untouched (NowPlaying already disables prev/next while
 stopped and keeps play live — the tile now matches that contract).
 `docs/SCREENS.md` R-07 Controls gained the stopped-state rule.
 
+> **Revision note (2026-11-26, PR #87 review round 1):** the stopped branch
+> originally published `mediaItem.add(null)`, and this entry said the
+> metadata was *cleared* — the reviewer showed that is a Dart-level no-op
+> on Android (audio_service 0.18.19 `_observeMediaItem` discards null
+> before any platform call, `lib/audio_service.dart:1029-1033`; the Java
+> `mediaMetadata` resets only in `onDestroy()`), so the shade kept the last
+> track's title. The stopped branch now publishes a neutral
+> `stoppedMediaItem()` (`id: 'owntone:stopped'`, title 'Stopped', null
+> artist/album/artUri/duration) — a fresh non-null id DOES reach
+> `setMetadata`. Corrected below; see the revision addendum at the entry's
+> end for the full account.
+
 **Why play survives the cut:** `PUT /api/player/play` from `stop` restarts
 the queued item (host-proven restoration path, and NowPlaying's own
 comment); next → 204-with-frozen-pointer and previous → HTTP 500 are the
 server's measured no-honours pair (Pixel 6 host pass, §2).
 
-**Tests** (`test/notification_stopped_transport_test.dart`, 12 new, each
+**Tests** (`test/notification_stopped_transport_test.dart`, 14 new, each
 named with its R-ID per AGENTS §452; pure-mapping rows + fake-backed
 `MirrorAudioHandler` rows in the `mirror_artwork_adversarial_test.dart`
 style — no audio_service platform channel needed; `test/notification_mapping_test.dart`
 updated from the stop→play/next/previous expectation AC1 requires
 reverting): the discriminating legs are the cold-start-stopped test (queue
 still answers the item, `item_id` still set — the exact server shape that
-kept the card alive: NO `MediaItem` may ever be published, controls = play
-only, not even in the one-shot wake) and the paused→stop transition test
-(the trio and the metadata both go away, then stop→pause restores both —
-the restriction keys on the server state, never on "is there an item").
+kept the card alive: only the neutral Stopped row is ever published — no
+track-titled `MediaItem` may appear, controls = play only, not even in the
+one-shot wake) and the paused→stop transition test (the trio goes and the
+last published row becomes the Stopped one, then stop→pause restores both
+the trio and the track row — the restriction keys on the server state,
+never on "is there an item").
 
 **Mutation-verified** (from a `/tmp` copy, md5-checked back, never
-`git checkout` — AGENTS trap list): restoring the pre-fix `controlsFor`
-and the pre-fix `if (item != null)` branch order turns **six** of the new
-tests red (both handler legs + the four mapping/ready rows); with the fix
-in place all 12 and the full suite are green.
+`git checkout` — AGENTS trap list): restoring the full pre-fix shape (no
+`stop` branch in `controlsFor` + `if (item != null)` first + null clear)
+turns **7** tests red (6 in the new file + the updated
+`notification_mapping_test.dart` row — the reviewer reproduced the same
+7); reverting ONLY the stopped branch back to `mediaItem.add(null)` turns
+the **3** handler legs red — the placeholder assertions discriminate the
+plugin-drop fact itself. With the fix in place all 14 and the full suite
+are green.
 
 **Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7):
 `flutter analyze` → No issues found; `dart format --output=none
 --set-exit-if-changed .` → clean; `flutter test --exclude-tags live` →
-**649/649** green (637 pre-existing + the 12 new). `flutter build apk
+**651/651** green (637 pre-existing + the 14 new). `flutter build apk
 --debug` (gate 4) deferred to the CI gates run: this arm64 container has
 no Android SDK (the #78 entry's drop-in recipe covers `flutter test`, not
 the Gradle path).
@@ -3468,7 +3514,7 @@ acceptance criteria — Pixel 6 `25071FDF600953`, request `needs-host-tools`):
 
 | Action | Expected observation | Substitute proof |
 |---|---|---|
-| `PUT /api/player/stop` (outputs deselected), dump the shade tile; then `PUT /api/player/pause`, dump again | stopped dump: no `Next track`/`Previous track` nodes, play control present; paused dump: both present again | the controlsFor unit rows pin the published control list per state, and the paused→stop→pause handler test proves the session re-publishes in both directions over a live WS notify |
+| `PUT /api/player/stop` (outputs deselected), dump the shade tile; then `PUT /api/player/pause`, dump again | stopped dump: tile **title text is `Stopped`** (not the last track's title — the only witness that settles the metadata question, which no Dart-side assertion can reach), artist/album lines blank, no `Next track`/`Previous track` nodes, play control present; paused dump: track title again + both nodes | the controlsFor unit rows pin the published control list per state; the handler legs pin the PUBLISHED STREAM sequence (track row live while paused → Stopped row last after stop), and the paused→stop→pause test proves the session re-publishes in both directions over a live WS notify — the plugin's null-drop sits below all Dart witnesses, which is why the capture must read the rendered title |
 | Press the tile's play while stopped; `dumpsys notification` + `dumpsys activity services` while the server stays stopped | handler log line + `GET /api/player` state change; MediaStyle record still listed, `isForeground=true` | the fake-backed test proves the published play control is wired to `PUT /api/player/play`; `processingState` stays `ready` in all three states (the ready-guard test), which is the audio_service condition for keeping the FGS/notification up |
 
 No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
