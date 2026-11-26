@@ -165,6 +165,13 @@ the shade / on the lock screen.
     plays — OwnTone sends no periodic events).
 - **Controls:** play/pause toggle · next · previous → the same
   `PlayerController` methods as the screen (single path to the server).
+  **While the server is `stop`ped the tile publishes play only, and the
+  metadata is cleared** (issue #83): OwnTone does not honour a skip from
+  `stop` — measured `next` → 204 with the queue pointer frozen, `previous`
+  → HTTP 500 — so offering them advertised a transport the server silently
+  ignores, and keeping the track's metadata made the stopped tile look like
+  a loaded, resumable card. `play` stays live: `PUT /api/player/play`
+  restarts the queued item, matching NowPlaying's own stopped-state buttons.
 - **No duplicates (spike risk #4):** the notification is the FGS
   notification; WS reconnects, refetches and state changes **update it
   in place** — the app must never post a second notification (verify:

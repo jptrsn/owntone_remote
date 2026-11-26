@@ -3409,3 +3409,68 @@ verify, but the two rows below are the on-device legs of the same contract;
 No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
 Maintenance model host-bound carve-out). Server untouched — no HTTP call to
 `192.168.1.13` was made by this session.
+
+## 2026-11-25 — issue #83: media tile shows working transport while the server is stopped (OpenHands factory)
+
+**Did:** made the mirrored media session advertise only what a stopped
+OwnTone honours. Two changes in `lib/src/audio/mirror_handler.dart`:
+`controlsFor` gained a `stop` branch publishing `play` only (no
+`skipToNext`/`skipToPrevious`), and `_sync` now treats `p.isStopped` as
+authoritative over the cached now-playing item — the old
+`if (item != null) … else if (p != null && p.isStopped)` order made the
+metadata clear **unreachable**, because OwnTone keeps `item_id` set and
+`GET /api/queue?id=now_playing` keeps answering the track after a stop
+(the host spike's `dumpsys media_session` showed exactly that: `PAUSED(2)`
++ `ready` + play/next/previous + "The Rest of My Life" while stopped). A
+second re-read of `isStopped` after the artwork-probe `await` closes the
+same race in slow: a publish that started while playing must not land
+after the stop-clear. The non-goals held: `processingState` stays `ready`
+(idle would route through `AudioService.stop()` and break R-07), no faked
+PLAYING, no session-activation change (#82's half), no touch to
+`PlayerController._action`'s unconfirmed offline swallow (§3 hypothesis),
+in-app buttons untouched (NowPlaying already disables prev/next while
+stopped and keeps play live — the tile now matches that contract).
+`docs/SCREENS.md` R-07 Controls gained the stopped-state rule.
+
+**Why play survives the cut:** `PUT /api/player/play` from `stop` restarts
+the queued item (host-proven restoration path, and NowPlaying's own
+comment); next → 204-with-frozen-pointer and previous → HTTP 500 are the
+server's measured no-honours pair (Pixel 6 host pass, §2).
+
+**Tests** (`test/notification_stopped_transport_test.dart`, 12 new, each
+named with its R-ID per AGENTS §452; pure-mapping rows + fake-backed
+`MirrorAudioHandler` rows in the `mirror_artwork_adversarial_test.dart`
+style — no audio_service platform channel needed; `test/notification_mapping_test.dart`
+updated from the stop→play/next/previous expectation AC1 requires
+reverting): the discriminating legs are the cold-start-stopped test (queue
+still answers the item, `item_id` still set — the exact server shape that
+kept the card alive: NO `MediaItem` may ever be published, controls = play
+only, not even in the one-shot wake) and the paused→stop transition test
+(the trio and the metadata both go away, then stop→pause restores both —
+the restriction keys on the server state, never on "is there an item").
+
+**Mutation-verified** (from a `/tmp` copy, md5-checked back, never
+`git checkout` — AGENTS trap list): restoring the pre-fix `controlsFor`
+and the pre-fix `if (item != null)` branch order turns **six** of the new
+tests red (both handler legs + the four mapping/ready rows); with the fix
+in place all 12 and the full suite are green.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7):
+`flutter analyze` → No issues found; `dart format --output=none
+--set-exit-if-changed .` → clean; `flutter test --exclude-tags live` →
+**649/649** green (637 pre-existing + the 12 new). `flutter build apk
+--debug` (gate 4) deferred to the CI gates run: this arm64 container has
+no Android SDK (the #78 entry's drop-in recipe covers `flutter test`, not
+the Gradle path).
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (the two host rows of the published
+acceptance criteria — Pixel 6 `25071FDF600953`, request `needs-host-tools`):
+
+| Action | Expected observation | Substitute proof |
+|---|---|---|
+| `PUT /api/player/stop` (outputs deselected), dump the shade tile; then `PUT /api/player/pause`, dump again | stopped dump: no `Next track`/`Previous track` nodes, play control present; paused dump: both present again | the controlsFor unit rows pin the published control list per state, and the paused→stop→pause handler test proves the session re-publishes in both directions over a live WS notify |
+| Press the tile's play while stopped; `dumpsys notification` + `dumpsys activity services` while the server stays stopped | handler log line + `GET /api/player` state change; MediaStyle record still listed, `isForeground=true` | the fake-backed test proves the published play control is wired to `PUT /api/player/play`; `processingState` stays `ready` in all three states (the ready-guard test), which is the audio_service condition for keeping the FGS/notification up |
+
+No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
+Maintenance model host-bound carve-out). Server untouched — no HTTP call
+to `192.168.1.13` was made by this session.

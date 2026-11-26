@@ -55,9 +55,33 @@ bool _sameNowPlaying(NowPlayingItem? a, NowPlayingItem? b) =>
 /// Transport controls for the notification / lockscreen (SCREENS.md:
 /// play/pause · next · previous — the v1 notification has no stop or mode
 /// controls).
-List<MediaControl> controlsFor(PlayerState p) => p.isPlaying
-    ? [MediaControl.pause, MediaControl.skipToNext, MediaControl.skipToPrevious]
-    : [MediaControl.play, MediaControl.skipToNext, MediaControl.skipToPrevious];
+///
+/// Issue #83: a **stopped** server publishes `play` only. OwnTone does not
+/// honour a skip while stopped — measured on the Pixel 6 host pass, `PUT
+/// /api/player/next` answered 204 with the queue pointer frozen (a silent
+/// no-op) and `previous` answered HTTP 500 — so exposing them made the tile
+/// advertise a transport the server cannot service: taps looked accepted and
+/// did nothing visible (the 500 surfaces only as an in-app snackbar, which
+/// the shade cannot show). `play` *is* honoured from `stop` — the current
+/// item stays queued and `PUT /api/player/play` restarts it — which is also
+/// why NowPlaying keeps its play button live while stopped
+/// (`now_playing_screen.dart`) and disables previous/next there. Do not
+/// "unify" the stopped branch with the paused one: the tile mirrors what the
+/// server acts on, not what the queue contains.
+List<MediaControl> controlsFor(PlayerState p) {
+  if (p.isStopped) return const [MediaControl.play];
+  return p.isPlaying
+      ? [
+          MediaControl.pause,
+          MediaControl.skipToNext,
+          MediaControl.skipToPrevious,
+        ]
+      : [
+          MediaControl.play,
+          MediaControl.skipToNext,
+          MediaControl.skipToPrevious,
+        ];
+}
 
 /// The rocker step for a volume direction (R-06, unit 003): `null` means no
 /// volume change — `same` is Android's key-release / end-of-sequence marker,
@@ -163,8 +187,14 @@ class MirrorAudioHandler extends BaseAudioHandler {
   Future<void> _sync() async {
     final p = _player.player;
     final item = _player.nowPlaying;
+    // Issue #83: `stop` is authoritative over the item. OwnTone keeps
+    // `item_id` set and `GET /api/queue?id=now_playing` keeps answering the
+    // track after a stop, so testing `item != null` first made the clear
+    // below unreachable — the tile kept the previous track's metadata and
+    // looked like a loaded, resumable card while the server was stopped.
+    final stopped = p != null && p.isStopped;
 
-    if (item != null) {
+    if (item != null && !stopped) {
       // R-03 unit 010 (device-side half): never publish an `artUri` the
       // server answers with 204 — audio_service's flutter_cache_manager
       // would fetch it and log `Invalid statusCode: 204` as an exception
@@ -178,10 +208,13 @@ class MirrorAudioHandler extends BaseAudioHandler {
       // every _nowPlaying replacement is followed by a notifyListeners →
       // _sync, so skipping here never drops metadata.
       if (!_sameNowPlaying(_player.nowPlaying, item)) return;
+      // Re-read: the await also let the server reach `stop`, and a stopped
+      // publish must not land a fresh item after the clear below.
+      if (_player.player?.isStopped ?? false) return;
       mediaItem.add(
         mediaItemFor(item: item, p: _player.player, hideArtwork: hideArtwork),
       );
-    } else if (p != null && p.isStopped) {
+    } else if (stopped) {
       mediaItem.add(null);
     }
 
