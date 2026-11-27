@@ -49,6 +49,23 @@ class PlayerController extends ChangeNotifier {
   String? get actionError => _actionError;
   int get actionErrorSeq => _actionErrorSeq;
 
+  /// Dedicated step-event signal for the volume toaster (issue #92 AC-3/
+  /// AC-4): [volumeStepSeq] bumps once per [stepVolume] press that
+  /// actually issued a request, and [volumeStepLevel] carries the
+  /// post-step clamped level — the same optimistic value the NP slider
+  /// shows, so bar and slider agree by construction. A volume *diff*
+  /// cannot replace this: WS `volume` events (shared server) and the NP
+  /// slider both move `volume`, and the plan requires the trigger to be
+  /// "a request was issued", not "the number changed".
+  ///
+  /// The volume toaster layer (ui/volume_toaster.dart) consumes these; do
+  /// not bump them outside stepVolume and do not notify here — the
+  /// optimistic notify `_action` already performs carries the signal.
+  int get volumeStepSeq => _volumeStepSeq;
+  int? get volumeStepLevel => _volumeStepLevel;
+  int _volumeStepSeq = 0;
+  int? _volumeStepLevel;
+
   bool get initialized => _initialized;
   bool get isPlaying => _player?.isPlaying ?? false;
   bool get connected => _conn.isConnected;
@@ -277,11 +294,27 @@ class PlayerController extends ChangeNotifier {
   );
 
   /// Relative volume change — the hardware-rocker path (R-06, unit 003).
-  Future<void> stepVolume(int step) => _action(
-    'Volume',
-    (api) => api.stepVolume(step),
-    optimistic: (p) => p.copyWith(volume: (p.volume + step).clamp(0, 100)),
-  );
+  ///
+  /// Issue #92: the toaster signal is set before delegating to `_action`,
+  /// gated by exactly `_action`'s "was a request issued" condition
+  /// (`api != null && isConnected`, plus a loaded slice to compute a
+  /// level from — plan A-4). Offline / declined presses therefore bump
+  /// nothing and notify nothing, so the toaster never schedules a timer
+  /// for them (AC-4/AC-7). The level is the exact expression the
+  /// optimistic `copyWith` below applies, so bar and NP slider agree by
+  /// construction (AC-4). A failed PUT does not early-hide the bar: it
+  /// shows the level *requested* (A-5; rollback + snackbar unchanged).
+  Future<void> stepVolume(int step) {
+    if (_conn.api != null && _conn.isConnected && _player != null) {
+      _volumeStepLevel = (_player!.volume + step).clamp(0, 100);
+      _volumeStepSeq++;
+    }
+    return _action(
+      'Volume',
+      (api) => api.stepVolume(step),
+      optimistic: (p) => p.copyWith(volume: (p.volume + step).clamp(0, 100)),
+    );
+  }
 
   // -- call handling (D9, R-08) ------------------------------------------------
 
