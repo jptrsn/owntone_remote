@@ -113,10 +113,14 @@ iTunes-specific features.
   2026-11-14): **the Pixel 6 is THE real test device**; the Pixel 10 is
   the user's personal phone — never a dev/test/verification target.
   The supervised play window
- needs the user. The server at 192.168.1.13 is **shared with another
- active session** — expect concurrent player/queue changes; snapshot before
- and restore after any mutation, and re-verify `state` immediately before
- anything that can start audio. Note: the Chromecast remote outputs on this
+ needs the user. The server at 192.168.1.13: the earlier "shared with another
+ active session" premise is **stale** (user fact 2026-11-27 — no other live
+ session exists). Concurrent player/queue changes can still appear on their
+ own; the most plausible source, measured adjacent but not attributed, is the
+ autonomous **owntone_sync app on the Pixel 6** (the `dumpsys media_session`
+ button-session holder, designed to follow and drive the server). Keep the
+ discipline regardless: snapshot before and restore after any mutation, and
+ re-verify `state` immediately before anything that can start audio. Note: the Chromecast remote outputs on this
  server fail to select server-side — treat **Volumio Kitchen (AirPlay)**
  and **Server (ALSA)** as the two reliable outputs for any audio-routing
  test. UI oracle: **uiautomator's a11y bridge is dead on the Pixel 6**
@@ -157,8 +161,13 @@ unexpectedly.
   requests, `pause`, `stop`, `seek` (position moves, no audio), volume changes,
   queue edits **without** `playback=start`, enabling/disabling outputs (no
   audio flows while paused), library reads.
-- "next/previous" while the server is paused keeps it paused in OwnTone, but
-  treat any web-UI or app action that *might* resume audio as `supervised`.
+- **"next/previous" are play-class on this server pair — the old "keeps it
+  paused in OwnTone" claim is wrong** (measured 2026-11-27, OwnTone v29.3:
+  `PUT /api/player/next` from a verified `pause` resumed playback — ~59 s
+  unintended audio, incident recorded in `docs/SESSION-LOG.md` 2026-11-27).
+  Treat them like play: deselect all outputs first (playback stays inaudible),
+  or take the supervision gate. Likewise treat any web-UI or app action that
+  *might* resume audio as `supervised`.
 
 ### 2. Device isolation
 
