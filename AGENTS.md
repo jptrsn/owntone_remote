@@ -474,6 +474,17 @@ For any UI work on a running debug build:
   had just wiped). Commit the work, or restore mutations from a backup copy,
   never from git — and let the reviewer, not a green suite, catch the
   difference (a suite is green with OR without the missing test).
+- **Never interact with the screen (`input tap`/`swipe`/`keyevent`) on a
+  state you have not just observed.** Before EVERY scripted screen
+  interaction, take a fresh `uiautomator dump` (or screenshot) and confirm
+  from it that the intended target is actually on screen at those
+  coordinates — never tap from remembered geometry or a stale dump. The
+  shade/tile/notification layout shifts with connection state, session
+  list, and `cmd statusbar` calls; a tap that "worked" against a UI you
+  didn't dump first is an unverified measurement (cost a re-run on the
+  #83 spike, 2026-11-25: taps were issued against an assumed-open media
+  tile that had changed or vanished, and one "inert controls" result had
+  to be downgraded to hypothesis).
 
 ## Server quick reference
 

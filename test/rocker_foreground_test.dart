@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:owntone_remote/src/api/backoff.dart';
 import 'package:owntone_remote/src/api/ws_client.dart';
@@ -49,13 +50,22 @@ class VolumeServer {
   }
 }
 
-/// D20 (R-06, rescoped 2026-10-22): the rocker maps to the server's master
-/// volume only while the app is foregrounded. Backgrounded, the session is
-/// published with the `fixed` volume-control type (Android then leaves the
-/// volume keys to the system streams) and the handler's volume overrides
-/// stay no-ops — even while the server would otherwise be selected (playing).
+/// R-06 / D20, reworked by issue #84: the media session never exposes a volume
+/// control — it is published `fixed` in every app state, so SystemUI's media
+/// tile / output row renders no server-volume slider and Android never routes
+/// the hardware rocker to `androidAdjustRemoteVolume`. The rocker reaches the
+/// server through an app-local foreground path instead: the Activity's
+/// `onKeyDown` hook forwards over `owntone_remote/volume_keys`, and the
+/// handler steps the server via [PlayerController.stepVolume] — but only while
+/// the app is resumed. Backgrounded, screen-off, or restarted by the audio
+/// service with no UI, a key must never touch the server volume.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  const volumeKeys = MethodChannel('owntone_remote/volume_keys');
+  const codec = StandardMethodCodec();
 
   late VolumeServer server;
   late ScriptedAdapter adapter;
@@ -65,6 +75,10 @@ void main() {
   late SettingsStore store;
   late MirrorAudioHandler handler;
 
+  /// Every `startForwarding`/`stopForwarding` the Dart side asked the
+  /// platform for, in order.
+  final platformCalls = <String>[];
+
   const cfg = ServerConfig(host: '10.0.0.5', port: 3689);
 
   Future<void> pump([int ms = 60]) =>
@@ -73,7 +87,27 @@ void main() {
   List<String> volumePuts() =>
       adapter.requests.where((r) => r.contains('/api/player/volume')).toList();
 
+  /// Deliver one key over the platform channel exactly as the Kotlin hook
+  /// does, and return what Dart answered: `true` = this app took the key (so
+  /// MainActivity must not hand it to the phone), `false` = Dart declined,
+  /// `null` = nothing is listening at all (the un-registered case).
+  Future<Object?> deliverKey(String direction) async {
+    Object? reply;
+    await messenger.handlePlatformMessage(
+      'owntone_remote/volume_keys',
+      codec.encodeMethodCall(MethodCall('volumeKey', direction)),
+      (data) => reply = data == null ? null : codec.decodeEnvelope(data),
+    );
+    await pumpEventQueue();
+    return reply;
+  }
+
   setUp(() async {
+    platformCalls.clear();
+    messenger.setMockMethodCallHandler(volumeKeys, (call) async {
+      platformCalls.add(call.method);
+      return true;
+    });
     server = VolumeServer();
     adapter = ScriptedAdapter(responder: server.handle);
     channels = [];
@@ -107,95 +141,274 @@ void main() {
     await pump();
   });
 
-  tearDown(() {
+  tearDown(() async {
+    await handler.stopVolumeKeys();
     player.dispose();
     conn.dispose();
+    messenger.setMockMethodCallHandler(volumeKeys, null);
   });
 
-  group('volumeControlTypeFor (D20):', () {
-    test('foreground → absolute', () {
-      expect(volumeControlTypeFor(true), AndroidVolumeControlType.absolute);
-    });
+  /// The production sequence from main(): seed the lifecycle flag, then
+  /// install the key path.
+  Future<void> goForeground({MirrorAudioHandler? h}) async {
+    final target = h ?? handler;
+    target.setAppForeground(true);
+    await target.startVolumeKeys();
+    await pump();
+  }
 
-    test('backgrounded → fixed', () {
-      expect(volumeControlTypeFor(false), AndroidVolumeControlType.fixed);
-    });
-  });
+  group('session volume surface (R-06/D20, #84):', () {
+    test(
+      'every value published on androidPlaybackInfo after start() is '
+      'non-absolute — fresh launch, wake, foregrounded and backgrounded',
+      () async {
+        // A handler of its own, subscribed to *before* start(), so the fresh
+        // launch + one-shot wake publications are captured too.
+        final probe = MirrorAudioHandler(player, settings: store);
+        final emitted = <AndroidPlaybackInfo>[];
+        final sub = probe.androidPlaybackInfo.listen(emitted.add);
 
-  group('handler while backgrounded (default — no resumed yet):', () {
-    test('rocker raise/lower never touch the server', () async {
-      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
-      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.lower);
-      expect(volumePuts(), isEmpty);
-      expect(server.volume, 75);
-    });
+        await probe.start();
+        await pump();
+        await probe.startVolumeKeys();
+        await pump();
 
-    test('absolute set never touches the server', () async {
-      await handler.androidSetRemoteVolume(42);
-      expect(volumePuts(), isEmpty);
-      expect(server.volume, 75);
-    });
+        // Force re-publications across both app states: a player change
+        // drives _sync → _publishPlaybackInfo.
+        probe.setAppForeground(true);
+        await player.setVolume(60);
+        await pump();
+        probe.setAppForeground(false);
+        await player.setVolume(70);
+        await pump();
+        await sub.cancel();
+        await probe.stopVolumeKeys();
+
+        expect(emitted, isNotEmpty, reason: 'the session must publish info');
+        for (final info in emitted) {
+          expect(
+            info,
+            isA<RemoteAndroidPlaybackInfo>(),
+            reason: 'the mirror stays a remote provider (transport only)',
+          );
+          final remote = info as RemoteAndroidPlaybackInfo;
+          expect(
+            remote.volumeControlType,
+            isNot(AndroidVolumeControlType.absolute),
+            reason:
+                'absolute is what renders the SystemUI server-volume '
+                'slider and routes the rocker to the session',
+          );
+          expect(remote.volumeControlType, AndroidVolumeControlType.fixed);
+        }
+      },
+    );
 
     test(
-      'the session is published fixed (keys stay with the system)',
+      'the volumeControlTypeFor absolute/fixed flip is gone — one constant',
+      () {
+        expect(sessionVolumeControlType, AndroidVolumeControlType.fixed);
+      },
+    );
+
+    test(
+      'the provider keeps maxVolume 100 and mirrors the server volume',
       () async {
-        final info = handler.androidPlaybackInfo.value;
-        expect(info, isA<RemoteAndroidPlaybackInfo>());
-        final remote = info as RemoteAndroidPlaybackInfo;
+        await goForeground();
+        final remote =
+            handler.androidPlaybackInfo.value as RemoteAndroidPlaybackInfo;
         expect(remote.volumeControlType, AndroidVolumeControlType.fixed);
         expect(remote.maxVolume, 100);
         expect(remote.volume, 75);
       },
     );
+
+    test('androidSetRemoteVolume never moves the server in any app state '
+        '(nothing renders an absolute slider any more)', () async {
+      await goForeground();
+      await handler.androidSetRemoteVolume(42);
+      expect(volumePuts(), isEmpty);
+      expect(server.volume, 75);
+
+      handler.setAppForeground(false);
+      await pump();
+      await handler.androidSetRemoteVolume(42);
+      expect(volumePuts(), isEmpty);
+      expect(server.volume, 75);
+    });
   });
 
-  group('handler while foregrounded:', () {
-    setUp(() async {
+  group('foreground key path (R-06/D20, #84):', () {
+    test(
+      'raise → +step, lower → −step, release (same) → no server call',
+      () async {
+        await goForeground();
+
+        expect(await deliverKey('raise'), isTrue);
+        expect(volumePuts(), ['PUT /api/player/volume?step=5']);
+        expect(server.volume, 80);
+
+        expect(await deliverKey('lower'), isTrue);
+        expect(server.volume, 75);
+
+        expect(await deliverKey('same'), isFalse);
+        expect(server.volume, 75);
+        expect(volumePuts(), [
+          'PUT /api/player/volume?step=5',
+          'PUT /api/player/volume?step=-5',
+        ]);
+      },
+    );
+
+    test(
+      'the key path registers with the lifecycle and un-registers to a no-op',
+      () async {
+        expect(handler.volumeKeysStarted, isFalse);
+        expect(platformCalls, isEmpty);
+
+        await goForeground();
+        expect(handler.volumeKeysStarted, isTrue);
+        expect(platformCalls, ['startForwarding']);
+
+        await handler.stopVolumeKeys();
+        expect(handler.volumeKeysStarted, isFalse);
+        expect(platformCalls, ['startForwarding', 'stopForwarding']);
+
+        // Un-registered (the service-only / detached case): nobody is
+        // listening on the channel any more, so a delivered key gets no
+        // reply at all and the phone keeps handling it.
+        expect(await deliverKey('raise'), isNull);
+        expect(volumePuts(), isEmpty);
+        expect(server.volume, 75);
+      },
+    );
+
+    test('startVolumeKeys is idempotent and asks the platform once', () async {
       handler.setAppForeground(true);
+      await handler.startVolumeKeys();
+      await handler.startVolumeKeys();
       await pump();
+      expect(platformCalls.where((m) => m == 'startForwarding'), hasLength(1));
     });
 
-    test('rocker raise → +step, lower → −step, same → no-op', () async {
-      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
-      expect(volumePuts(), ['PUT /api/player/volume?step=5']);
-      expect(server.volume, 80);
-
-      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.lower);
-      expect(server.volume, 75);
-
-      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.same);
-      expect(server.volume, 75);
-      expect(volumePuts(), [
-        'PUT /api/player/volume?step=5',
-        'PUT /api/player/volume?step=-5',
-      ]);
+    test('installing the key path while backgrounded asks the platform NOT to '
+        'forward (keys stay the phone\'s)', () async {
+      await handler.startVolumeKeys();
+      await pump();
+      expect(platformCalls, ['stopForwarding']);
+      expect(await deliverKey('raise'), isFalse);
+      expect(volumePuts(), isEmpty);
     });
 
-    test('absolute set lands as ?volume=', () async {
-      await handler.androidSetRemoteVolume(42);
-      expect(server.volume, 42);
-      expect(volumePuts().last, 'PUT /api/player/volume?volume=42');
-    });
-
-    test('the session is published absolute', () async {
-      final info = handler.androidPlaybackInfo.value;
-      final remote = info as RemoteAndroidPlaybackInfo;
-      expect(remote.volumeControlType, AndroidVolumeControlType.absolute);
+    test('backgrounding asks the platform to stop forwarding', () async {
+      await goForeground();
+      handler.setAppForeground(false);
+      await pump();
+      expect(platformCalls.last, 'stopForwarding');
     });
 
     test(
-      'backgrounding again re-publishes fixed and re-arms the no-op',
+      'an unrecognised direction or argument is dropped, key not taken',
       () async {
-        handler.setAppForeground(false);
-        await pump();
+        await goForeground();
 
-        final info = handler.androidPlaybackInfo.value;
-        final remote = info as RemoteAndroidPlaybackInfo;
-        expect(remote.volumeControlType, AndroidVolumeControlType.fixed);
+        expect(await deliverKey('sideways'), isFalse);
+        expect(await deliverKey(''), isFalse);
 
+        Object? reply;
+        await messenger.handlePlatformMessage(
+          'owntone_remote/volume_keys',
+          codec.encodeMethodCall(const MethodCall('volumeKey', 42)),
+          (data) => reply = data == null ? null : codec.decodeEnvelope(data),
+        );
+        await pumpEventQueue();
+        expect(reply, isFalse);
+
+        await messenger.handlePlatformMessage(
+          'owntone_remote/volume_keys',
+          codec.encodeMethodCall(const MethodCall('somethingElse', 'raise')),
+          (_) {},
+        );
+        await pumpEventQueue();
+        expect(volumePuts(), isEmpty);
+        expect(server.volume, 75);
+      },
+    );
+
+    test('volumeDirectionForName maps only the three AOSP direction names', () {
+      expect(volumeDirectionForName('raise'), AndroidVolumeDirection.raise);
+      expect(volumeDirectionForName('lower'), AndroidVolumeDirection.lower);
+      expect(volumeDirectionForName('same'), AndroidVolumeDirection.same);
+      expect(volumeDirectionForName('SAME'), isNull);
+      expect(volumeDirectionForName('up'), isNull);
+      expect(volumeDirectionForName(''), isNull);
+    });
+
+    test(
+      'the session-side override keeps the guards as a second layer',
+      () async {
+        // Foreground flag set but the key path never installed → no server call.
+        handler.setAppForeground(true);
         await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
         expect(volumePuts(), isEmpty);
         expect(server.volume, 75);
+
+        await handler.startVolumeKeys();
+        await pump();
+        await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+        expect(server.volume, 80);
+      },
+    );
+  });
+
+  group('backgrounded stays inert (R-06/D20, #84):', () {
+    test(
+      'default state — no resumed yet: keys never touch the server',
+      () async {
+        await handler.startVolumeKeys();
+        await pump();
+        expect(await deliverKey('raise'), isFalse);
+        expect(await deliverKey('lower'), isFalse);
+        expect(await deliverKey('same'), isFalse);
+        expect(volumePuts(), isEmpty);
+        expect(server.volume, 75);
+      },
+    );
+
+    test(
+      'backgrounding after a foreground session re-arms the guard',
+      () async {
+        await goForeground();
+        expect(await deliverKey('raise'), isTrue);
+        expect(server.volume, 80);
+
+        handler.setAppForeground(false);
+        await pump();
+
+        expect(await deliverKey('raise'), isFalse);
+        expect(await deliverKey('lower'), isFalse);
+        expect(volumePuts(), ['PUT /api/player/volume?step=5']);
+        expect(server.volume, 80);
+      },
+    );
+
+    test(
+      'a service-only restart (never resumed) makes zero server volume calls',
+      () async {
+        // As a process restarted by the bound audio service would build it:
+        // no lifecycle callback has ever fired.
+        final restarted = MirrorAudioHandler(player, settings: store);
+        await restarted.start();
+        await restarted.startVolumeKeys();
+        await pump();
+
+        expect(await deliverKey('raise'), isFalse);
+        final remote =
+            restarted.androidPlaybackInfo.value as RemoteAndroidPlaybackInfo;
+        expect(remote.volumeControlType, AndroidVolumeControlType.fixed);
+        expect(volumePuts(), isEmpty);
+        expect(server.volume, 75);
+        await restarted.stopVolumeKeys();
       },
     );
   });
@@ -203,32 +416,31 @@ void main() {
   group('R-14 custom step (read at keypress time — applies to the next '
       'press, no restart):', () {
     setUp(() async {
-      handler.setAppForeground(true);
-      await pump();
+      await goForeground();
     });
 
     test('step=1 → ±1 per press; step=10 → ±10 per press', () async {
       await store.saveRockerStep(1);
-      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+      await deliverKey('raise');
       expect(volumePuts(), ['PUT /api/player/volume?step=1']);
       expect(server.volume, 76);
-      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.lower);
+      await deliverKey('lower');
       expect(server.volume, 75);
 
       await store.saveRockerStep(10);
-      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+      await deliverKey('raise');
       expect(volumePuts().last, 'PUT /api/player/volume?step=10');
       expect(server.volume, 85);
     });
 
     test('the *next* press after a Settings change uses the new step — '
         'no handler restart', () async {
-      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+      await deliverKey('raise');
       expect(volumePuts().last, 'PUT /api/player/volume?step=5');
       expect(server.volume, 80);
 
       await store.saveRockerStep(2);
-      await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+      await deliverKey('raise');
       expect(volumePuts().last, 'PUT /api/player/volume?step=2');
       expect(server.volume, 82);
     });
@@ -240,8 +452,10 @@ void main() {
         store = await SettingsStore.create();
         handler = MirrorAudioHandler(player, settings: store);
         handler.setAppForeground(true);
+        await handler.startVolumeKeys();
+        await pump();
 
-        await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
+        await deliverKey('raise');
         expect(volumePuts().last, 'PUT /api/player/volume?step=10');
       },
     );
@@ -253,8 +467,8 @@ void main() {
         handler.setAppForeground(false);
         await pump();
 
-        await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.raise);
-        await handler.androidAdjustRemoteVolume(AndroidVolumeDirection.lower);
+        expect(await deliverKey('raise'), isFalse);
+        expect(await deliverKey('lower'), isFalse);
         expect(volumePuts(), isEmpty);
         expect(server.volume, 75);
       },

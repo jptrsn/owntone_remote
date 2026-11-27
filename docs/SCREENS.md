@@ -165,6 +165,21 @@ the shade / on the lock screen.
     plays — OwnTone sends no periodic events).
 - **Controls:** play/pause toggle · next · previous → the same
   `PlayerController` methods as the screen (single path to the server).
+  **While the server is `stop`ped the tile publishes play only, and the
+  metadata row is replaced with a neutral "Stopped" row** (issue #83):
+  OwnTone does not honour a skip from `stop` — measured `next` → 204 with
+  the queue pointer frozen, `previous` → HTTP 500 — so offering them
+  advertised a transport the server silently ignores, and keeping the
+  track's metadata made the stopped tile look like a loaded, resumable
+  card. `play` stays live: `PUT /api/player/play` restarts the queued
+  item, matching NowPlaying's own stopped-state buttons (which render
+  'Stopped' too). The row is *replaced, not blanked*: audio_service
+  0.18.19 discards a null `MediaItem` before any platform call, so the
+  app publishes a fresh neutral item (`id: 'owntone:stopped'`) — the only
+  metadata-clear path the pinned plugin has. The art-less placeholder also
+  nulls the service's large-icon bitmap at the plugin level
+  (`AudioService.java:795-801`); whether SystemUI re-renders it is settled
+  by the host capture, not by the app.
 - **No duplicates (spike risk #4):** the notification is the FGS
   notification; WS reconnects, refetches and state changes **update it
   in place** — the app must never post a second notification (verify:
@@ -507,9 +522,12 @@ screen while idle (then titled `Connect`, no back/cancel).
   reads the store at keypress time (SharedPreferences is an in-memory
   cache). Per-press effect: `raise → +step`, `lower → −step` via
   `PUT /api/player/volume?step=`.
-- **Foreground-only** (D20, unchanged): rocker → server volume happens
-  only while the app is foregrounded; backgrounded the session is
-  `fixed` and the handler's volume paths stay inert — at any step.
+- **Foreground-only** (D20, mechanism reworked by #84): rocker → server
+  volume happens only while the app is foregrounded, and only through the
+  Activity key path (`MainActivity.onKeyDown` → `owntone_remote/volume_keys`
+  → `MirrorAudioHandler.handleVolumeKey`). The session is `fixed` in **every**
+  app state, so it never receives a volume key; backgrounded, the handler's
+  volume paths stay inert — at any step.
 
 ### States
 

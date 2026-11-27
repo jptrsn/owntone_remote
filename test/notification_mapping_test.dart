@@ -79,13 +79,17 @@ void main() {
       ]);
     });
 
-    test('paused/stopped → play/next/previous', () {
+    test('paused → play/next/previous', () {
       expect(controlsFor(state(s: 'pause')), [
         MediaControl.play,
         MediaControl.skipToNext,
         MediaControl.skipToPrevious,
       ]);
-      expect(controlsFor(state(s: 'stop')).first, MediaControl.play);
+    });
+
+    test('stopped → play only (issue #83: the server no-ops next and 500s '
+        'previous while stopped, so the tile must not offer them)', () {
+      expect(controlsFor(state(s: 'stop')), [MediaControl.play]);
     });
   });
 
