@@ -20,6 +20,28 @@ name: gates
 #                 is never cross-checked (PR #9 review). A red tag run is a
 #                 release-quality signal — fix and re-tag, or re-run for a
 #                 proven infra flake; it does not gate anything on main.
+#
+# Docs-only fast path (2026-11-27): on pull_request events whose ENTIRE diff
+# is documentation — docs/**, .ai-dlc/**, any *.md, LICENSE* — the heavy
+# steps (java/flutter setup, pub get, analyze, format, test, build apk) are
+# skipped and the job reports green in seconds. Design constraints, do not
+# "tidy":
+#   * The JOB never skips. `gates` is the required status check on develop
+#     and main; a workflow/job-level `paths:` filter (or job `if:`) would
+#     leave branch protection showing "Expected — never delivered" on
+#     docs-only PRs, making them unmergeable without an admin override.
+#     Skipping STEPS keeps the check reported.
+#   * Only pull_request events are classified. push (develop — it is what
+#     keeps "develop is always green" strong; release/hotfix branches) and
+#     tag events (the release artifact's CI cross-check) ALWAYS run full.
+#   * The classification errs to FULL on any doubt: empty/failed diff,
+#     missing base ref, or any non-docs file. `.github/**`, `assets/**`,
+#     `android/**`, `pubspec.*`, `analysis_options.yaml`, `tools/**` and
+#     every non-`.md` file are non-docs by construction.
+#   * A docs-only PR that would break the build is impossible by
+#     construction only while this list stays true; if a docs dir ever gains
+#     a build role (e.g. embedded snippets compiled by a test), it must be
+#     removed from the docs set below.
 
 on:
   pull_request:
@@ -33,11 +55,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # full history: the merge-base diff for the docs-only classification
+          fetch-depth: 0
+      - name: Classify change scope
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -uo pipefail
+          full=true
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ -n "${BASE_REF:-}" ]; then
+            git fetch --no-tags --quiet origin "$BASE_REF" || true
+            if git rev-parse --verify -q "origin/$BASE_REF" >/dev/null; then
+              files=$(git diff --name-only "origin/$BASE_REF...HEAD") || files=""
+              if [ -n "$files" ]; then
+                full=false
+                while IFS= read -r f; do
+                  case "$f" in
+                    docs/*|.ai-dlc/*|LICENSE*|*.md) : ;;
+                    *) full=true; break ;;
+                  esac
+                done <<< "$files"
+              fi
+            fi
+          fi
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          if [ "$full" = "true" ]; then
+            echo "::notice::gates mode=full (non-docs file, non-PR event, or fallback on any classification doubt)"
+          else
+            echo "::notice::gates mode=docs-only — every changed file is docs/**, .ai-dlc/**, *.md or LICENSE*; heavy steps skipped, required check reported by this job"
+            echo "Changed files:"
+            git diff --name-only "origin/$BASE_REF...HEAD" | sed 's/^/  /'
+          fi
       - uses: actions/setup-java@v4
+        if: steps.scope.outputs.full == 'true'
         with:
           distribution: temurin
           java-version: '21'
       - uses: subosito/flutter-action@v2
+        if: steps.scope.outputs.full == 'true'
         with:
           flutter-version: '3.47.9'
           channel: 'stable'
@@ -48,9 +105,14 @@ jobs:
       # the same SHA went green). A genuine failure fails BOTH attempts;
       # only transient download corruption is absorbed.
       - name: flutter pub get
+        if: steps.scope.outputs.full == 'true'
         run: flutter pub get || { echo "pub get failed — retrying once"; sleep 20; flutter pub get; }
       - run: flutter analyze
+        if: steps.scope.outputs.full == 'true'
       - run: dart format --output=none --set-exit-if-changed .
+        if: steps.scope.outputs.full == 'true'
       - run: flutter test --exclude-tags live
+        if: steps.scope.outputs.full == 'true'
       - name: flutter build apk --debug
+        if: steps.scope.outputs.full == 'true'
         run: flutter build apk --debug || { echo "build failed — retrying once"; sleep 20; flutter build apk --debug; }
