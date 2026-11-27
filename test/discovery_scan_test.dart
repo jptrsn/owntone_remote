@@ -360,6 +360,13 @@ void main() {
         contains('could not be resolved (DNS)'),
         reason: 'the typed DNS error, not a generic connection failure',
       );
+      // issue #93: a network-y error now arms the recovery timer — leave
+      // the phase before the body ends so the binding's pending-timer
+      // invariant doesn't see a live periodic the test never exercised
+      // (the timer's own behaviour is pinned in
+      // connection_error_auto_retry_test.dart, at test speed).
+      conn.disconnect();
+      await tester.pump();
     });
   });
 

@@ -4004,6 +4004,99 @@ device pass is not queued until the maintainer applies it.
 `flutter test --exclude-tags live` → **648/648**; new file alone → 11/11.
 No product code changed this round — documentation-only evidence fixes.
 
+## 2026-11-27 — issue #93: cold boot against a down server self-heals — error-phase recovery timer (builder, night-2026-11-27 unit 3)
+
+Unattended builder run on `fix/issue-93-error-phase-auto-retry` (off develop
+`822144e`). `ConnectionController` arms a `Timer.periodic`
+(`errorProbeInterval`, default 10 s) when entering `error` from a network-y
+(`dns`/`refused`/`timeout`) Dio failure and re-drives `retry()`; auth/http/
+client-bug errors stay inert (T4/T5 pin no hammering/no spin); timer cancelled
+on every other phase entry, in `_teardownClient`, and by `disconnect()`.
+`lib/main.dart` and all UI untouched (AC-5 diff-clean).
+
+Deviation + adjacent hardening (report ASSUMPTIONS-1): `connectTo`'s
+continuations now carry the `_probeServer`-style `_generation` guard — the
+timer makes attempts routinely in flight while the user can still disconnect,
+and an unguarded continuation landing mid-attempt lands `idle → error` +
+re-arms the timer (reproduced both ways from a /tmp backup restore path,
+never `git checkout --`). Mutation: deleting the arm reddens all six positive
+tests of the new file. **Review round 1 correction:** the race exists only
+when `disconnect()` lands mid-attempt (`_ConnectingScreen` Cancel,
+root_screen.dart:103, reachable during the 5–15 s connecting window); T6 as
+written never enters it, so the earlier "reverting the guard re-breaks T6"
+claim was wrong — the guard is now pinned by the committed race test **T9**
+(Completer-held attempt → `disconnect()` → release → `idle` + frozen request
+count + null `errorMessage`; deleting the three guards reddens T9 alone,
+`Expected: idle / Actual: error`).
+
+Gates green (analyze 0 · format clean · `flutter test --exclude-tags live`
+670 passed · debug APK built). Device pass on the unit's own disposable AVD
+`OwnToneNight27_API_36` (created + deleted by this unit): D-1 blackhole
+192.0.2.1 → `connecting → error` at +5.05 s; the timer fires **10.00 s after
+each error entry** (first tick +10.001 s) and consecutive `error → connecting`
+cycles land **15.01 s** apart = 10 s interval + 5.01 s attempt (dio
+`connectTimeout`; round-1 F2 re-derivation of the cited logcat timestamps —
+the earlier "every 10.00 s" mislabelled the cycle period); D-2
+airplane-isolated launch → error, network
+back → `error → connecting → connected` (+`ws: none → open`) on the timer
+tick with zero taps — the issue's no-tap recovery observed verbatim; D-3
+error screen text intact (uiautomator). Pause-checkpoints before/after:
+`pause`, `item_progress_ms=171338` unchanged across the entire pass, volume
+46, ESP-CAAC64 + Volumio Kitchen selected — untouched. Plan facts corrected
+in-report: prefs live in `FlutterSharedPreferences.xml` with `flutter.`-key
+prefix (shared_preferences_android 2.4.10), and `svc wifi disable` does not
+isolate on the emulator image (eth0 stays up) — used the plan's
+`cmd connectivity airplane-mode` fallback.
+
+Review round 1 (fixer, PR #95): committed T9 pinning the `connectTo`
+`_generation` guard (mutation-verified red on guard deletion, restored from
+/tmp backup — no `git checkout`); corrected the T6 claim and the D-1 "10.00 s
+cycle" figure in report/SESSION-LOG; `plans/93.md` AC-4 row now reads "all 5
+tests" (file has 5). Gates re-run green incl. `flutter build apk --debug`.
+
+## 2026-11-27 — issue #92: volume toaster on rocker steps everywhere except NowPlaying (builder, night-2026-11-27 unit 4)
+
+Built capture-22 parity per `plans/92.md`. `lib/src/ui/volume_toaster.dart`
+(new): `VolumeToasterLayer` mounted via `MaterialApp(builder:)` — the only
+slot above the Navigator that paints over opaque pushed routes;
+`IgnorePointer`+`ExcludeSemantics` pill at `Align.center` (device center in
+the y900–1500 band), single 1500 ms auto-hide `Timer`, repeat press updates
+in place. NP-root suppression via `VolumeToasterRouteObserver` depth ≤ 1
+(plan A-1). `PlayerController` gained `volumeStepSeq`/`volumeStepLevel`,
+bumped in `stepVolume` ONLY under `_action`'s gate
+(`api != null && isConnected && _player != null`) with the same clamp
+expression as the optimistic copy — bar label == NP slider value by
+construction (AC-4 agreement). `OwntoneRemoteApp` → StatefulWidget (stable
+observer + test-visible `toaster` getter). `mirror_handler.dart`,
+`now_playing_screen.dart`, `android/`, `pubspec` untouched per plan.
+
+Tests: `test/volume_toaster_test.dart` T1–T11 + T12 in
+`rocker_foreground_test.dart` — 684/684 suite. Gates: analyze 0 issues,
+format 0 changed, test +684, `build apk --debug` OK (tails verbatim in the
+report). Two harness findings honoured: (1) a first post-foreground
+uiautomator dump can return the semantics-free shell — re-dump; D-3 used
+same-screen baseline-vs-bar-visible node-set diff (62 vs 62 nodes, zero
+delta, no `51`/`volume` text) not a single dump; (2) `evaluate` needs the
+`flutter run` compile service (plain launch ⇒ "No compilation service
+available"). A widget-test crash (`object.dart:6723` semantics-geometry
+assertion on banner insert under a pushed route) reproduced with a plain
+`MaterialApp` — pre-existing framework/harness interaction, unrelated to the
+layer; affected test restructured (disconnect at root before push).
+
+Device pass (own AVD `OwnToneNight27_API_36`, created + deleted by the unit;
+serial re-verified via `getprop ro.boot.qemu.avd_name`; only the night AVD
+and the untouched Pixel 6 were attached): controller-driven steps via
+`evaluate` under `flutter run` (never keyevent 24/25 — night-AVD keyevents
+go to system volume, H-1/H-2 recorded BLOCKED-PENDING-HOST-VERIFICATION with
+the plan's substitute proofs). D-1 Queue: band y900–1500 diff **110 009 px**
+at +0.35 s (changed y1133–1298), **0** by +3 s (full-screen diff 0 too),
+server 46→51 relative, `seq=1 level=51`. D-2 NP: center-band diff **0**,
+slider-band diff 4621 px, SeekBar content-desc `'51%'`→`'56%'`, 51→56. All
+steps pause-verified first; `item_progress_ms=171338` frozen across the
+entire pass; restore `PUT volume=46` 204 + GET verify; outputs GET unchanged
+(ESP-CAAC64 + Volumio Kitchen selected). Zero `E/flutter`/`FATAL`. Report:
+`.ai-dlc/night-2026-11-27/reports/92.md`.
+
 ## 2026-11-27 — PR #89 host device pass — INCIDENT: ~59 s playback from a transport broadcast (host session)
 
 **What happened:** during the user-authorized host pass of PR #89's device rows on the

@@ -359,6 +359,42 @@ void main() {
         expect(server.volume, 80);
       },
     );
+
+    // Issue #92 AC-7: the toaster rides the same accept/decline decision
+    // as the server step — `volumeStepSeq` is bumped once per ACCEPTED
+    // press and not at all for a declined one, so a declined press can
+    // never schedule the (host-bound) indicator timer either.
+    test('an accepted press bumps volumeStepSeq; a declined press does not '
+        '(#92 AC-7)', () async {
+      await goForeground();
+      expect(player.volumeStepSeq, 0);
+      expect(player.volumeStepLevel, isNull);
+
+      expect(await deliverKey('raise'), isTrue);
+      expect(player.volumeStepSeq, 1);
+      expect(player.volumeStepLevel, 80, reason: '75+5 (default step)');
+
+      expect(await deliverKey('lower'), isTrue);
+      expect(player.volumeStepSeq, 2);
+      expect(player.volumeStepLevel, 75);
+
+      // Declined: the key-release marker.
+      expect(await deliverKey('same'), isFalse);
+      expect(player.volumeStepSeq, 2);
+
+      // Declined: backgrounded (D20 guard).
+      handler.setAppForeground(false);
+      await pump();
+      expect(await deliverKey('raise'), isFalse);
+      expect(player.volumeStepSeq, 2);
+      expect(player.volumeStepLevel, 75);
+
+      // Declined: un-registered (service-only / detached) — nobody is
+      // listening, the phone keeps the key.
+      await handler.stopVolumeKeys();
+      expect(await deliverKey('raise'), isNull);
+      expect(player.volumeStepSeq, 2);
+    });
   });
 
   group('backgrounded stays inert (R-06/D20, #84):', () {
