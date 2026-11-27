@@ -79,6 +79,8 @@ typedef WsFactory =
 /// ```
 /// idle → connecting → connected
 /// connecting → error            (typed failure: DNS / refused / timeout / 401)
+/// error → connecting            (automatic retry timer, network-y
+///                                failures only — unit 3/#93)
 /// connected → offline           (REST unreachable while the WS is down)
 /// offline → connected           (REST reachable again)
 /// connected → idle              (explicit disconnect)
@@ -94,6 +96,7 @@ class ConnectionController extends ChangeNotifier {
     Backoff? backoff,
     Logger? logger,
     Duration offlineProbeInterval = kOfflineProbeInterval,
+    Duration errorProbeInterval = kOfflineProbeInterval,
   }) {
     _dioFactory = dioFactory ?? (options) => Dio(options);
     _wsFactory =
@@ -103,6 +106,7 @@ class ConnectionController extends ChangeNotifier {
     _backoff = backoff ?? Backoff();
     _logger = logger ?? Logger(printer: PrettyPrinter(methodCount: 0));
     _offlineProbeInterval = offlineProbeInterval;
+    _errorProbeInterval = errorProbeInterval;
   }
 
   late final DioFactory _dioFactory;
@@ -137,6 +141,29 @@ class ConnectionController extends ChangeNotifier {
   /// stream, stranding the banner forever (user bug 2026-11-17).
   late final Duration _offlineProbeInterval;
   Timer? _offlineProbe;
+
+  /// The recovery timer while [ConnectionPhase.error] (issue #93): a cold
+  /// boot with the server unreachable landed in `error` and stayed there
+  /// until the user tapped Retry — the offline probe above only exists in
+  /// `offline`, and no connectivity listener exists. Armed by [_setPhase]
+  /// when entering `error` from a network-y failure ([_errorAutoRetry]),
+  /// cancelled on every other phase entry (and in [_teardownClient]/
+  /// [dispose]). Without it, a rebooted phone + restarted server = dead
+  /// remote until someone taps (same user-visible class as #81). Fires
+  /// [retry] — not [_probeServer]: a failed attempt already tore the
+  /// client down (`_api` null → the probe would no-op), and `retry` is
+  /// exactly the path the host observation proved recovers
+  /// (`error → connecting → connected`).
+  late final Duration _errorProbeInterval;
+  Timer? _errorRetry;
+
+  /// Whether the failure that took us into [ConnectionPhase.error] was
+  /// network-y (`dns`/`refused`/`timeout` — the reasons a black-holed
+  /// network, down server, or dead DNS produce), i.e. whether the error
+  /// recovery timer is eligible. Set by the `connectTo` failure catches,
+  /// cleared by the `connectTo` prologue and [disconnect]: a 401 or a
+  /// client bug must not spin a 10 s attempt loop.
+  bool _errorAutoRetry = false;
 
   /// Single-flight state for [_probeServer]. Deliberately NOT reset by
   /// [_teardownClient]: an old-generation probe still awaiting `getConfig()`
@@ -199,9 +226,18 @@ class ConnectionController extends ChangeNotifier {
     _teardownClient();
     _config = config;
     _errorMessage = null;
+    _errorAutoRetry = false;
     _serverVersion = null;
     _serverName = null;
     _setPhase(ConnectionPhase.connecting);
+    // Captured after the prologue teardown (which bumped it). The error
+    // recovery timer (#93) makes attempts routinely in flight while the
+    // user can still disconnect / start a newer connectTo — an unguarded
+    // continuation then lands its phase into the newer generation, making
+    // `disconnect()` non-final (T6) and letting a stale attempt flip
+    // idle→error and re-arm the timer. Same guard [_probeServer] applies to
+    // its probe continuations (see [_generation]).
+    final generation = _generation;
 
     final options = BaseOptions(
       baseUrl: config.jsonBase.toString(),
@@ -214,6 +250,7 @@ class ConnectionController extends ChangeNotifier {
     _api = api;
     try {
       final serverConfig = await api.getConfig();
+      if (generation != _generation) return;
       _serverVersion = serverConfig['version'] as String?;
       _serverName = serverConfig['library_name'] as String?;
       final wsPort = (serverConfig['websocket_port'] as num?)?.toInt() ?? 0;
@@ -233,11 +270,26 @@ class ConnectionController extends ChangeNotifier {
       }
       _setPhase(ConnectionPhase.connected);
     } on DioException catch (e) {
+      if (generation != _generation) return;
       final err = connectionErrorFromDio(e, config);
+      // Network-y failures are indistinguishable from `offline` for
+      // recovery purposes (issue #93) — the error timer may re-drive the
+      // attempt. Auth/http/client-bug failures must keep Retry as the only
+      // path (no 10 s credential hammering, no spin on our own bugs).
+      _errorAutoRetry = switch (err.reason) {
+        ConnectionErrorReason.dns ||
+        ConnectionErrorReason.refused ||
+        ConnectionErrorReason.timeout => true,
+        ConnectionErrorReason.unauthorized ||
+        ConnectionErrorReason.http ||
+        ConnectionErrorReason.other => false,
+      };
       _teardownClient();
       _errorMessage = err.message;
       _setPhase(ConnectionPhase.error);
     } catch (e) {
+      if (generation != _generation) return;
+      _errorAutoRetry = false;
       _teardownClient();
       _errorMessage = 'Connection failed: $e';
       _setPhase(ConnectionPhase.error);
@@ -254,6 +306,7 @@ class ConnectionController extends ChangeNotifier {
   void disconnect() {
     _teardownClient();
     _errorMessage = null;
+    _errorAutoRetry = false;
     _serverVersion = null;
     _serverName = null;
     _setPhase(ConnectionPhase.idle);
@@ -350,6 +403,8 @@ class ConnectionController extends ChangeNotifier {
     _generation++;
     _offlineProbe?.cancel();
     _offlineProbe = null;
+    _errorRetry?.cancel();
+    _errorRetry = null;
     _wsStatusSub?.cancel();
     _wsStatusSub = null;
     _wsEventsSub?.cancel();
@@ -378,6 +433,24 @@ class ConnectionController extends ChangeNotifier {
     } else {
       _offlineProbe?.cancel();
       _offlineProbe = null;
+    }
+    if (p == ConnectionPhase.error && _errorAutoRetry) {
+      // Safety net (issue #93): while in `error` after a network-y failure,
+      // re-drive the connect attempt — without it the phase machine has no
+      // `error → connecting` edge until someone taps Retry, so a phone that
+      // booted while the server was down never recovers on its own.
+      // `retry()` re-enters `connecting` (cancelling this timer before its
+      // first await), and the failure catch re-arms it: a fixed-cadence
+      // cycle, same feel as the offline probe. The callback re-checks the
+      // phase so a tick racing a manual connect can never overlap it.
+      _errorRetry ??= Timer.periodic(_errorProbeInterval, (_) {
+        if (_phase == ConnectionPhase.error && _config != null) {
+          unawaited(retry());
+        }
+      });
+    } else {
+      _errorRetry?.cancel();
+      _errorRetry = null;
     }
     notifyListeners();
   }

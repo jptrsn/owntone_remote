@@ -15,6 +15,7 @@ import 'src/rating/rating_controller.dart';
 import 'src/settings/settings_store.dart';
 import 'src/settings/theme_preference.dart';
 import 'src/ui/root_screen.dart';
+import 'src/ui/volume_toaster.dart';
 
 /// Debug handle for the UI-debug loop (evaluate_expression).
 Object? debugGlobals;
@@ -125,7 +126,10 @@ Future<void> _initAudio(PlayerController player, SettingsStore store) async {
     // androidStopForegroundOnPause: false — keep the mediaPlayback FGS
     // alive while the server is paused (spike criterion 7, Finding 3).
     final handler = await AudioService.init(
-      builder: () => MirrorAudioHandler(player, settings: store),
+      // #82: share the app logger so click() key-arrival lines land in the
+      // same logcat stream as the rest of the app.
+      builder: () =>
+          MirrorAudioHandler(player, settings: store, logger: _logger),
       config: const AudioServiceConfig(
         androidStopForegroundOnPause: false,
         androidNotificationChannelName: 'OwnTone Remote',
@@ -144,6 +148,11 @@ Future<void> _initAudio(PlayerController player, SettingsStore store) async {
       WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
     );
     await handler.start();
+    // R-06/D20 (issue #84): the rocker reaches the server only through this
+    // app-local foreground path — the media session never advertises a
+    // volume control, so SystemUI shows no server-volume slider and Android
+    // never routes the keys to the session.
+    await handler.startVolumeKeys();
   } catch (e) {
     _logger.e('audio init failed (app stays functional)', error: e);
   }
@@ -154,13 +163,41 @@ Future<void> _initAudio(PlayerController player, SettingsStore store) async {
 /// `brightness: dark`, nothing else).
 const _seedColor = Color(0xFF7C5CBF);
 
-class OwntoneRemoteApp extends StatelessWidget {
-  const OwntoneRemoteApp({super.key, this.home = const RootScreen()});
+/// A [StatefulWidget] (not stateless) on purpose: it owns the single
+/// [VolumeToasterRouteObserver] the toaster layer gates on, and that
+/// instance must survive every rebuild (theme change, hot reload). A
+/// stateless `build()`-time `VolumeToasterRouteObserver()` would hand the
+/// Navigator a fresh zero-depth observer per frame and the NP-root
+/// suppression would silently misfire. Do not "simplify" back to
+/// StatelessWidget.
+class OwntoneRemoteApp extends StatefulWidget {
+  const OwntoneRemoteApp({
+    super.key,
+    this.home = const RootScreen(),
+    this.toasterObserver,
+  });
 
   /// Injectable for widget tests: the theme wiring ([themeMode] watching
   /// [ThemePreference]) is testable without every controller [RootScreen]
   /// needs. Production passes no `home`.
   final Widget home;
+
+  /// Test seam for the toaster's route-depth gate (see
+  /// [OwntoneRemoteAppState.toaster]): pass your own observer to read
+  /// `depth` from the widget test. Production passes null and the State
+  /// creates one.
+  final VolumeToasterRouteObserver? toasterObserver;
+
+  @override
+  State<OwntoneRemoteApp> createState() => OwntoneRemoteAppState();
+}
+
+class OwntoneRemoteAppState extends State<OwntoneRemoteApp> {
+  late final VolumeToasterRouteObserver _toaster =
+      widget.toasterObserver ?? VolumeToasterRouteObserver();
+
+  /// The toaster's route-depth gate (issue #92). Exposed for tests.
+  VolumeToasterRouteObserver get toaster => _toaster;
 
   @override
   Widget build(BuildContext context) {
@@ -182,7 +219,18 @@ class OwntoneRemoteApp extends StatelessWidget {
         ),
       ),
       themeMode: themeMode,
-      home: home,
+      home: widget.home,
+      // The toaster bar renders ABOVE opaque pushed routes — only possible
+      // from a layer mounted above the Navigator, i.e. MaterialApp's
+      // `builder`. Its context sits above the Navigator, so `ModalRoute.of`
+      // is null there and route awareness comes from the observer (that is
+      // also why `navigatorObservers` and `builder` must share one
+      // [_toaster] instance). The layer is inert — just `child` — when no
+      // PlayerController provider is registered (theme/settings harness
+      // pumps), per the mini_player nullable-idiom precedent.
+      navigatorObservers: [_toaster],
+      builder: (context, child) =>
+          VolumeToasterLayer(observer: _toaster, child: child!),
     );
   }
 }

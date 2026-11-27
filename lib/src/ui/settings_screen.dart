@@ -20,22 +20,35 @@ import 'mini_player.dart';
 /// resolves — discovery must never block manual entry (R-20).
 const Duration kScanTimeout = Duration(seconds: 12);
 
-/// Side-panel scan state (R-20).
+/// Scan state (R-20). The screen's phase is `scanning` from birth when it
+/// opens unconfigured — issue #62's auto-start makes the scan the primary
+/// flow with no idle frame in between (see [SettingsScreen]); a configured
+/// Settings visit stays `idle` until the user taps Scan, and `idle` renders
+/// no panel verdict at all.
 enum _ScanPhase { idle, scanning, done }
 
-/// Settings (R-01, R-14, R-20, R-26): manual host + JSON-port entry persisted via
-/// [SettingsStore], the volume-rocker step (1–10, applied to the next
-/// press — the mirror handler reads the store at keypress time), the theme
-/// picker (Light · Dark · System, applied on select), and the
+/// Settings (R-01, R-14, R-20, R-26): the volume-rocker step (1–10, applied
+/// to the next press — the mirror handler reads the store at keypress time),
+/// the theme picker (Light · Dark · System, applied on select), and the
 /// entry to the read-only [AboutScreen].
 ///
-/// R-20 (issue #42): a **Scan** affordance browses the LAN for the OwnTone
+/// R-20 (issue #42): a **Scan** browses the LAN for the OwnTone
 /// advertisement (`_http._tcp` + OwnTone TXT fingerprint — see
-/// [MdnsOwnToneDiscovery]) and lists hits for one-tap selection. The scan is
-/// a *side panel* with its own loading/timeout/error states: the manual
-/// host/port form above it is never disabled by a scan, and a hit pre-fills
-/// the fields and goes through the existing R-01 [_saveAndConnect] — there
-/// is no discovery-specific connect path to drift from R-01.
+/// [MdnsOwnToneDiscovery]) and lists hits for one-tap selection. A hit
+/// pre-fills the manual fields and goes through the existing R-01
+/// [_saveAndConnect] — there is no discovery-specific connect path to drift
+/// from R-01.
+///
+/// Issue #62 flips the R-20 prominence: discovery is the **primary** flow —
+/// the scan starts by itself on first display and its panel (loading / hits
+/// / empty / error) is the first thing presented — and the manual host/port
+/// form is hidden behind an explicit **Advanced** [ExpansionTile]. The tile
+/// gates *visibility only*: behind it is the unchanged form with the same
+/// R-01 validation and the same [_saveAndConnect], and it stays reachable in
+/// every scan state (running, timed out, errored), so discovery can never
+/// strand a user whose mDNS fails (R-20's "discovery never blocks manual
+/// entry", now enforced by an always-visible escape hatch rather than by
+/// form placement).
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.initial, this.discovery});
 
@@ -60,7 +73,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// time, so the *next* press already uses the new step).
   late int _step;
 
-  // R-20 scan side panel — independent of the manual form above it.
+  // R-20 scan — issue #62 makes it the primary flow: independent of the
+  // manual form (which now sits behind the Advanced tile), and started by
+  // itself on first display.
   late final DiscoverySource _discovery;
   _ScanPhase _scanPhase = _ScanPhase.idle;
   List<DiscoveredServer> _hits = const [];
@@ -72,7 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // wrapper itself, and "Try again" cannot fire mid-flight (phase guard).
   // The gen is defence-in-depth for exactly those two wrappers: if either
   // ever changes, an orphaned completion must still not clobber a fresh
-  // scan. Every post-await setState in _startScan requires its own gen
+  // scan. Every post-await setState in _runScan requires its own gen
   // to still be current.
   int _scanGen = 0;
 
@@ -86,6 +101,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     _step = context.read<SettingsStore>().rockerStep;
     _discovery = widget.discovery ?? MdnsOwnToneDiscovery();
+    // Issue #62: discovery is the primary flow of connection SETUP, so the
+    // unconfigured screen (RootScreen's first-launch view — `initial == null`)
+    // scans by itself: the user never has to find the scan button first.
+    // The phase flips here, before the first frame, so the FIRST frame is
+    // already the loading panel (no idle frame in between); the discover()
+    // call waits for that frame — never start network I/O from initState
+    // mid-build. A *configured* user opening Settings (rocker step / theme)
+    // is not scanned for on their behalf: no multicast traffic for a settings
+    // visit, and the leading Scan button is their affordance.
+    if (initial == null) {
+      _scanPhase = _ScanPhase.scanning;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_runScan());
+      });
+    }
   }
 
   void _bumpStep(int delta) {
@@ -148,19 +178,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  /// Runs one R-20 scan into the side panel. Never touches the manual
-  /// fields' state; every terminal branch (hits / empty / timeout / error)
-  /// leaves the form fully usable — the whole point of the side-panel
-  /// design.
+  /// Runs one R-20 scan (the primary flow, issue #62). Never touches the
+  /// manual fields' state; every terminal branch (hits / empty / timeout /
+  /// error) leaves the Advanced form reachable and usable — the whole point
+  /// of keeping discovery and manual entry independent.
   Future<void> _startScan() async {
     if (_scanPhase == _ScanPhase.scanning) return;
-    final gen = ++_scanGen;
-    bool current() => mounted && gen == _scanGen;
     setState(() {
       _scanPhase = _ScanPhase.scanning;
       _scanError = null;
       _hits = const [];
     });
+    await _runScan();
+  }
+
+  /// The scan itself; the caller owns the `scanning` phase (initState's
+  /// auto-start sets it before the first frame so no idle frame is ever
+  /// shown, [_startScan] sets it on tap).
+  Future<void> _runScan() async {
+    final gen = ++_scanGen;
+    bool current() => mounted && gen == _scanGen;
     try {
       final hits = await _discovery.discover().timeout(kScanTimeout);
       if (!current()) return;
@@ -170,7 +207,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(
         () => _scanError =
             'Scan timed out — no OwnTone server answered. '
-            'You can still enter the address manually.',
+            'You can still enter the address under Advanced.',
       );
     } on DiscoveryException catch (e) {
       if (!current()) return;
@@ -193,7 +230,86 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _saveAndConnect();
   }
 
+  /// The label on the primary scan button (R-20 / issue #62).
+  String get _scanButtonLabel =>
+      _scanPhase == _ScanPhase.scanning ? 'Scanning…' : 'Scan for servers';
+
+  /// Manual host/port entry (R-01) behind an explicit **Advanced**
+  /// affordance (issue #62).
+  ///
+  /// Collapsed by default and [ExpansionTile.maintainState] is off, so the
+  /// fields are absent from the widget tree until the tile is tapped (the
+  /// TextEditingControllers are State-owned: text typed before a collapse
+  /// survives a re-expand). The tile itself renders in every scan state, so
+  /// a running/timed-out/failed scan never hides the escape hatch.
+  /// Everything inside is the unchanged R-01 form — same validators, same
+  /// [_saveAndConnect], same enclosing [Form] — so there is no second
+  /// connect path for R-01 to drift from.
+  Widget _advancedTile(BuildContext context) {
+    return ExpansionTile(
+      key: const ValueKey('advanced-tile'),
+      leading: const Icon(Icons.tune),
+      title: const Text('Advanced'),
+      subtitle: const Text('Enter the server address yourself'),
+      childrenPadding: EdgeInsets.zero,
+      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        TextFormField(
+          key: const ValueKey('manual-host'),
+          controller: _host,
+          decoration: const InputDecoration(
+            labelText: 'Host',
+            hintText: 'e.g. 192.168.1.13',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.url,
+          autofillHints: const [AutofillHints.url],
+          textInputAction: TextInputAction.next,
+          validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          key: const ValueKey('manual-port'),
+          controller: _port,
+          decoration: const InputDecoration(
+            labelText: 'JSON port',
+            hintText: 'e.g. 3689',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.done,
+          onFieldSubmitted: (_) => _saveAndConnect(),
+          validator: (v) {
+            final p = int.tryParse((v ?? '').trim());
+            if (p == null) return 'Enter a number';
+            if (p < ServerConfig.minPort || p > ServerConfig.maxPort) {
+              return '1–65535';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 24),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            key: const ValueKey('manual-connect'),
+            onPressed: _saveAndConnect,
+            icon: const Icon(Icons.link),
+            label: const Text('Connect'),
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
   Widget _scanPanel(BuildContext context) {
+    if (_scanPhase == _ScanPhase.idle) {
+      // A configured user opened Settings for something else: no scan has
+      // run, so show no scan verdict at all — just the leading Scan button.
+      return const SizedBox.shrink();
+    }
     if (_scanPhase == _ScanPhase.scanning) {
       return const Column(
         key: ValueKey('scan-panel'),
@@ -250,7 +366,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           const Text(
             'No OwnTone server found on this network. '
-            'You can still enter the address manually.',
+            'You can still enter the address under Advanced.',
             key: ValueKey('scan-empty'),
           ),
           Align(
@@ -323,90 +439,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    Icons.dns,
+                    Icons.radar,
                     size: 48,
                     color: Theme.of(context).colorScheme.primary,
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'OwnTone server',
+                    'Find your OwnTone server',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'The websocket port is discovered automatically from the '
-                    'server’s /api/config.',
+                    'The quickest way in: pick your server from the list. '
+                    'On a network where discovery does not work, enter the '
+                    'address under Advanced.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 24),
-                  TextFormField(
-                    controller: _host,
-                    decoration: const InputDecoration(
-                      labelText: 'Host',
-                      hintText: 'e.g. 192.168.1.13',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.url,
-                    autofillHints: const [AutofillHints.url],
-                    textInputAction: TextInputAction.next,
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _port,
-                    decoration: const InputDecoration(
-                      labelText: 'JSON port',
-                      hintText: 'e.g. 3689',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.done,
-                    onFieldSubmitted: (_) => _saveAndConnect(),
-                    validator: (v) {
-                      final p = int.tryParse((v ?? '').trim());
-                      if (p == null) return 'Enter a number';
-                      if (p < ServerConfig.minPort ||
-                          p > ServerConfig.maxPort) {
-                        return '1–65535';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _saveAndConnect,
-                    icon: const Icon(Icons.link),
-                    label: const Text('Connect'),
-                  ),
-                  if (conn.isConnected) ...[
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: _disconnect,
-                      child: const Text('Disconnect'),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  // R-20 scan side panel (issue #42): below the manual
-                  // form, own loading/timeout/error states — the fields
-                  // above are never disabled by a scan in any state.
+                  // Issue #62 — the scan is the PRIMARY flow: it leads the
+                  // screen and its panel (loading / hits / empty / error) is
+                  // the first thing presented. It starts by itself on first
+                  // display (initState), so the list is usually already
+                  // populating by the time the user reads this.
                   OutlinedButton.icon(
                     key: const ValueKey('server-scan-button'),
                     onPressed: _scanPhase == _ScanPhase.scanning
                         ? null
                         : _startScan,
                     icon: const Icon(Icons.radar),
-                    label: Text(
-                      _scanPhase == _ScanPhase.scanning
-                          ? 'Scanning…'
-                          : 'Scan for servers',
-                    ),
+                    label: Text(_scanButtonLabel),
                   ),
-                  if (_scanPhase != _ScanPhase.idle) ...[
-                    const SizedBox(height: 8),
-                    _scanPanel(context),
-                  ],
+                  const SizedBox(height: 8),
+                  _scanPanel(context),
+                  const SizedBox(height: 24),
+                  // Issue #62 — the manual escape hatch. Rendered in EVERY
+                  // scan state (idle / running / timed out / errored), so
+                  // discovery can never strand the user; it gates visibility
+                  // only, never the R-01 path behind it.
+                  _advancedTile(context),
+                  const SizedBox(height: 12),
+                  if (conn.isConnected)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        onPressed: _disconnect,
+                        child: const Text('Disconnect'),
+                      ),
+                    ),
                   const SizedBox(height: 24),
                   const Divider(),
                   // Volume-rocker step (R-14): persists on every tap — the

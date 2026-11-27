@@ -113,10 +113,14 @@ iTunes-specific features.
   2026-11-14): **the Pixel 6 is THE real test device**; the Pixel 10 is
   the user's personal phone — never a dev/test/verification target.
   The supervised play window
- needs the user. The server at 192.168.1.13 is **shared with another
- active session** — expect concurrent player/queue changes; snapshot before
- and restore after any mutation, and re-verify `state` immediately before
- anything that can start audio. Note: the Chromecast remote outputs on this
+ needs the user. The server at 192.168.1.13: the earlier "shared with another
+ active session" premise is **stale** (user fact 2026-11-27 — no other live
+ session exists). Concurrent player/queue changes can still appear on their
+ own; the most plausible source, measured adjacent but not attributed, is the
+ autonomous **owntone_sync app on the Pixel 6** (the `dumpsys media_session`
+ button-session holder, designed to follow and drive the server). Keep the
+ discipline regardless: snapshot before and restore after any mutation, and
+ re-verify `state` immediately before anything that can start audio. Note: the Chromecast remote outputs on this
  server fail to select server-side — treat **Volumio Kitchen (AirPlay)**
  and **Server (ALSA)** as the two reliable outputs for any audio-routing
  test. UI oracle: **uiautomator's a11y bridge is dead on the Pixel 6**
@@ -157,8 +161,13 @@ unexpectedly.
   requests, `pause`, `stop`, `seek` (position moves, no audio), volume changes,
   queue edits **without** `playback=start`, enabling/disabling outputs (no
   audio flows while paused), library reads.
-- "next/previous" while the server is paused keeps it paused in OwnTone, but
-  treat any web-UI or app action that *might* resume audio as `supervised`.
+- **"next/previous" are play-class on this server pair — the old "keeps it
+  paused in OwnTone" claim is wrong** (measured 2026-11-27, OwnTone v29.3:
+  `PUT /api/player/next` from a verified `pause` resumed playback — ~59 s
+  unintended audio, incident recorded in `docs/SESSION-LOG.md` 2026-11-27).
+  Treat them like play: deselect all outputs first (playback stays inaudible),
+  or take the supervision gate. Likewise treat any web-UI or app action that
+  *might* resume audio as `supervised`.
 
 ### 2. Device isolation
 
@@ -233,6 +242,38 @@ the app.
 | `docs/ARCHITECTURE.md` | Writing code | Layers, `MusicProvider` contract, state flow |
 | `docs/API.md` | Touching the network layer | Endpoint reference, live examples, WS protocol |
 | `docs/retune-capture/CAPTURE-PROTOCOL.md` | Capture intent only | Walk procedure, static pass, output format |
+| `.ai-dlc/orchestrator/PROCEDURE.md` | Issue-driven maintenance | Per-issue lifecycle: plan → build → PR → agentic review → iterate → merge → close. Host harness reads it whole; factory agents read § Maintenance model + § OpenHands Software Factory mapping (device work is host-only) |
+
+## Maintenance model (OpenHands primary, host harness for devices — 2026-11-22)
+
+Issue-driven maintenance runs on the **OpenHands Software Factory**
+(factory-triage → factory-developer → independent factory-reviewer →
+delivery watchdog) against this repo. If you are a factory agent, this file
+is your always-loaded repository context; the per-issue lifecycle detail —
+including the gates table, the review-integrity rules (independent
+reviewer, full report POSTED to the PR, merge gate reads GitHub) and the
+evidence/truthfulness rules — is
+`.ai-dlc/orchestrator/PROCEDURE.md`; § Branching & CI is binding for
+every agent, factory or otherwise (branch off `develop`, PR back to
+`develop`, squash-merge, delete branch, **explicit `gh issue close`** —
+never trust the `Closes #n` keyword alone).
+
+**Host-bound carve-out:** work needing tools on the maintainer's machine —
+Android emulators (AVDs), `adb` (including the Pixel 6 `25071FDF600953`),
+`flutter run`/VM-service inspection, on-device observation, or supervised
+audio verification on the OwnTone server — is executed **only** by the
+opencode harness on that host. A sandboxed agent must never attempt device
+steps: build and verify everything possible without hardware (fakes,
+widget tests, gates), record each hardware-dependent criterion as
+`BLOCKED-PENDING-HOST-VERIFICATION` (action → expected observation →
+substitute proof) in the PR body, and comment requesting the
+`needs-host-tools` label so the host session takes the device pass (the
+`needs-host-tools` and `ready-for-dev` labels are maintainer-created —
+they exist as of 2026-11-22). Completed worked example of the split:
+issue #64 / PR #77 (2026-11-23) — factory built and mutation-tested the
+sandbox half; the host session ran the RCA, the Pixel 6 device pass, and a
+full-suite gates re-run, recording every `BLOCKED` row's evidence on the PR
+before the squash-merge (`58746c1`).
 
 ## Environment (host+CI aligned on 3.47.9, 2026-11-14)
 
@@ -347,7 +388,22 @@ A unit is **done** only when ALL of:
   **`pubspec`'s `+N` is Android versionCode: it must be strictly greater
   than every release ever tagged — never reset it on a version bump**
   (`release.sh` enforces this and the guards above).
-- Branch naming: `feature/*`, `fix/*`, `release/v*`, `hotfix/*`.
+- **Docs-only fast path in `gates` (2026-11-27).** A `pull_request` whose
+  entire merge-base diff is documentation (`docs/**`, `.ai-dlc/**`, any
+  `*.md`, `LICENSE*`) skips the heavy **steps** (setup, pub get, analyze,
+  format, test, build apk) and the `gates` job goes green in seconds — the
+  run annotation prints `gates mode=docs-only` plus the file list. Do NOT
+  "simplify" this to a workflow-level `paths:`/`paths-ignore:` or a job
+  `if:`: `gates` is the required status check, and an undelivered check
+  sticks branch protection at "Expected — never delivered" on exactly the
+  PRs being spared. push (develop/release/hotfix) and the `v*` tag
+  cross-check always run **full** — only PR events are filtered, and
+  classification errs to full on any doubt. If a docs path ever gains a
+  build role (snippets compiled by a test), remove it from the docs set in
+  `gates.yml`.
+- Branch naming: `feature/*`, `fix/*`, `release/v*`, `hotfix/*`; OpenHands
+  factory automations use their configured `factory/issue-*` prefix (the
+  one sanctioned exception).
 - Red CI with a network/runner signature (known: Gradle NDK zip-download
   flake — gates.yml retries the network-touching steps once internally) →
   re-run the job once; still red after the in-step retry = real failure,
@@ -355,10 +411,14 @@ A unit is **done** only when ALL of:
 
 ## ai-dlc discipline
 
-- **Unattended overnight runs**: `.ai-dlc/overnight/pipeline.md` is the
-  authoritative process; the user authorized merge-to-develop unattended
-  **only** for the units in its Run configuration (issues #19–#26, decision
-  2026-11-18). Runs start as the `overnight` agent
+- **Unattended runs**: `.ai-dlc/orchestrator/PROCEDURE.md` is the
+  authoritative process (plan → build → PR → agentic review → fix loop →
+  squash-merge → close-issue, per issue, serially; supersedes
+  `.ai-dlc/overnight/pipeline.md`). Per-run scope — units, authorization,
+  device policy — lives in the human-filled `.ai-dlc/night-<date>/run.md`
+  (from `run-template.md`); unattended authorization covers **only** the
+  units named there, and only what that run's authorization line grants.
+  Runs start as the `overnight` agent
   (`.opencode/agent/overnight.md`) whose permission blocks pre-answer every
   prompt the run may raise and hard-deny repo creation, the `question` tool,
   and any path outside the repo + `/tmp`. **Scratch for any run lives ONLY
@@ -436,6 +496,17 @@ For any UI work on a running debug build:
   had just wiped). Commit the work, or restore mutations from a backup copy,
   never from git — and let the reviewer, not a green suite, catch the
   difference (a suite is green with OR without the missing test).
+- **Never interact with the screen (`input tap`/`swipe`/`keyevent`) on a
+  state you have not just observed.** Before EVERY scripted screen
+  interaction, take a fresh `uiautomator dump` (or screenshot) and confirm
+  from it that the intended target is actually on screen at those
+  coordinates — never tap from remembered geometry or a stale dump. The
+  shade/tile/notification layout shifts with connection state, session
+  list, and `cmd statusbar` calls; a tap that "worked" against a UI you
+  didn't dump first is an unverified measurement (cost a re-run on the
+  #83 spike, 2026-11-25: taps were issued against an assumed-open media
+  tile that had changed or vanished, and one "inert controls" result had
+  to be downgraded to hypothesis).
 
 ## Server quick reference
 

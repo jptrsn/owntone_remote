@@ -3051,3 +3051,1149 @@ logical px / textScaler 1.3 (#69), `media_kind` live-probe expectations (#55),
 **Server/device state:** paused; queue byte-identical (uri-sha `7e0650c2ab59ec2c`,
 1396 items); outputs snapshot pair restored; Pixel 6 idle foregrounded; no audio
 was started this session.
+
+
+## 2026-11-22 — orchestrated-issue procedure documented + OpenHands maintenance model (opencode)
+
+Docs-only change (no lib/test edits). The 2026-11-19/20/21 overnight saga
+(reviews lost to orchestrator compaction, PR #63 merged unreviewed, false
+SESSION-LOG claims since corrected by #68, issues left open after merge)
+showed the per-issue process was carried in the orchestrator's context and
+evaporated with it. Recorded it as repo artifacts under
+`.ai-dlc/orchestrator/`: `PROCEDURE.md` (state machine: plan →
+checklist-validated plan → build → PR → agentic review → (fix → re-review)*
+→ squash-merge + delete branch + **explicit `gh issue close`**; gates
+table; run-vs-unit blockers — a stuck unit is `BLOCKED-SKIP` + continue,
+safety/config drift stops the run; compaction-survival rules: ledger entry
+around every spawn, artifacts on disk before action, merge gate reads
+GitHub not context; evidence/truthfulness rules) + `contract.md`
+(byte-identical unattended contract) + `roles/{planner,builder,reviewer,fixer}.md`
+(each subagent reads only its own role file — role/task/process/constraints/
+explicit-return format, per the `prompt engineering guide` library; plan
+and review artifacts are persisted context-memory per `ai-dlc-method`) +
+`run-template.md` (per-run config → `.ai-dlc/night-<date>/run.md`, human-
+authorized). `.ai-dlc/overnight/pipeline.md` is now a tombstone pointer
+(history in git). Prompt authoring grounded via docs-mcp: `ai-dlc-method`,
+`ai-dlc`, `prompt engineering guide`.
+
+Maintenance routing (user decision 2026-11-22): **OpenHands Software
+Factory** is the default path for issue work going forward — new AGENTS.md
+§ "Maintenance model" (auto-loaded repo context per OpenHands docs) +
+PROCEDURE.md § factory mapping (triage≈plan-validation, developer≈planner+
+builder, reviewer≈reviewer with the posted-report marker, watchdog≈Step 4
+merge gates + close mandate); device-bound work (AVDs, adb, Pixel 6,
+flutter run, supervised audio) stays **host-only** in this harness —
+trigger-loaded `.agents/skills/device-bound-work/SKILL.md` + the
+`needs-host-tools` label convention; exemplar: #64 stays host-side until
+cause + proposed fix are identified. Review: independent agentic sub-agent
+per this repo's own rules; full report posted to the PR (link appended by
+the review rounds).
+
+## 2026-11-22 — issue #62: connection setup leads with auto-discovery (OpenHands factory)
+
+Factory-developer run, branch `openhands/issue-62` off develop @ 3f39259.
+R-20 shipped discovery as a **side panel below** the manual host/port form
+(issue #42); #62 flips the prominence in `lib/src/ui/settings_screen.dart`.
+
+UI: the screen now leads with discovery — radar icon, "Find your OwnTone
+server", the leading **Scan** button, and the scan panel; the R-01 manual
+form moved into an **Advanced** `ExpansionTile` ("Enter the server address
+yourself"). The tile gates *visibility only* — same fields, same validators,
+same `_saveAndConnect`, same enclosing `Form`, so no second connect path
+exists to drift from R-01. Auto-start: `initState` flips the phase to
+`scanning` (so the FIRST frame is the loading panel — no idle frame) and
+calls `discover()` from a post-frame callback, **only when `initial ==
+null`** — the unconfigured first-launch view (RootScreen's `ConnectionPhase.
+idle`). A configured Settings visit (rocker step / theme) must not pay
+multicast traffic unasked; the leading button stays its affordance, and
+`_ScanPhase.idle` renders no verdict panel at all. `discover()` moved out of
+`_startScan` into `_runScan` so the auto-start can own the phase without
+double-setState; the generation token, 12 s `kScanTimeout`, per-state
+`cancel()` and the never-block-manual-entry contract are untouched. Empty
+state now points at Advanced, as does the timeout copy.
+
+Tests: `test/discovery_scan_test.dart` rewritten for the new prominence —
+auto-scan on first display (fake `DiscoverySource` call counted, no tap),
+loading panel is the first thing presented and sits ABOVE the tile,
+host/port/Connect absent until Advanced is tapped, Advanced opens and is
+*editable while a scan is in flight*, error + timeout states still expose
+the tile and the revealed form connects end-to-end through the real
+`ConnectionController` + `ScriptedAdapter`, a configured visit does not
+scan, plus the preserved #42 legs (hits listing, one-tap pre-fill + R-01
+persist/connect, retry, re-scan, 360-px no-overflow) and the PR #61
+cancellation legs (dispose-during-scan cancels; late completion cannot
+clobber; pushed-route pop branch). 14 tests, all green.
+
+Docs: `docs/REQUIREMENTS.md` R-20 carries an explicit #62 amendment (the
+old "manual entry … remains the fallback **and default**" is superseded, so
+the file must not keep asserting the flipped behaviour).
+
+Gates: `flutter analyze` 0 issues; `dart format --set-exit-if-changed` clean;
+`flutter test --exclude-tags live` — see the PR body for the final count.
+**BLOCKED-PENDING-HOST-VERIFICATION** (host-bound per AGENTS § Maintenance
+model): the same-LAN scan on the Pixel 6 and the morning supervised re-check
+recorded by the #42 entry. Substitutes here: fake-source widget tests over
+the real connect path, including the "discovery dead, manual works" leg.
+
+### Review round 1 remediation (2026-11-23, OpenHands factory)
+
+Independent factory review (head `dc04819`) returned **CHANGES REQUESTED** on
+the evidence gate, not on code: the three host-bound rows in
+`BLOCKED-PENDING-HOST-VERIFICATION` (zero-tap auto-scan on a real first launch,
+the discovery-blocked escape hatch, and the #42 morning Pixel 6 re-check) are
+still unrecorded and can only be produced by the maintainer host session (AGENTS
+§ Maintenance model — a sandboxed agent must not attempt device steps).
+
+One non-blocking finding filed inline and fixed here: `docs/SCREENS.md` listed
+`Disconnect` inside the **Advanced** row, but the code renders it as a
+`TextButton` *below* the tile, gated on `conn.isConnected` only. The row now
+states that position explicitly.
+
+No code change: the reviewer verified the Advanced tile gates visibility only,
+the `initial == null` auto-start scope, and the `_runScan` generation/cancel
+discipline, and ran the 21 discovery/settings legs green with `flutter analyze`
+and `dart format` clean. R-01 validator coverage (AC5) stays a named follow-up:
+the reviewer measured all three validators from inside Advanced and confirmed
+nothing on `develop` asserted them either, so it is not a blocker for this PR.
+
+### Review round 2 remediation (2026-11-23, OpenHands factory)
+
+Independent re-review at head `1c50354` (the round-1 fix): no new finding, the
+SCREENS.md correction confirmed against `settings_screen.dart`, verdict still
+gated solely on the three outstanding host-bound rows (correctly routed:
+`needs-host-tools`, no device evidence fabricated). This pass closed the one
+code-side item the issue's own acceptance criteria demand and the reviews had
+flagged as unasserted: **AC5 — R-01 behind Advanced pinned by widget tests.**
+
+New group in `test/discovery_scan_test.dart` (2 tests, file now 16; the two
+settings/discovery files together 23/23): validators fire from inside the
+Advanced tile (empty host → `Required`; `x` → `Enter a number`; `70000` with
+empty host → `1–65535`, surfaced via the same `Form.validate()` path the
+reviews measured — `_parsed()` does not range-check, pre-existing on develop
+and inside this issue's non-goals, so left untouched and documented at the
+assert), and a scripted DNS failure through the REAL `ConnectionController`
+lands the typed "could not be resolved (DNS)" error, not a generic one.
+`scriptedConn`/`pumpScreen` gained an optional `responder` for that leg.
+Gates on this head: analyze 0, format 0 (113/0), targeted files 23/23.
+Host-bound rows remain `BLOCKED-PENDING-HOST-VERIFICATION` — device pass is
+the maintainer host session's, per the Maintenance model.
+
+## 2026-11-23 — #62 host verification pass + round-3 review + PR #75 merged (opencode host session)
+
+Host session ran the three `BLOCKED-PENDING-HOST-VERIFICATION` rows of PR #75
+(issue #62) on the physical Pixel 6 `25071FDF600953`, debug APK from head
+`953a0c2`, fresh-install legs via `pm clear`. All three **PASS**, evidence
+comment + reviewer handoff + round-3 report on
+https://github.com/jptrsn/owntone_remote/pull/75 (final `VERDICT: APPROVE`
+at `953a0c2`; gates green at head; squash-merge `940642c` to develop; issue
+#62 closed with audit comment). Harness facts worth keeping: **`input tap`
+is inert against this app's window** (swipe/keyevent DO reach it) — in-app
+activation went through DPAD focus + DPAD_CENTER/IME-ENTER with the focused
+semantics node dumped before every interaction; the first-frame-is-loading
+proof used a scripted hot-restart + 150 ms `debugDumpApp` timeline (first
+mounted tree already shows `Searching the local network…`, no idle frame).
+Row-2 substitution: stock device has no root (`su` absent, unlike the
+night-run AVDs) → discovery blocked via `svc wifi disable` with no cellular
+route; `input text` lands in the focused field; Wi-Fi restored (`enabled`),
+`stayon false`, `forward --remove`, no play-class app calls (shared-session
+`play` state left untouched throughout). GitHub refuses same-author
+APPROVE-reviews (both factory stations and this host authenticate as the PR
+author, jptrsn) — the contract is the **posted report + `VERDICT:` line**,
+which is what the merge gate read.
+
+## 2026-11-23 — issue #64: drawer's deferred page builder red-screens on a popped route (OpenHands factory)
+
+Factory-developer run, branch `openhands/issue-64` off develop @ 5290583. The
+2026-11-23 host device pass put the RCA on the issue (cause + deterministic
+repro + fix plan); this unit implements steps 1–4 of that plan. Sandbox build
+only — no device, no server contact (AGENTS § Maintenance model).
+
+Cause: `AppDrawer._open` handed `showDrawerDestination` a closure that did
+`context.read<ConnectionController>()` / `context.read<SettingsStore>()` with
+the AppDrawer element's own context. That closure is the *pushed route's page
+builder*: `showDrawerDestination` first evaluates it after
+`popUntil((route) => route.isFirst)` has popped the drawer's own route, and
+re-evaluates it on **every** later rebuild of that route's `_ModalScopeState`
+(theme change, ws event storm, hot reload). Once the popped subtree unmounted,
+the next rebuild read through a `defunct` element → debug assert
+`Looking up a deactivated widget's ancestor is unsafe` → red screen. Only the
+`settings` branch touched the context (every other destination is `const`),
+which is why every recorded occurrence was a Settings navigation.
+
+Fix (shape, not behaviour):
+- `lib/src/ui/app_drawer.dart` — the Settings pre-fill is read eagerly at tap
+  time into `settingsInitial` before the call; the closure captures a plain
+  `ServerConfig?`, no `BuildContext`.
+- `lib/src/ui/root_screen.dart` — `showDrawerDestination` now takes
+  `Widget Function(BuildContext routeContext)` and hands the **route's**
+  context to the builder, so a future caller that needs a context inside the
+  builder cannot reproduce the crash; the doc comment states the deferred-run
+  contract (and why a `State.mounted` guard would not help). The same-shape
+  site at `_ConnectionErrorScreen`'s "Change server…" reads both providers in
+  `build` (plain, non-listenable reads) and captures the value at press time —
+  no context lookup inside its page builder either.
+
+Navigation semantics unchanged: still `popUntil(isFirst)` + one push, stack
+always `[root, target]`.
+
+Tests: `test/drawer_deferred_builder_test.dart` (new, 4 tests) — the gap the
+RCA named: Settings tapped from a **pushed** screen, `pumpAndSettle` (pop
+completes), *then* rebuild the route content via the R-26 theme toggle under
+the real `OwntoneRemoteApp` (its MaterialApp watches `ThemePreference` — a
+bare MaterialApp would not re-skin and the test would pass vacuously; the
+assertion that the pushed route really went dark is there for that reason).
+Plus: `SettingsScreen.initial` equals the `ConnectionController.config` value
+captured at tap time (the provider is then moved to a second config and the
+route rebuilt — a live read would drift), the root-drawer leg, and the R-21
+depth/no-duplicate contract re-asserted through the Settings route.
+**Mutation-verified twice** (restored from a `/tmp` copy, never `git checkout`,
+per the AGENTS trap list): restoring the lazy `context.read` inside the closure
+turns the first three tests red with the exact RCA message ("Looking up a
+deactivated widget's ancestor is unsafe", 5 repeats from the rebuild cascade);
+replacing the captured value with a live `routeContext.read` turns the
+`initial`-snapshot test red (`Expected 10.0.0.5:3689, Actual 10.9.9.9:3689`).
+
+One correction to the RCA's framing, learned from the harness: the root-drawer
+control is NOT safe-by-construction the way the device pass read it.
+`DrawerController._buildDrawer` drops the drawer subtree once the close
+animation settles (`if (_controller.isDismissed)` → a drag-strip
+`GestureDetector` / `SizedBox.shrink`), so the AppDrawer element is defunct
+after *any* drawer tap, not only after one whose host route was popped. The
+pushed-host-route condition is what the device pass could *observe* (the
+drawer is mid-transition under the incoming route there); the widget harness
+reaches the defunct element in both cases. The fix covers both — recorded here
+rather than by editing the device entry, which is append-only history.
+
+Gates: `flutter analyze` 0 issues; `dart format --set-exit-if-changed .` clean.
+`flutter test --exclude-tags live` in this container is load-flaky: the
+real-timer WS/backoff tests (`now_playing_screen_test`, `mini_player_test`,
+`queue_screen_test`, `player_controller_test`, `outputs_screen_test`,
+`rating_*`, `app_drawer_test`'s offline leg, `connection_controller_test`,
+`connection_offline_recovery_test`) fail nondeterministically **on unmodified
+`develop` too**. Apples-to-apples on the same 11 files, `--concurrency=1`:
+baseline worktree @ 5290583 = 142 pass / **25 fail**; this branch = 148 pass /
+**23 fail** (+4 = the new file, all green) — and the two failing sets are not
+the same 23, i.e. which test loses its timing race moves between runs. Most of
+them pass when their own file runs alone (`app_drawer_test.dart` 10/10,
+`connection_offline_recovery_test` 5/5, `outputs_controller_test` 13/13,
+`drawer_deferred_builder_test` 4/4 observed here — though `app_drawer_test`'s
+offline leg and the Doze leg did flake on one solo re-run each even without
+load). Two exceptions are **not** load flakes: `rating_controller_test.dart`'s
+"now-playing rating: now_playing → track_id → track (C2 flow)" fails
+deterministically in this container (`Expected <100>, Actual <60>`) on **both**
+the baseline worktree and this branch, and the `app_drawer_test` offline leg
+repeats it often — pre-existing environment failures, not caused by this unit.
+No device and no server was contacted by any of them (`live`-tagged tests
+excluded). `flutter build apk --debug` could not be run here at all — no
+Android SDK in this container (`flutter doctor`: "Unable to locate Android
+SDK"); CI's `gates` job supplies it. Final counts are in the PR body; the CI
+`gates` run on the branch is the authoritative green.
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (host-bound, `needs-host-tools`): the
+issue's criterion 8 — re-run the two positive triggers (theme segment on the
+pushed Settings screen; hot reload) and the root-drawer control on the Pixel 6
+debug `flutter run`, expecting no `EXCEPTION CAUGHT BY WIDGETS LIBRARY` block
+and `grep -c "deactivated widget's ancestor"` = 0 over the console, server
+paused throughout. Substitutes here: the widget-level repro of the identical
+frame chain (the same `_ModalScopeState` → `buildContent` → `Builder` →
+`AppDrawer._open` closure path, byte-for-byte the RCA's stack) plus the two
+mutation checks above.
+
+## 2026-11-23 — #64 closeout: host device pass PASS, PR #77 merged (`58746c1`), issue closed, follow-up #78
+
+Maintainer-host opencode session. Records the half of #64 the entry above
+leaves `BLOCKED-PENDING-HOST-VERIFICATION`, plus the merge. Full evidence
+tables live on PR #77 (device pass comment + round-1 review report); this
+entry is the ledger line, not the evidence.
+
+**Host device pass — AC 8 → PASS.** Run on the physical Pixel 6
+(`25071FDF600953`, Android 17), debug build via `flutter run --debug` from
+head `dea865f` (host toolchain = CI pin 3.47.9). All four host-bound rows
+PASS: (a) Settings-from-pushed-Queue + theme segment, (b) same + hot reload,
+(c) root-drawer control (run per the PR's own "not decoration" correction —
+it matters, as the harness finding above predicted), and the console-grep row
+(count 0 over the full fixed-build console). Harness-sensitivity control
+included: reverting the fix on-device reproduced the issue's verbatim red
+screen with the RCA's frame chain, so the no-exception results mean
+something. Harness fact worth keeping: **hot reload does not replace a
+pushed route's page builder** — after restoring the mutation the control
+needed a hot *restart* before the fixed closure was live. Mutation restored
+from a `/tmp` copy (md5-verified), never `git checkout` (AGENTS trap list).
+Host gates closed the container-flake caveat: full suite **633/633 green**
+on the host — the dev-container WS/backoff flakes above do not reproduce
+here. Safety: server verified `pause` before/during/after, no play-class or
+mutation call; only app-local `ThemePreference` touched, restored to the
+session baseline (`dark`). `needs-host-tools` removed from the issue.
+
+**Review.** Factory `software-factory/review` round 1 on `dea865f`: **VERDICT:
+APPROVE**, full report posted to the PR; the reviewer independently
+re-produced both mutation checks and the baseline-failure claim. GitHub
+`reviewDecision` stays empty by the same-authentication limitation recorded
+under #76 (all stations authenticate as jptrsn) — the merge-gate contract is
+the posted report + `VERDICT:` line + the passing check, all present.
+
+**Merge + close.** Squash-merged PR #77 → develop `58746c1`, branch
+`openhands/issue-64` deleted. `gates` green on the head (analyze/format/test/
+APK build). Issue #64 auto-closed by the `Closes #64` keyword at merge time —
+verified per AGENTS § Branching & CI and given an explicit close-out comment
+(the keyword alone is still never trusted; here it happened to be correct).
+
+**Follow-up filed: #78.** The PR body deliberately left `lib/src/ui/
+now_playing_screen.dart:203` untouched (issue non-goals) — the "Server
+settings" IconButton still does `context.read<SettingsStore>()` *inside* the
+pushed route's `builder:` — the identical deferred-read shape, currently
+inert only because its host is the root route (covered, not popped). Filed
+with the #77 fix pattern and the widget-test recipe. `grep` over `lib/src/ui`
+found no other `context.read` inside a page-builder closure; all other reads
+are tap-time in callbacks.
+
+AGENTS.md § Maintenance model: the host-bound exemplar refreshed — #64/PR #77
+is now the completed worked example of the split (sandbox half by the
+factory, device pass + gates + merge by the host), replacing the
+"stays host-side until identified" forward reference.
+
+## 2026-11-24 — issue #78: NowPlaying 'Server settings' reads providers inside the pushed route's page builder (OpenHands factory)
+
+**Did:** hardened the one site PR #77 deliberately left alone. The 'Server
+settings' `IconButton` in `lib/src/ui/now_playing_screen.dart` resolved
+`conn.config ?? context.read<SettingsStore>().config` *inside* the
+`MaterialPageRoute(builder: …)` it hands to `Navigator.push` — byte-for-byte
+the #64 shape. The read now happens in `onPressed` at press time and the
+builder closes over a plain `ServerConfig?`, the `settingsInitial` pattern
+already shipped in `app_drawer.dart` (post-#77). No behaviour change; the
+non-goals held (no `ErrorWidget.builder`, no error boundary, no
+`State.mounted` guard).
+
+**Harness fact worth keeping (why the test presses while disconnected):**
+`conn.config ?? context.read<…>()` **short-circuits**. A test that presses
+while the app is connected evaluates only the left operand, so it stays green
+with the lazy read restored inside the builder — a green suite that proves
+nothing. The discriminating test therefore presses with `conn.config == null`
+(`wireUp(connect: false)`), the leg that actually evaluates the provider read.
+The second leg of the harness is `OwntoneRemoteApp(home:)`: re-pumping with
+`home: SizedBox.shrink()` unmounts the NowPlaying element the pressed button's
+context belongs to while the pushed route stays onstage, so the next
+`_ModalScopeState` re-run (R-26 theme toggle) resolves the deferred lookup
+through a defunct element. `unmountNowPlaying` asserts both halves of that
+(NowPlaying gone from the Navigator, `SettingsScreen` still present) — without
+those assertions every crash test below would be vacuous, which is the failure
+mode #64's suite had.
+
+**Mutation-verified both ways** (from a `/tmp` copy, md5-checked back, never
+`git checkout` — AGENTS trap list): restoring the lazy read inside `builder:`
+turns **two** tests red — the first with the verbatim `Looking up a deactivated
+widget's ancestor is unsafe.` and the second by value drift
+(`Expected: 10.0.0.5:3689 / Actual: 10.9.9.9:3689`, the post-press provider
+value). With the fix in place all four tests and the full suite are green.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7):
+`flutter analyze` → No issues found; `dart format --output=none
+--set-exit-if-changed .` → clean (115 files); `flutter test --exclude-tags
+live` → **637/637** green (633 pre-existing + the 4 new). Container note for
+the next agent: this host is arm64 and the Linux release tarball is x64-only —
+the engine bucket does publish `dart-sdk-linux-arm64.zip` and
+`linux-arm64/artifacts.zip` for the pinned engine hash, and
+`bin/cache/dart-sdk` + the artifacts drop-in let the tool rebuild its own
+snapshot; `flutter test` then runs natively. `unzip` is absent and
+`flutter_tools` shells out to it — a python `zipfile` shim on `PATH` is enough.
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (nothing here needs a device to build or
+verify, but the two rows below are the on-device legs of the same contract;
+`#64`'s host pass is the model):
+
+| Action | Expected observation | Substitute proof |
+|---|---|---|
+| `flutter run --debug`, connect, tap the app-bar 'Server settings', toggle the theme on the pushed screen, hot reload | no `EXCEPTION CAUGHT BY WIDGETS LIBRARY`; console grep `deactivated widget's ancestor` = 0 | widget test re-running the identical frame chain (`_ModalScopeState` → `buildContent` → the route builder) with the host element unmounted, `takeException()` null, and the R-26 brightness assertion proving the re-run happened |
+| Same route with the fix reverted on-device | the #64 red screen appears (harness-sensitivity control) | the mutation above reproduces the verbatim assert in the widget test, on the same frame chain |
+
+No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
+Maintenance model host-bound carve-out). Server untouched — no HTTP call to
+`192.168.1.13` was made by this session.
+
+**Revision addendum (2026-11-26, PR #87 review round 1 — CHANGES
+REQUESTED, resolved):** the review's blocking finding was correct and
+reproduced independently before acting: in the pinned audio_service
+0.18.19, `_observeMediaItem` returns on null before any platform call,
+`AudioService.setMetadata()` (the sole writer of session metadata and of
+the Java `mediaMetadata` field) is reachable only with a non-null item,
+and `buildNotification()` sets title/subtext/subText only
+`if (mediaMetadata != null)` — so `mediaItem.add(null)` left the previous
+track's title/artist/album on the tile, and no Dart-side assertion (all
+the new tests sit above the drop) could show it. Resolution = the
+reviewer's preferred option 1: `stoppedMediaItem()` publishes the neutral
+row (fresh id `owntone:stopped` so audio_service's per-id handling cannot
+discard it; title 'Stopped' matches `now_playing_screen.dart:486`; null
+artist/album/duration blank those lines because the Java builder is
+rebuilt per notify). Honest caveat carried into SCREENS.md and the
+placeholder's doc comment: the row is *replaced, not blanked* (the title
+guard `if (mediaMetadata != null)` means only a publish changes it — which
+is what the placeholder is). Round-2 correction: the round-1 docs claimed
+a large-art residual "on API < 33"; checked against the pinned plugin
+before repeating it, `setMetadata` with an art-less item nulls `artBitmap`
+outright (`AudioService.java:795-801`), so the app-side art clear is real
+— what remains a device question is only whether SystemUI re-renders the
+icon, which is what host row 4 captures (besides the title-text check of
+rows 1-2). No PlayerController cache change: `_refreshChain` already sets
+`_nowPlaying = null` when stopped (`player_controller.dart:126`) — the
+retained item the review attributed to the cache is really the lagged
+`_player` slice, and the post-await re-read stays as the ordering guard
+(the stop's own event always re-fires `_sync`, so the placeholder always
+arrives). Two new tests pin the placeholder's field shape and its
+non-collision with real item ids; the three handler legs were rewritten
+to assert the published STREAM (track row while paused → Stopped row
+last), which is the strongest witness available below the plugin drop.
+
+## 2026-11-25 — issue #81: media-session wake forfeited when the server is slow at launch (OpenHands factory)
+
+**Did:** fixed the one-shot wake in `lib/src/audio/mirror_handler.dart`.
+`_wakeMediaSession()` set `_woken = true` **before** reading
+`_player.player`, and `start()` called it after the bounded 10 s boot wait —
+so a cold start against a server that never answered inside the window (the
+Pixel 6 repro: the 5 s Dio `connectTimeout` tripping while a NAS spun up)
+published nothing AND consumed the one-shot. The session then stayed
+`active=false` with no notification/lockscreen controls for the life of the
+process — R-07's notification only ever appears via the wake transition, so
+nothing later could bring it up. The prologue is now `p == null → return`
+(flag untouched, wake stays pending) → `if (_woken) return` →
+`_woken = true` → publish, and `_onPlayerChanged()` re-attempts the wake
+while `_started && !_woken` (it *replaces* the plain `_sync()` in that state,
+since the wake path publishes the real state itself — no racing duplicate
+publishes). The prologue up to `_woken = true` is synchronous, so a wake
+raced from `start()` and a player event can still fire at most once. The
+already-working launch path (state present before `start()`) is byte-identical
+behaviour: `_woken` is true from boot, the new branch is dead.
+
+**Non-goals held (issue § Non-goals):** no `setActive(false)`, no
+audio-focus/`click()` work, no `androidStopForegroundOnPause`/notification-
+config change, the 10 s boot wait value is unchanged, no new dependencies,
+`pubspec.yaml` untouched.
+
+**Tests** (`test/mirror_wake_test.dart`, 3 new, R-07 cited per AGENTS §
+Tests; harness = the `mirror_artwork_adversarial_test.dart` shape — real
+`PlayerController` + `FakeWsChannel`, driving `handler.playbackState`):
+delayed-first-state (no wake during the boot wait; exactly one `playing:
+true` when the first state lands, real paused state last, item published;
+further paused events publish none), normal-launch single-wake, and the
+offline guarantee (endpoint never answers → `playing: true` NEVER published,
+even across repeated player/queue events after the wait). Tests 1 and 3
+live-out the real 10 s wait — they carry explicit 60 s timeouts; the wait is
+a non-goal to touch, so they are honestly slow (suite +~25 s).
+
+**Mutation-verified both ways** (from `/tmp` copies, md5-checked back, never
+`git checkout` — AGENTS trap list): the pre-fix code turns the delayed-state
+test red with `Expected: an object with length of <1> / Actual: []` — the
+#81 symptom itself (the wake never fires); a naive "wake unconditionally"
+variant turns BOTH the delayed-state and offline tests red with
+`Expected: empty / Actual: [<playing:true state>]` — so the suite cannot be
+satisfied by waking a disconnected app, which is exactly what the offline
+guarantee criterion exists to forbid. With the fix all three pass.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7,
+the arm64 bootstrap from 2026-11-24 reused from `/tmp/fl`): `flutter analyze`
+→ No issues found; `dart format --output=none --set-exit-if-changed .` →
+clean (116 files); `flutter test --exclude-tags live` → **640/640** (637 +
+the 3 new).
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (device-bound criterion — requesting
+the `needs-host-tools` label; nothing device-related was attempted here, and
+no HTTP call to `192.168.1.13` was made by this session):
+
+| Action | Expected observation | Substitute proof |
+|---|---|---|
+| Cold-start the debug app on the Pixel 6 (`25071FDF600953`) with the server unreachable/slow enough to trip the 5 s Dio `connectTimeout`, then let it answer; server paused/stopped (no supervised playback needed — AGENTS hard rule 1) | `dumpsys media_session \| grep -A6 owntone_remote` shows `active=true` with a mirrored state once the server replies, and the ongoing notification appears **without restarting the process** | the delayed-state regression test reproduces the exact wire shape (`DioException [connection timeout]` through the whole boot wait, first `player` state via a WS `notify`), asserting `playing:true` publishes exactly once — the false→true transition audio_service's `enterPlayingState` needs to create the FGS/notification — followed by the real mirrored state |
+| Same cold start after the fix, then further paused-time server events | no second notification flap; state stays mirrored | the two single-wake tests pin that paused-time player events never re-publish `playing:true` |
+
+**Review round 1 (PR #88, review 6067843133 @ `c405ab38`) — response:** the
+reviewer found no code defect; the blocker is the two host-owned device rows
+(already carried as `BLOCKED-PENDING-HOST-VERIFICATION`, `needs-host-tools`
+requested by comment — a sandboxed run must not run them per AGENTS §
+Maintenance model + `.agents/skills/device-bound-work`). The inline note on
+`mirror_handler.dart:268` (already-playing launch, inherited `!p.isPlaying`
+guard) prompted two additions: **(a)** the suite now pins the
+already-playing launch, normal and after a forfeited boot wait (tests 4–5,
+`test/mirror_wake_test.dart`; mutation-verified — dropping the guard reddens
+both with the synthetic wake's `updatePosition: 0:00:00.000000` vs the real
+slice's `0:00:00.010000`), and **(b)** a source-check correction: the note's
+Dart-side measurement is right but its no-notification inference is not —
+`audio_service 0.18.19`'s edge is evaluated **natively** (`AudioService.java:280`
+inits `playing = false`; `:523`/`:559` fire `enterPlayingState()` on the first
+message carrying `playing: true`), and every `playbackState` emission is
+forwarded verbatim (`audio_service.dart:1125-1131`, `BaseAudioHandler.playbackState`
+is `BehaviorSubject.seeded(PlaybackState())` at `:2982-2983`). So on the
+already-playing launch the server's own `playing:true` slice IS the false→true
+message — the guard costs only a redundant synthetic publish, not the edge.
+The device pass should observe the notification on the already-playing cold
+start too (third BLOCKED row in the PR body); if the on-device reality
+contradicts the source-chain analysis, the guard is the suspect and belongs
+in a follow-up issue rather than being changed blind here (it is inherited
+from base, pre-#81, and #82's non-goals keep active-state work out of scope).
+Suite now **5/5**; full gates re-run below.
+
+**Review round 2 (review 6077767740 @ `f2ad62df`) — corrected counters and
+the deferred re-run.** This section supersedes the round-1 body's *counters*
+(append-only: the round-1 adjudication text above stays; the numbers in it
+were the state at `c405ab38`, not at this head) — per the round-2 inline
+note on this file:
+
+- `test/mirror_wake_test.dart` has **5** tests (not 3): the three wake
+  clauses plus tests 4–5, the already-playing launches added in `c9f9aab`.
+- **Tests 1, 3 and 5** (not "1 and 3") live-out the real 10 s boot wait —
+  `pump(12_000)` at lines 107, 228 and 340; explicit timeouts 60 s, 60 s
+  and 90 s. The test file's own docstring already said so.
+- The "full gates re-run below" the round-1 section promised is **this
+  block**, executed on this exact head (`f2ad62d`, production blob
+  `5f41f03…` unchanged since `c9f9aab` — the `origin/develop` merge of
+  #85/#90 touches no PR-owned file; blobs compared): container toolchain =
+  CI pin Flutter 3.47.9 / Dart 3.13.7; `flutter analyze` → **No issues
+  found**; `dart format --output=none --set-exit-if-changed .` → **clean
+  (116 files, 0 changed)**; `flutter test --exclude-tags live` →
+  **642/642** (637 pre-existing + the 5 new). This is the file's current
+  tail; no counters elsewhere in this entry are newer.
+- Round 2 **retracted** the round-1 inline note's "already-playing launch
+  stays headless" inference after re-deriving the native-edge chain
+  (`AudioService.java:280`/`:559` + `_observePlaybackState` verbatim
+  forwarding); the inherited `!p.isPlaying` guard therefore stays untouched
+  and the already-playing cold start remains the third
+  `BLOCKED-PENDING-HOST-VERIFICATION` row for the host pass. `needs-host-tools`
+  is still absent from the PR labels (maintainer-created) — re-requested by
+  comment on PR #88; nothing device-related was attempted here.
+- Note (host session, 2026-11-27 — PR #88 review round 1, finding 3): the
+  blob claim above is accurate at `f2ad62d` but **stale at the merged head** —
+  `74ece2b` later re-merged `origin/develop` and brought #87's
+  `mirror_handler.dart` hunks into the branch (head blob `1f3fa1d…`, not
+  `5f41f03…`; the merged diff's index line reads `14f813a..1f3fa1d`). The
+  2026-11-26 host entry's 662/662 already supersedes this gates block;
+  docs-only note, no claim in it bears on the fix's correctness.
+
+## 2026-11-25 — issue #83: media tile shows working transport while the server is stopped (OpenHands factory)
+
+**Did:** made the mirrored media session advertise only what a stopped
+OwnTone honours. Two changes in `lib/src/audio/mirror_handler.dart`:
+`controlsFor` gained a `stop` branch publishing `play` only (no
+`skipToNext`/`skipToPrevious`), and `_sync` now treats `p.isStopped` as
+authoritative over the cached now-playing item — the old
+`if (item != null) … else if (p != null && p.isStopped)` order made the
+metadata clear **unreachable**, because OwnTone keeps `item_id` set and
+`GET /api/queue?id=now_playing` keeps answering the track after a stop
+(the host spike's `dumpsys media_session` showed exactly that: `PAUSED(2)`
++ `ready` + play/next/previous + "The Rest of My Life" while stopped). A
+second re-read of `isStopped` after the artwork-probe `await` closes the
+same race in slow: a publish that started while playing must not land
+after the stop-clear. The non-goals held: `processingState` stays `ready`
+(idle would route through `AudioService.stop()` and break R-07), no faked
+PLAYING, no session-activation change (#82's half), no touch to
+`PlayerController._action`'s unconfirmed offline swallow (§3 hypothesis),
+in-app buttons untouched (NowPlaying already disables prev/next while
+stopped and keeps play live — the tile now matches that contract).
+`docs/SCREENS.md` R-07 Controls gained the stopped-state rule.
+
+> **Revision note (2026-11-26, PR #87 review round 1):** the stopped branch
+> originally published `mediaItem.add(null)`, and this entry said the
+> metadata was *cleared* — the reviewer showed that is a Dart-level no-op
+> on Android (audio_service 0.18.19 `_observeMediaItem` discards null
+> before any platform call, `lib/audio_service.dart:1029-1033`; the Java
+> `mediaMetadata` resets only in `onDestroy()`), so the shade kept the last
+> track's title. The stopped branch now publishes a neutral
+> `stoppedMediaItem()` (`id: 'owntone:stopped'`, title 'Stopped', null
+> artist/album/artUri/duration) — a fresh non-null id DOES reach
+> `setMetadata`. Corrected below; see the revision addendum at the entry's
+> end for the full account.
+
+**Why play survives the cut:** `PUT /api/player/play` from `stop` restarts
+the queued item (host-proven restoration path, and NowPlaying's own
+comment); next → 204-with-frozen-pointer and previous → HTTP 500 are the
+server's measured no-honours pair (Pixel 6 host pass, §2).
+
+**Tests** (`test/notification_stopped_transport_test.dart`, 14 new, each
+named with its R-ID per AGENTS §452; pure-mapping rows + fake-backed
+`MirrorAudioHandler` rows in the `mirror_artwork_adversarial_test.dart`
+style — no audio_service platform channel needed; `test/notification_mapping_test.dart`
+updated from the stop→play/next/previous expectation AC1 requires
+reverting): the discriminating legs are the cold-start-stopped test (queue
+still answers the item, `item_id` still set — the exact server shape that
+kept the card alive: only the neutral Stopped row is ever published — no
+track-titled `MediaItem` may appear, controls = play only, not even in the
+one-shot wake) and the paused→stop transition test (the trio goes and the
+last published row becomes the Stopped one, then stop→pause restores both
+the trio and the track row — the restriction keys on the server state,
+never on "is there an item").
+
+**Mutation-verified** (from a `/tmp` copy, md5-checked back, never
+`git checkout` — AGENTS trap list): restoring the full pre-fix shape (no
+`stop` branch in `controlsFor` + `if (item != null)` first + null clear)
+turns **7** tests red (6 in the new file + the updated
+`notification_mapping_test.dart` row — the reviewer reproduced the same
+7); reverting ONLY the stopped branch back to `mediaItem.add(null)` turns
+the **3** handler legs red — the placeholder assertions discriminate the
+plugin-drop fact itself. With the fix in place all 14 and the full suite
+are green.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7):
+`flutter analyze` → No issues found; `dart format --output=none
+--set-exit-if-changed .` → clean; `flutter test --exclude-tags live` →
+**651/651** green (637 pre-existing + the 14 new). `flutter build apk
+--debug` (gate 4) deferred to the CI gates run: this arm64 container has
+no Android SDK (the #78 entry's drop-in recipe covers `flutter test`, not
+the Gradle path).
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (the two host rows of the published
+acceptance criteria — Pixel 6 `25071FDF600953`, request `needs-host-tools`):
+
+| Action | Expected observation | Substitute proof |
+|---|---|---|
+| `PUT /api/player/stop` (outputs deselected), dump the shade tile; then `PUT /api/player/pause`, dump again | stopped dump: tile **title text is `Stopped`** (not the last track's title — the only witness that settles the metadata question, which no Dart-side assertion can reach), artist/album lines blank, no `Next track`/`Previous track` nodes, play control present; paused dump: track title again + both nodes | the controlsFor unit rows pin the published control list per state; the handler legs pin the PUBLISHED STREAM sequence (track row live while paused → Stopped row last after stop), and the paused→stop→pause test proves the session re-publishes in both directions over a live WS notify — the plugin's null-drop sits below all Dart witnesses, which is why the capture must read the rendered title |
+| Press the tile's play while stopped; `dumpsys notification` + `dumpsys activity services` while the server stays stopped | handler log line + `GET /api/player` state change; MediaStyle record still listed, `isForeground=true` | the fake-backed test proves the published play control is wired to `PUT /api/player/play`; `processingState` stays `ready` in all three states (the ready-guard test), which is the audio_service condition for keeping the FGS/notification up |
+| Large-art leg (round-2 review row 4, on the API level actually tested): play an item WITH artwork so the large icon loads, then `PUT /api/player/stop` and re-dump | the stopped tile shows **no large icon** — the art-less placeholder routes through `setMetadata`, which nulls `artBitmap` (`AudioService.java:795-801`); record the rendered result (SystemUI icon caching is the one part no app-level code controls) | the placeholder's null `artUri` is pinned by the shape test; the plugin-level `artBitmap = null` is verified against the pinned source, so only SystemUI's rendered icon remains un-witnessed |
+
+No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
+Maintenance model host-bound carve-out). Server untouched — no HTTP call
+to `192.168.1.13` was made by this session.
+
+## 2026-11-26 — issue #84: R-06/D20 volume control is foreground-only and app-local; the session never exposes volume (OpenHands factory)
+
+**Did:** removed the media session's volume surface and rebuilt the rocker→server
+mapping as a foreground key path.
+
+- `MirrorAudioHandler` now publishes
+  `RemoteAndroidPlaybackInfo(volumeControlType: sessionVolumeControlType /* fixed */,
+  maxVolume: 100, volume: p.volume)` in **every** app state. The
+  `volumeControlTypeFor(bool)` absolute/fixed flip is gone — `absolute` was
+  precisely what made SystemUI's media tile / output row render a slider for
+  the *server* volume and what routed the rocker to
+  `androidAdjustRemoteVolume`.
+- New path: `MainActivity.onKeyDown/onKeyUp/onKeyMultiple` → `VolumeKeys`
+  (new `android/.../VolumeKeys.kt`, channel `owntone_remote/volume_keys`) →
+  `MirrorAudioHandler.handleVolumeKey` → `PlayerController.stepVolume`
+  (`PUT /api/player/volume?step=`). `main.dart` installs it after
+  `handler.start()`. Registered with the engine/Activity lifecycle
+  (`OwntoneRemotePlugin.onAttachedToEngine/onDetachedFromEngine` +
+  `onAttachedToActivity/onDetachedFromActivity[ForConfigChanges]`) and
+  `startVolumeKeys`/`stopVolumeKeys` on the Dart side, so a process restarted
+  by the audio service with no UI cannot route a rocker press to the server.
+- Foreground is gated **twice**: the platform forwards only while an Activity
+  is attached *and* Dart has said `startForwarding` (driven by the existing
+  `_AppForegroundTracker` → `setAppForeground`), and Dart re-checks its own
+  flag in `handleVolumeKey`. The second layer is what covers the
+  foreground→background window where a key can still arrive for a window
+  Android is just deselecting — the same reason the pre-#84 code kept its
+  overrides as no-ops.
+- `androidAdjustRemoteVolume` now delegates to `handleVolumeKey` and
+  `androidSetRemoteVolume` is a no-op: with a `fixed` provider Android never
+  calls them, so they survive only as a guarded second layer rather than the
+  mechanism (they were the mechanism before).
+- `configureFlutterEngine` gained a `plugins.get(...) == null` guard: it runs
+  on *every* delegate attach (including the post-config-change re-attach, when
+  the engine and its plugin instances survive), so an unconditional `add()`
+  would stack a second handler on the new channel and double every rocker step.
+- Non-goals held: `controlsFor`/`playbackStateFor` and the one-shot wake
+  untouched, no `deactivateMediaSession`/`stopForeground` call, the NowPlaying
+  0–100 slider and R-14 step semantics unchanged, no new `uses-permission`,
+  receiver or service in `AndroidManifest.xml`, no audio_service fork or new
+  dependency.
+
+**Why the take-it-or-leave-it decision lives in Kotlin, not Dart:**
+`MethodChannel.invokeMethod` is asynchronous but Android key consumption must
+be answered synchronously from `onKeyDown`. So `VolumeKeys` decides from its own
+two gates and Dart independently refuses to touch the server. They can disagree
+in exactly one window (Dart has cleared its flag, the platform has not yet
+stopped forwarding) and the disagreement fails *inert* — one lost key press,
+never a backgrounded server write. Dart's `Future<bool>` return states the same
+rule for the tests to pin.
+
+**Tests** (`test/rocker_foreground_test.dart` rewritten, 13 → 19 rows (measured:
+`flutter test` reports `+19` at this head; the base file declares 13), all citing
+R-06/D20): every value published on `androidPlaybackInfo` after
+`start()` is non-absolute across fresh launch + wake + foreground + background;
+the channel-injected rocker steps ±step with `same` making no server call
+(spike Finding 10 stays pinned); backgrounded / never-resumed / service-only
+restart make zero volume requests; register→unregister leaves a delivered key a
+no-op; `androidSetRemoteVolume` never moves the server in either app state;
+R-14 rows unchanged in intent. **Mutation-verified** (from a `/tmp` copy,
+md5-checked back, never `git checkout` — AGENTS trap list): publishing
+`absolute` reddens 4 rows, dropping the `_appForeground` guard 5, mapping
+`same` to a step 2 (incl. `rocker_step_test`), making `androidSetRemoteVolume`
+call the server 1, dropping the not-started guard 1. No assertion was weakened
+to stay green — the three pre-#84 rows that pinned the absolute/fixed flip were
+replaced with rows pinning the new mechanism.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7 at
+`/tmp/fl/flutter`, arm64 dart-sdk + python `unzip` shim per the 2026-11-24
+entry): `flutter analyze` → No issues found; `dart format --output=none
+--set-exit-if-changed .` → clean (115 files, 0 changed); `flutter test
+--exclude-tags live` → **643/643** green (baseline at the same base SHA
+`1dcaf1b` in this container: 637/637 — 637 − 13 old rows + 19 new). The APK
+build gate is CI-only here (no Android SDK in this container).
+
+**Sequencing:** branched from `develop` @ `1dcaf1b`. **#82 has NOT landed**
+(no PR open for it), so per the maintainer's 2026-11-25 note #82's pre/post
+`dumpsys media_session` equivalence criterion must be re-derived against
+post-#84 dumps rather than the pre-#84 citations in that issue.
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (device rows — the host session runs
+these, never the sandbox; `needs-host-tools` requested on the PR):
+
+| Action | Expected observation | Substitute proof |
+|---|---|---|
+| Connect, foreground, open the shade media tile / output row ("This phone" + output settings) | no volume slider rendered; transport + progress remain | unit test: every `androidPlaybackInfo` value after `start()` is non-absolute, and `sessionVolumeControlType` is the single `fixed` constant |
+| `adb shell dumpsys media_session` in each of: fresh launch, during/after the one-shot wake, foregrounded, backgrounded, service-only restart | this app's session `volumeType`/`controlType` never `ABSOLUTE` | same test + `_publishPlaybackInfo` is the only publisher and reads the constant |
+| Foreground rocker up/down with the server **verified paused first** (AGENTS hard rule 1) | `GET /api/player` `volume` moves by exactly the configured R-14 step (±5 default) | channel-injected `volumeKey` press asserts `PUT /api/player/volume?step=±5` against `ScriptedAdapter`, and the R-14 rows pin ±1/±10 + read-at-press-time |
+| Backgrounded + screen-off rocker, server verified paused | server volume unchanged | never-resumed and service-only-restart tests assert zero `/api/player/volume` requests |
+| Foreground rocker while **another app holds an active absolute-volume session** | record how the keys route — this app's session no longer competes, so the winner is the other session and a press here may be lost | none (new behaviour surface; host records the observation) |
+| Foreground **hold** volume-up ~2 s, server verified paused (review round 2) | count `PUT /api/player/volume?step=` requests — expect one per `ACTION_MULTIPLE` repeat tick the platform delivers, not one per hold | none — pre-#84 the rocker went to the media session, never the Activity, so hold-to-repeat cadence for the volume keys was never measured in the sandbox; `VolumeKeys.onKeyEvent` maps one step per direction-carrying key event and ignores `getRepeatCount()` (per-`repeatCount` is the one-line change if per-event reads wrong) |
+
+No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
+Maintenance model host-bound carve-out). Server untouched — no HTTP call to
+`192.168.1.13` was made by this session.
+
+## 2026-11-25 — open-issue review for factory readiness + #83 host diagnostic spike (opencode host session)
+
+**Scope.** Review all open issues (#81–#85) for agentic-readiness (spec +
+R-ID trace + labels) per AGENTS § Maintenance model / PROCEDURE § OpenHands
+mapping; run the #83 host diagnostic spike (user-authorized). No code merged;
+sandbox half of every issue belongs to the factory.
+
+**Review outcome (labels applied).** #81 (ready-for-dev, area:player,
+openhands — triage block already complete; all referenced files/tests
+verified to exist: `test/mirror_artwork_adversarial_test.dart`,
+`test/notification_mapping_test.dart`, `_wakeMediaSession` consumed
+`_woken` before null check at `mirror_handler.dart:246-248` ✓);
+#82 (ready-for-dev, area:player, openhands — `click()` override genuinely
+absent in `mirror_handler.dart`, Logger convention exists across five
+controllers ✓; sequencing note posted vs #84's dumpsys-equivalence
+criterion); #84 (ready-for-dev, area:volume, priority:medium, openhands —
+mechanism deliberately left to the planner, ACs are behavioural);
+#85 (ready-for-dev, priority:low, openhands — trivial comment fix,
+swapped 87/88 verified at `DebugMediaButtonReceiver.kt:27`). PR-bound work
+takes `openhands-review`, never `ready-for-dev` (user decision — a PR is
+post-development); the factory's own PRs carry it.
+
+**#83 RCA — reproduced, gating hypothesis REFUTED, decided: fix.** Host pass
+on Pixel 6 (Android 17), clean develop debug + instrumented (logs) build,
+server outputs all deselected throughout (audio physically impossible;
+restored to `pause` / item 215483 / vol 55 / ESP-CAAC64 re-selected,
+204-confirmed; queue contents untouched). Measurements: (a) with `active=true
++ PAUSED(2)` mirror, tile taps **dispatch** — `uiautomator` pre-dump showed
+clickable=true transport wrappers, taps logged `[ISSUE82] skipToNext()` and
+server `item_id` moved (`214956→215242`) — so AOSP SystemUI does **not**
+gate transport dispatch on playback state for a no-audio session; (b) the
+reproduced failure is server **`stop`**: `PUT /api/player/next` → 204 silent
+no-op (pointer frozen), `PUT /api/player/previous` → **HTTP 500** — while the
+mirror publishes `PAUSED(2)` + ready + play/next/previous controls and
+stale metadata (`item != null` beats the `isStopped` mediaItem-null branch),
+so the tile reads as a live paused player whose skips do nothing; the
+original PAUSED/PLAYING contrast was incidental (discriminator is
+stop-vs-play, and Skip is reached for exactly when the queue ended); (c)
+second silent path: `PlayerController._action` early-returns **unlogged**
+when `!isConnected` (`player_controller.dart:169`) — one window observed
+(15:27:58, handler logged, pointer frozen) but **downgraded to hypothesis**:
+no pre-tap dump + shared-server churn (the owner's other session moved
+state/item concurrently throughout — every play-class call was made only
+with zero outputs selected, all restorations 204-verified). #81's
+forfeited-wake signature also seen live (app running with no session at
+all). Issue body carries the adjudication + decided ACs (play-only controls
+while stopped, logged dropped actions, no skip-while-stopped emulation —
+web-UI parity — plus dumpsys/logcat host rows); labels moved to
+ready-for-dev/openhands.
+
+**Harness lesson committed (AGENTS trap #5).** Interacted with the screen
+from assumed state twice (taps issued against an open-shade assumption one
+step and a vanished-tile the next; user caught the second). AGENTS.md now
+mandates a fresh `uiautomator`/screenshot dump **before every** scripted
+`input tap`/`swipe`/`keyevent`, confirming the target is on screen at those
+coordinates. Device left clean: instrumented build removed (clean debug
+reinstalled), `svc power stayon false`, deviceidle whitelist entry removed.
+
+## 2026-11-26 — host verification pass: #91 volume (merged), #87 stopped-state (merged), #88 wake (device rows) + play-start latency discovery (opencode host session)
+
+Host-bound device verification for the OpenHands PRs carrying
+`BLOCKED-PENDING-HOST-VERIFICATION` rows, on the Pixel 6
+(`25071FDF600953`) against the shared server (192.168.1.13, outputs
+ESP-CAAC64 + Volumio Kitchen selected throughout; user approved the
+play-class rows).
+
+- **#91 (R-06/D20 volume, merged `251a8b2`)** — all six rows filled from the
+  device pass; evidence posted to PR #91 + issue #84. Rocker steps the
+  server ±5 and the system `volume_music` stays untouched (5→5 across every
+  press); the tile byte-identical across server-volume 45/26/96. Follow-up
+  **issue #92** filed: ReTune-style volume toaster (capture 22) on all
+  screens except NowPlaying (NP slider-follow itself verified).
+- **#87 (stopped-state, merged `dbe200d`)** — rows 1–4 PASS (Stopped tile,
+  action/notification deltas, debug media-key broadcast round-trip);
+  evidence on PR #87; issue #83 closed.
+- **#88 (wake-after-delayed-state, branch `openhands/issue-81`)** — the
+  three device rows ran on the merged head (662/662 tests, analyze/format
+  clean):
+  1. *Cold boot while the server is unreachable* (wifi off from t=0; the
+     10 s boot-wait in `handler.start()` expires with no state; session
+     exists, `active=false`) → wifi back → `conn.retry()` driven via the VM
+     service (the exact Retry-button call, root_screen.dart:155) →
+     `connection: error → connecting → connected` → **`active=true`,
+     `isForeground=true`, same pid** — the wake was still armed after the
+     boot-wait forfeit (the fix); develop stays `active=false` (symptom
+     witnessed live on develop 2026-11-26 ~17:26 under a server stall).
+  2. *Paused-state events must not flap the notification* — volume
+     45→46/44→46 + output:update: single record id=1124/key unchanged,
+     `notification_canceled` count for the pkg zero inside the event window
+     (the 30 in the buffer all carry uid 1000 at my `force-stop`s), no new
+     FGS start (both FGS events timestamp the wake itself).
+  3. *Cold boot while the server is already playing* — after polling
+     confirmed `play` (see below), force-stop → `am start`: session
+     `active=true`, `PlaybackState {state=PLAYING(3), position≈server
+     item_progress_ms}`, `isForeground=true` despite the `!p.isPlaying`
+     guard path. Server re-paused immediately (play window ≈ 2×30 s, user
+     watched + pre-approved).
+  Adjacent finding (pre-existing, NOT a #88 defect, candidate for its own
+  issue): cold boot while the server is unreachable lands the app in
+  `ConnectionPhase.error`, which has **no auto-retry** (only `offline` has
+  the probe timer) — recovery needs the user's Retry tap or a process
+  restart; there is no connectivity listener.
+- **Discovery — play-start latency:** `GET /api/player` keeps reporting
+  `pause` for ~2–4 s after `PUT /api/player/play` (AirPlay output connect +
+  buffer fill; audio already audible while the read still says `pause`) —
+  two harness reads were fooled before the user's observation corrected it.
+  Recorded in `docs/API.md` § Player endpoints with the safety direction:
+  a just-issued play/toggle is PLAYING from the PUT, never from the next
+  read. (Same async-commit family as the rating flow, PR #12.)
+- Harness notes: VM-service `evaluate` needs the resident compiler (run
+  under `flutter run`; a plain `am start` debug build answers "No
+  compilation service available"); `retry()` reached via
+  `Provider.of<ConnectionController>` on a walked `OwntoneRemoteApp`
+  element (rootElement sits above the MultiProvider).
+
+## 2026-11-26 — issue #82: media-key arrivals are invisible — override + log `click()` in MirrorAudioHandler (OpenHands factory)
+
+**Did:** the authorized observability half of #82, per the maintainer's
+2026-11-25 host on-device pass (the decision of record). `MirrorAudioHandler`
+now overrides `click([MediaButton])`, emits **exactly one** log line per
+arrival, and delegates to `super.click(button)` — `BaseAudioHandler.click`
+(audio_service 0.18.19 audio_service.dart:3089) is otherwise untouched, so
+`media` still routes to play/pause by `playbackState.playing` and `next`/
+`previous` to `skipToNext`/`skipToPrevious`, each still reaching the
+`PlayerController` HTTP call. `main.dart`'s `_initAudio` passes the app
+`_logger` through the new optional `logger:` ctor arg (the
+`ConnectionController` shape, defaulting to
+`Logger(printer: PrettyPrinter(methodCount: 0))`), so key arrivals land in
+the same `flutter:*` logcat stream as the rest of the app. The line is built
+by the free `clickLogMessage()` (the repo's pure-function convention) —
+`click(media) appForeground=false mirroredPlaying=true` — naming the button,
+`_appForeground`, and the mirrored playing state.
+
+**Why this half and not the session policy:** the maintainer's pass settled
+the design question — the remote's focus-free session never wins the AOSP
+`Media button session` pin (stayed `null` across two cold-start wakes and a
+sustained active+PLAYING mirror; the pin follows real per-uid audio
+playback), deactivating does **not** stop routing while another app holds
+the pin, and idle/stop teardown is R-07-violating (stock `deactivateMediaSession`
+also cancels the notification). So: no `setActive(false)`, no session
+teardown, no scoping of the `_wakeMediaSession` wake, no
+activateSessionOnly/deactivateSessionOnly plugin patch, `androidStopForegroundOnPause:
+false` and the D20 volume path left exactly as they were (that is #84's, and
+#82 lands first per the maintainer's ordering note). Read 87/88 per AOSP
+KeyEvent (87=NEXT, 88=PREVIOUS), not the swapped doc-comment (#85).
+
+**Harness fact worth keeping:** a `LogOutput` subclass that captures
+`event.origin.message` proves the log line without stdout, and
+`ProductionFilter` makes the assertion deterministic — `DevelopmentFilter`
+(the logger default) gates on `assert`, which is exactly the edge a green
+suite would miss if the line silently stopped firing. The delegation
+assertions are non-vacuous and mutation-proven both ways (from a `/tmp`
+copy, md5-checked back, never `git checkout` — AGENTS trap list): swallowing
+`super.click` → 4 tests red; deleting the `_logger.i` call → 8 red. Restored
+both; md5 matches the committed file.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7):
+`flutter analyze` → No issues found; `dart format --output=none
+--set-exit-if-changed .` → clean (116 files); `flutter test --exclude-tags
+live` → **646/646** green (637 pre-existing + the 9 new). `flutter build apk
+--debug` is the host/CI leg.
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (device-bound; `needs-host-tools`
+requested — see the PR body's rows for action → expected observation →
+substitute proof). No `adb`, AVD, Pixel 6, ESP32 harness, or supervised-audio
+step was attempted (AGENTS § host-bound carve-out); server untouched — no
+HTTP call to `192.168.1.13` was made by this session.
+
+## 2026-11-26 — #82 PR #89 review round 1: the log line now names itself honestly (OpenHands factory)
+
+**Did:** addressed both inline findings from the reviewer's `a971e856` pass
+(both non-blocking, both about the *fidelity of the witness this unit exists
+to provide*):
+
+1. `serverPlaying=` → **`mirroredPlaying=`**. The value is `playbackState`'s
+   — the same one `BaseAudioHandler.click` routes on, which is why reading it
+   there is right — but during the one-shot `_wakeMediaSession` window it is
+   the wake's synthetic `playing: true` for a paused server, and a
+   `serverPlaying=true` line in a future #11 capture would read as proof the
+   server was playing. Doc comment on `clickLogMessage` now says so.
+2. A **DEBUG-BUILD-ONLY** note at the `_logger.i` call: the injected app
+   logger is `logger` 2.8.0's default `DevelopmentFilter`, whose `shouldLog`
+   fires only inside an `assert`, so the line does not exist in a
+   `--release` build — and `release.sh` publishes
+   `flutter build apk --release --split-per-abi` (what Obtainium installs).
+   The host pass must capture on a debug build; absence in release says
+   nothing about key delivery.
+
+**Why documentation and not `ProductionFilter`/`Level.warning`:** the
+reviewer's own proportionate option, and the alternative spends the one
+signal this app has on per-key chatter in a shipping release build to serve
+a diagnostic that only a harness session reads. Kept on the maintainer's
+accepted `ConnectionController` logger shape.
+
+**New tests (2, suite 646 → 648):** the pure fn must never emit
+`serverPlaying` again; and a deterministic witness that `mirroredPlaying` is
+read from `playbackState`, not re-derived — inject the wake's synthetic
+`playing: true`, then assert `click(media)` logs `mirroredPlaying=true` AND
+routes to `PUT /api/player/pause` against the paused server. Mutation-proof
+three ways (throwaway copy + md5 check-back, never `git checkout` on
+tracked state): read the field from `PlayerController` instead of
+`playbackState` → the fidelity test alone goes red; swallow `super.click` →
+5 red; delete the `_logger.i` call → **9** of the 11 red (the 2 survivors are
+the `clickLogMessage (pure, R-04/R-07)` group, which calls the pure function
+directly and never reaches `click()`; the round-1 draft of this line said 10,
+which did not reproduce — corrected in the round-2 pass below).
+
+**Gates:** `flutter analyze` → No issues found; `dart format
+--output=none --set-exit-if-changed .` → clean (116 files); `flutter test
+--exclude-tags live` → **648/648**. The device-bound rows are unchanged and
+still `BLOCKED-PENDING-HOST-VERIFICATION` — this round added no on-device
+evidence, only the debug-build requirement the host pass now has to record.
+
+## 2026-11-26 — #82 PR #89 review round 2: two of my own evidence lines did not reproduce (OpenHands factory)
+
+**Did:** fixed two **documentation-accuracy defects I introduced in the
+round-1 pass**, both on `docs/SESSION-LOG.md`, both filed inline by the
+reviewer at head `5e856ab2` and both confirmed against my own re-measurement
+before editing:
+
+1. `docs/SESSION-LOG.md:3428` still printed the witness as
+   `… serverPlaying=true`. The field was renamed in `9c499af`, so the
+   canonical statement of "what the witness prints" contradicted the shipped
+   line — in the very document that explains why the old name was dangerous.
+   The host device pass reads this file at session start and diffs its
+   `adb logcat -s flutter:*` capture against this string, so a maintainer
+   grepping the documented form would get zero hits on a real key and could
+   conclude the key was never delivered: the exact failure mode #82 exists to
+   remove. Corrected to `mirroredPlaying=true`. (The two later
+   `serverPlaying` mentions in the round-1 entry are the rename narrative —
+   "old name → new name" — and stay.)
+2. `docs/SESSION-LOG.md:3500` claimed deleting the `_logger.i(...)` call
+   turns **10** tests red. It turns **9** of the 11 (`+2 -9`); the 2
+   survivors are the `clickLogMessage (pure, R-04/R-07)` group, which calls
+   the pure function directly and never reaches `click()`. Corrected, with
+   the survivors scoped so the claim is checkable. The PR body's Gates
+   section repeated the same inflated number and is corrected the same way.
+
+**Why this matters more than it looks:** under AGENTS quality gate 1 the
+figures in this file **are** the evidence, and the trap list exists because
+fabricated evidence once reached a commit. An inflated mutation count is
+precisely what the reviewer — not a green suite — is supposed to catch, and
+it did. Before editing I re-measured **all three** mutations at
+`5e856ab2` (throwaway copy + md5 check-back, never `git checkout` on tracked
+state): swallow `super.click` → **5** red ✔ as recorded; re-derive the field
+from `PlayerController` → **1** red (the fidelity test alone) ✔ as recorded;
+delete the `_logger.i` call → **9** red ✘ recorded as 10. Only the last was
+wrong. The round-1 dev entry's separate `4 red / 8 red` figures (line ~3451)
+are also consistent: measured on the 9-test version, and each rises by
+exactly 1 with the fidelity test added — left as recorded history.
+
+**Gate 4 is unchanged and still blocking.** This round added **no**
+on-device evidence and cannot: `adb`, the Pixel 6, the ESP32 `CarHarness` and
+the pre/post-press `dumpsys` reads are host-session-only (AGENTS host-bound
+carve-out). The four `BLOCKED-PENDING-HOST-VERIFICATION` rows stand, and the
+`needs-host-tools` label — which is what actually queues the device pass —
+exists in this repo but is **maintainer-created**, so a sandboxed agent may
+request it and may not apply it. It is requested here and in the PR body; the
+device pass is not queued until the maintainer applies it.
+
+**Gates re-run at this head** (Flutter 3.47.9 / Dart 3.13.7 = the CI pin):
+`flutter analyze` → No issues found (`analysis_options.yaml` md5 unchanged);
+`dart format --output=none --set-exit-if-changed .` → clean (116 files);
+`flutter test --exclude-tags live` → **648/648**; new file alone → 11/11.
+No product code changed this round — documentation-only evidence fixes.
+
+## 2026-11-27 — issue #93: cold boot against a down server self-heals — error-phase recovery timer (builder, night-2026-11-27 unit 3)
+
+Unattended builder run on `fix/issue-93-error-phase-auto-retry` (off develop
+`822144e`). `ConnectionController` arms a `Timer.periodic`
+(`errorProbeInterval`, default 10 s) when entering `error` from a network-y
+(`dns`/`refused`/`timeout`) Dio failure and re-drives `retry()`; auth/http/
+client-bug errors stay inert (T4/T5 pin no hammering/no spin); timer cancelled
+on every other phase entry, in `_teardownClient`, and by `disconnect()`.
+`lib/main.dart` and all UI untouched (AC-5 diff-clean).
+
+Deviation + adjacent hardening (report ASSUMPTIONS-1): `connectTo`'s
+continuations now carry the `_probeServer`-style `_generation` guard — the
+timer makes attempts routinely in flight while the user can still disconnect,
+and an unguarded continuation landing mid-attempt lands `idle → error` +
+re-arms the timer (reproduced both ways from a /tmp backup restore path,
+never `git checkout --`). Mutation: deleting the arm reddens all six positive
+tests of the new file. **Review round 1 correction:** the race exists only
+when `disconnect()` lands mid-attempt (`_ConnectingScreen` Cancel,
+root_screen.dart:103, reachable during the 5–15 s connecting window); T6 as
+written never enters it, so the earlier "reverting the guard re-breaks T6"
+claim was wrong — the guard is now pinned by the committed race test **T9**
+(Completer-held attempt → `disconnect()` → release → `idle` + frozen request
+count + null `errorMessage`; deleting the three guards reddens T9 alone,
+`Expected: idle / Actual: error`).
+
+Gates green (analyze 0 · format clean · `flutter test --exclude-tags live`
+670 passed · debug APK built). Device pass on the unit's own disposable AVD
+`OwnToneNight27_API_36` (created + deleted by this unit): D-1 blackhole
+192.0.2.1 → `connecting → error` at +5.05 s; the timer fires **10.00 s after
+each error entry** (first tick +10.001 s) and consecutive `error → connecting`
+cycles land **15.01 s** apart = 10 s interval + 5.01 s attempt (dio
+`connectTimeout`; round-1 F2 re-derivation of the cited logcat timestamps —
+the earlier "every 10.00 s" mislabelled the cycle period); D-2
+airplane-isolated launch → error, network
+back → `error → connecting → connected` (+`ws: none → open`) on the timer
+tick with zero taps — the issue's no-tap recovery observed verbatim; D-3
+error screen text intact (uiautomator). Pause-checkpoints before/after:
+`pause`, `item_progress_ms=171338` unchanged across the entire pass, volume
+46, ESP-CAAC64 + Volumio Kitchen selected — untouched. Plan facts corrected
+in-report: prefs live in `FlutterSharedPreferences.xml` with `flutter.`-key
+prefix (shared_preferences_android 2.4.10), and `svc wifi disable` does not
+isolate on the emulator image (eth0 stays up) — used the plan's
+`cmd connectivity airplane-mode` fallback.
+
+Review round 1 (fixer, PR #95): committed T9 pinning the `connectTo`
+`_generation` guard (mutation-verified red on guard deletion, restored from
+/tmp backup — no `git checkout`); corrected the T6 claim and the D-1 "10.00 s
+cycle" figure in report/SESSION-LOG; `plans/93.md` AC-4 row now reads "all 5
+tests" (file has 5). Gates re-run green incl. `flutter build apk --debug`.
+
+## 2026-11-27 — issue #92: volume toaster on rocker steps everywhere except NowPlaying (builder, night-2026-11-27 unit 4)
+
+Built capture-22 parity per `plans/92.md`. `lib/src/ui/volume_toaster.dart`
+(new): `VolumeToasterLayer` mounted via `MaterialApp(builder:)` — the only
+slot above the Navigator that paints over opaque pushed routes;
+`IgnorePointer`+`ExcludeSemantics` pill at `Align.center` (device center in
+the y900–1500 band), single 1500 ms auto-hide `Timer`, repeat press updates
+in place. NP-root suppression via `VolumeToasterRouteObserver` depth ≤ 1
+(plan A-1). `PlayerController` gained `volumeStepSeq`/`volumeStepLevel`,
+bumped in `stepVolume` ONLY under `_action`'s gate
+(`api != null && isConnected && _player != null`) with the same clamp
+expression as the optimistic copy — bar label == NP slider value by
+construction (AC-4 agreement). `OwntoneRemoteApp` → StatefulWidget (stable
+observer + test-visible `toaster` getter). `mirror_handler.dart`,
+`now_playing_screen.dart`, `android/`, `pubspec` untouched per plan.
+
+Tests: `test/volume_toaster_test.dart` T1–T11 + T12 in
+`rocker_foreground_test.dart` — 684/684 suite. Gates: analyze 0 issues,
+format 0 changed, test +684, `build apk --debug` OK (tails verbatim in the
+report). Two harness findings honoured: (1) a first post-foreground
+uiautomator dump can return the semantics-free shell — re-dump; D-3 used
+same-screen baseline-vs-bar-visible node-set diff (62 vs 62 nodes, zero
+delta, no `51`/`volume` text) not a single dump; (2) `evaluate` needs the
+`flutter run` compile service (plain launch ⇒ "No compilation service
+available"). A widget-test crash (`object.dart:6723` semantics-geometry
+assertion on banner insert under a pushed route) reproduced with a plain
+`MaterialApp` — pre-existing framework/harness interaction, unrelated to the
+layer; affected test restructured (disconnect at root before push).
+
+Device pass (own AVD `OwnToneNight27_API_36`, created + deleted by the unit;
+serial re-verified via `getprop ro.boot.qemu.avd_name`; only the night AVD
+and the untouched Pixel 6 were attached): controller-driven steps via
+`evaluate` under `flutter run` (never keyevent 24/25 — night-AVD keyevents
+go to system volume, H-1/H-2 recorded BLOCKED-PENDING-HOST-VERIFICATION with
+the plan's substitute proofs). D-1 Queue: band y900–1500 diff **110 009 px**
+at +0.35 s (changed y1133–1298), **0** by +3 s (full-screen diff 0 too),
+server 46→51 relative, `seq=1 level=51`. D-2 NP: center-band diff **0**,
+slider-band diff 4621 px, SeekBar content-desc `'51%'`→`'56%'`, 51→56. All
+steps pause-verified first; `item_progress_ms=171338` frozen across the
+entire pass; restore `PUT volume=46` 204 + GET verify; outputs GET unchanged
+(ESP-CAAC64 + Volumio Kitchen selected). Zero `E/flutter`/`FATAL`. Report:
+`.ai-dlc/night-2026-11-27/reports/92.md`.
+
+## 2026-11-27 — PR #89 host device pass — INCIDENT: ~59 s playback from a transport broadcast (host session)
+
+**What happened:** during the user-authorized host pass of PR #89's device rows on the
+Pixel 6 (`25071FDF600953`), the row-1 substitute leg backgrounded the app and injected
+keycode 87 (`MEDIA_NEXT`) via `DebugMediaButtonReceiver` while the server sat `pause`
+with both outputs (ESP-CAAC64 AirPlay + Volumio Kitchen) selected. The arrival logged
+correctly (`click(next) appForeground=false mirroredPlaying=false`, 09:16:36.665) and
+delegated `PUT /api/player/next` — which **started playback** (`state: pause→play`,
+progress counting). AGENTS.md §1's "next/previous while the server is paused keeps it
+paused" did not hold for this server/build pair — measured, not assumed. `PUT pause`
+issued at 09:17:39; verified `pause` with `item_progress_ms=59194` stable across two
+reads ~5 s apart. Upper bound of any audible output: **≈ 59 s**, volume 46, item 215512
+(the other session's queue item — pointer never changed; the 87/88 pair net-cancelled).
+
+**Controls:** the run config had already classified transport calls play-capable for
+this reason; the host pass's remaining legs were re-planned to run **all outputs
+deselected** before any transport-class injection (the decision-of-record pass's own
+disclosed safe pattern, issue #82 comment 7168723716: "server next/previous/play/pause
+exercised while all outputs deselected (no audio possible)"), with re-selection +
+verification afterwards.
+
+**Corrections this entry mandates going forward:** treat `PUT /api/player/next|previous`
+as PLAY-CAPABLE on this server (verified 2026-11-27), not pause-preserving.
+
+## 2026-11-27 — host-session closeout: stale-premise corrections, review-round errata, owntone_sync handoff (host session)
+
+**Did:** post-run closeout of night-2026-11-27, user-directed, in response to
+the two agentic review rounds' residual minors/nits and one user fact.
+
+- **USER FACT correcting a load-bearing premise:** there is **no other live
+  session** on this host/server — the AGENTS.md claim that the OwnTone server
+  at 192.168.1.13 is "shared with another active session" is **stale** and
+  was corrected in AGENTS.md. Every "other session" attribution I (and prior
+  entries) made for the 2026-11-27 server transitions is retracted; the
+  measured transitions stand, their cause is recorded as a hypothesis (most
+  plausible: the autonomous **owntone_sync app on the Pixel 6**, the
+  `dumpsys media_session` button-session holder, designed to follow and drive
+  the server). The snapshot/restore + re-verify-`state` discipline stays —
+  it is sound regardless of who/what else touches the server.
+- **AGENTS.md audio-safety correction (measured, not inherited):** the claim
+  "'next/previous' while the server is paused keeps it paused in OwnTone" is
+  **wrong on this server pair** — measured 2026-11-27 (v29.3): a
+  `PUT /api/player/next` from verified `pause` resumed playback (~59 s
+  unintended audio; incident entry above). `next`/`previous` are now declared
+  **play-class** — deselect outputs first (inaudible) or take the supervision
+  gate. This was the mechanism of the day's only audio incident.
+- **PR #88 review round-1 errata** (recorded on the PR body as an
+  append-only Errata section, and here): § Design points "tests 1 and 3 …
+  suite +~25 s" → **tests 1, 3 and 5** live out the real 10 s boot wait
+  (`pump(12_000)` at `test/mirror_wake_test.dart:107, 228, 340`; timeouts
+  60/60/90 s; live-wait overhead ≈36 s ⇒ **suite +~40 s**). §
+  Mutation-verified second bullet: the naive variant **as written does not
+  compile** (`if (p == null || !p.isPlaying)` kills null promotion with
+  `controlsFor(p)` inside); the reviewer compiled the intent with a fixed
+  null-case control and it reddened **tests 1, 3 and 5** — verification
+  holds, and is stronger than claimed. The `SESSION-LOG` blob-unchanged claim
+  (`5f41f03…`) was true at `f2ad62d`, stale at head — `74ece2b` re-merged
+  develop carrying #87's hunks (head blob `1f3fa1d…`); one-line note appended
+  in-branch at that entry. The orphaned #87 **revision addendum** was
+  restored to its original position: the `## 2026-11-25` #81 entry (inserted
+  between the preceding entry's closing paragraph and that trailing addendum
+  by the factory) was moved below the addendum block, per the PR #88
+  round-1 reviewer's explicit instruction — the only non-append edit here,
+  and content-preserving.
+- **PR #96 review round-2 nit** (reports/92.md § Corrections + here): the
+  ASSUMPTIONS claim that the `object.dart:6723` crash "was reproduced with a
+  plain `MaterialApp`" overstates a minimal repro (reviewer's minimal probe
+  passed clean); the load-bearing exoneration is the **bisect** — real app
+  harness, press REMOVED, default semantics still throws the same assertion —
+  which the reviewer reproduced verbatim. Citation corrected to the bisect.
+- **owntone_sync handoff (the companion repo's AVRCP bug, its issue #11):**
+  posted the cross-repo test-knowledge transfer to **#11** (merged `click()`
+  witness from PR #89 `c17817a` = second-app witness for "keys landed on the
+  remote"; #81 `822144e` makes remote session presence at launch reliable;
+  the play-capable next/previous fact for their server-driving tests; the
+  screen-off per-uid firewall + `svc power stayon`/`deviceidle whitelist`
+  mitigation for Pixel 6 scripted passes; ESP32 harness serial-dead awaiting
+  a physical power cycle, tools preserved at `/tmp/issue82/`; answers to the
+  issue's three open triage decisions). Posted the merged implementation
+  template to **#14** (click override + pure log formatter + injectable
+  logger + debug-only `DebugMediaButtonReceiver` + mutation-verified
+  delegation tests, with the debug-build-only logcat caveat and AOSP keycode
+  corrections). Filed the tracked-unfiled **F5** as **#21** (end-of-queue
+  leaves a stale PLAYING projection; head-unit PLAY then pauses; survives
+  relaunch). Merged their clean docs PR **#16** (`f600cea`) so the host-pass
+  report is on develop; their probe PR **#20** is ready for independent
+  re-review at `6326757` (both original findings fixed, threads resolved,
+  CI green — the fail check is stale against `b629f43`).
+
+**Verification:** docs-only change (AGENTS.md, this file,
+`.ai-dlc/night-2026-11-27/reports/92.md`); no code, no device, zero server
+calls beyond GETs this closeout. Server at exit: `pause` @178495, vol 46,
+outputs [ESP-CAAC64, Volumio Kitchen] — verified twice.

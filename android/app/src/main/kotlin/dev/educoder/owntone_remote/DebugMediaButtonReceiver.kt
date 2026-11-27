@@ -24,9 +24,10 @@ import android.view.KeyEvent
  *
  * Keycode values (android.view.KeyEvent):
  *   85 = MEDIA_PLAY_PAUSE (toggle), 86 = MEDIA_STOP,
- *   87 = MEDIA_PREVIOUS, 88 = MEDIA_NEXT
- * (The earlier doc comment claimed 85=play 86=pause 87=next 88=previous —
- * wrong; verified against KeyEvent constants 2026-10-12.)
+ *   87 = MEDIA_NEXT, 88 = MEDIA_PREVIOUS
+ * (KEYCODE_MEDIA_NEXT = 87 and KEYCODE_MEDIA_PREVIOUS = 88 per AOSP
+ * android.view.KeyEvent; confirmed on a Pixel 6 2026-11-25, where
+ * --ei keycode 88 reaches the app as MediaButton.previous.)
  */
 class DebugMediaButtonReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

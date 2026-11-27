@@ -70,20 +70,34 @@ Shuffle toggle, repeat cycle (off → all → single), consume toggle.
 ### R-06 Master volume — P0
 Volume slider in the app (0–100, `?volume=`) **and** hardware volume
 rocker (`?step=`). **The rocker maps to the server's master volume only
-while the app is in the foreground** (D20, user decision 2026-10-22).
+while the app is in the foreground** (D20, user decision 2026-10-22),
+and since issue #84 it does so through an **app-local foreground key
+path**: the Activity's `onKeyDown` forwards the volume keys over the
+`owntone_remote/volume_keys` channel and the app issues `?step=` itself.
+The media session is **never** the mechanism — it is published with
+`fixed` volume control in every app state, so SystemUI's media tile /
+output row renders no volume slider for the server volume and Android
+never routes the rocker to the session.
 When the app is backgrounded, the phone's volume keys perform their
 normal function and the app must **not** control the server's volume —
-including while the server is playing.
+including while the server is playing, and including a process restarted
+by the audio service with no UI.
 **Acceptance:**
 - slider change verified via `GET /api/player` `volume`;
 - with the app in the foreground, rocker up/down changes master volume
   by ±5 (default step — open item) (verified 2026-10-22 on a real
-  Pixel 6, server stopped: 36→41→36);
+  Pixel 6, server stopped: 36→41→36 — re-verify against the #84 key
+  path on the next host pass);
 - with the app backgrounded (any screen state, any server state —
    including server `play`), rocker presses leave the server volume
    unchanged (verified 2026-10-22 on the Pixel 6: backgrounded +
    screen-off with the server stopped, volume held 36; and supervised
-   with the server `play` — rocker up *and* down, volume held 36);
+   with the server `play` — rocker up *and* down, volume held 36;
+   re-verify against the #84 key path on the next host pass);
+- `dumpsys media_session` shows this app's session volume
+  type/control type never `ABSOLUTE` in any app state, and the media
+  tile / output row shows no volume slider while transport + progress
+  remain (#84 — host pass);
 - volume WS events keep slider and notification in sync.
 
 ### R-07 Persistent notification — P0
@@ -239,6 +253,14 @@ fallback and default. No pairing ceremony (OwnTone JSON has none).
 **Acceptance:** on a LAN with the server running, the server appears
 without typing an IP; picking it connects (R-01 flow); discovery timeout
 never blocks manual entry.
+**Amended by issue #62 (2026-11-22): prominence flipped.** Auto-discovery is
+the **primary** flow — on first display (no saved config) setup scans by
+itself and the scan panel (loading / hits / none / error) is the first thing
+presented. Manual host/port entry is the fallback, hidden behind an explicit
+**Advanced** affordance that gates visibility only. It stays reachable in
+every scan state (running / timed out / errored), so the original
+"discovery never blocks manual entry" acceptance holds even harder. A
+Settings visit with a saved config does not broadcast a scan unasked.
 
 ### R-21 Drawer navigation — P1 (user decision 2026-11-19, N-02 option B)
 Add a Material 3 **NavigationDrawer**, ReTune-style (`23-playing-audit`
