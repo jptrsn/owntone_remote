@@ -71,6 +71,17 @@ treat unknown types as display-only strings).
 | PUT | `/api/player/volume?volume=N&output_id=<id>` | 204. Per-output volume (R-09) |
 | PUT | `/api/player/seek?position_ms=N` \| `?seek_ms=N` | 204. No audio while paused |
 
+**Play-start latency (measured 2026-11-26, Pixel 6 host session):** with
+AirPlay outputs selected (ESP-CAAC64 + Volumio Kitchen), `GET /api/player`
+still returns `"state": "pause"` for ~2–4 s **after** `PUT /api/player/play`
+(and after audio is actually audible) — the server is connecting the AirPlay
+outputs and filling the sync buffers before it commits `play`. A single
+read a second or two after the PUT is **not** evidence the play didn't
+happen; poll (2 s interval, ~15 s) before concluding `pause`. Same class of
+async-commit as the rating flow (PR #12: PUT 2xx precedes the DB commit).
+For audio safety this cuts one way only: treat a just-issued `play`/`toggle`
+as playing from the moment of the PUT, never from what the next read says.
+
 ## Outputs (R-09)
 
 | Method | Endpoint | Notes |

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/services.dart';
 import 'package:logger/logger.dart';
 
 import '../core/artwork_probe.dart';
@@ -40,6 +41,24 @@ MediaItem? mediaItemFor({
   );
 }
 
+/// The row published while the server is `stop`ped (issue #83, PR #87
+/// review): replaces the previous track's metadata on the tile with a
+/// neutral stopped row, matching what the in-app screens render
+/// (`now_playing_screen.dart` shows 'Stopped').
+///
+/// Publishing this instead of `null` is the only metadata-clear path the
+/// pinned audio_service 0.18.19 has: `_observeMediaItem` discards a null
+/// before any platform call (`lib/audio_service.dart:1029-1033`), so
+/// `mediaItem.add(null)` never reaches `MediaSessionCompat` and the shade
+/// would keep the last track's title/artist/album. A fresh non-null item
+/// does reach `setMetadata`; the Java builder is rebuilt per notify, so the
+/// null artist/album/duration blank those lines, and the art-less publish
+/// also nulls the service's `artBitmap` (`AudioService.java:795-801`),
+/// clearing the large icon — whether SystemUI re-renders it is the device
+/// question the host row answers.
+MediaItem stoppedMediaItem() =>
+    const MediaItem(id: 'owntone:stopped', title: 'Stopped');
+
 /// Same now-playing item across a refetch: `PlayerController` replaces
 /// `_nowPlaying` with a fresh instance on every `GET /api/queue`
 /// (id=now_playing), so [identical] cannot be used across an await —
@@ -56,9 +75,33 @@ bool _sameNowPlaying(NowPlayingItem? a, NowPlayingItem? b) =>
 /// Transport controls for the notification / lockscreen (SCREENS.md:
 /// play/pause · next · previous — the v1 notification has no stop or mode
 /// controls).
-List<MediaControl> controlsFor(PlayerState p) => p.isPlaying
-    ? [MediaControl.pause, MediaControl.skipToNext, MediaControl.skipToPrevious]
-    : [MediaControl.play, MediaControl.skipToNext, MediaControl.skipToPrevious];
+///
+/// Issue #83: a **stopped** server publishes `play` only. OwnTone does not
+/// honour a skip while stopped — measured on the Pixel 6 host pass, `PUT
+/// /api/player/next` answered 204 with the queue pointer frozen (a silent
+/// no-op) and `previous` answered HTTP 500 — so exposing them made the tile
+/// advertise a transport the server cannot service: taps looked accepted and
+/// did nothing visible (the 500 surfaces only as an in-app snackbar, which
+/// the shade cannot show). `play` *is* honoured from `stop` — the current
+/// item stays queued and `PUT /api/player/play` restarts it — which is also
+/// why NowPlaying keeps its play button live while stopped
+/// (`now_playing_screen.dart`) and disables previous/next there. Do not
+/// "unify" the stopped branch with the paused one: the tile mirrors what the
+/// server acts on, not what the queue contains.
+List<MediaControl> controlsFor(PlayerState p) {
+  if (p.isStopped) return const [MediaControl.play];
+  return p.isPlaying
+      ? [
+          MediaControl.pause,
+          MediaControl.skipToNext,
+          MediaControl.skipToPrevious,
+        ]
+      : [
+          MediaControl.play,
+          MediaControl.skipToNext,
+          MediaControl.skipToPrevious,
+        ];
+}
 
 /// The rocker step for a volume direction (R-06, unit 003): `null` means no
 /// volume change — `same` is Android's key-release / end-of-sequence marker,
@@ -70,15 +113,30 @@ int? rockerStepFor(AndroidVolumeDirection direction, {required int step}) {
   return null;
 }
 
-/// The session's volume-control type (D20): server-volume mapping only
-/// while the app is foregrounded. `absolute` routes rocker presses to the
-/// session; `fixed` takes the session out of volume-key selection so a
-/// backgrounded app leaves the phone's volume keys to their normal
-/// behaviour — even while the server is playing.
-AndroidVolumeControlType volumeControlTypeFor(bool appForeground) =>
-    appForeground
-    ? AndroidVolumeControlType.absolute
-    : AndroidVolumeControlType.fixed;
+/// The AOSP volume-key direction names the Kotlin hook forwards on the
+/// `owntone_remote/volume_keys` channel (issue #84). `null` for anything
+/// else — an unrecognised name must never reach the server.
+AndroidVolumeDirection? volumeDirectionForName(String name) => switch (name) {
+  'raise' => AndroidVolumeDirection.raise,
+  'lower' => AndroidVolumeDirection.lower,
+  'same' => AndroidVolumeDirection.same,
+  _ => null,
+};
+
+/// The session's volume-control type (D20, reworked by issue #84): **always**
+/// `fixed`. The session must never expose a volume control — not foregrounded
+/// and not backgrounded.
+///
+/// `absolute` was what made SystemUI's media tile / output row render a
+/// slider showing the *server* volume, and what routed the hardware rocker to
+/// [MirrorAudioHandler.androidAdjustRemoteVolume]. There is no audio_service
+/// configuration that keeps that mapping while hiding the slider
+/// (`AudioService.setPlaybackInfo` only rebuilds the `VolumeProviderCompat`
+/// when type/maxVolume change), so the rocker→server path is app-local
+/// instead: the Activity's `onKeyDown` hook → the volume-key channel →
+/// [MirrorAudioHandler.handleVolumeKey]. `fixed` takes the session out of
+/// volume-key selection entirely, in every app state.
+const sessionVolumeControlType = AndroidVolumeControlType.fixed;
 
 /// The #82 `click()` observability line (R-04/R-07): names the arriving
 /// [MediaButton], whether the app is foregrounded, and the playing state the
@@ -161,15 +219,109 @@ class MirrorAudioHandler extends BaseAudioHandler {
   /// D20: whether the app is foregrounded. Conservative default — a
   /// service-restarted process (no UI) is backgrounded until the first
   /// `AppLifecycleState.resumed`.
+  ///
+  /// Since issue #84 this gates the *foreground key path* only: the media
+  /// session is published `fixed` in every state, so the session itself can
+  /// never receive a volume key.
   bool _appForeground = false;
 
-  /// Pushed from main() on every app lifecycle transition. Re-publishes the
-  /// playback info immediately so the session's volume-control type follows
-  /// the app without waiting for the next player change.
+  /// Pushed from main() on every app lifecycle transition.
+  ///
+  /// It used to re-publish the playback info so the session's volume-control
+  /// type could follow the app (`absolute` ↔ `fixed`, the old D20 shape). The
+  /// type is now constant, so instead this gates the foreground key path: the
+  /// Activity-side hook only forwards keys while the app is resumed, which is
+  /// what keeps a backgrounded / screen-off / service-only app from touching
+  /// the server volume at all (R-06).
   void setAppForeground(bool foreground) {
     final changed = _appForeground != foreground;
     _appForeground = foreground;
-    if (changed && _started) unawaited(_publishPlaybackInfo());
+    if (changed && _volumeKeysStarted) {
+      unawaited(_setPlatformForwarding(foreground));
+    }
+  }
+
+  // -- foreground volume key path (R-06/D20, issue #84) ----------------------
+
+  /// Kotlin side: `VolumeKeys` (fed by `MainActivity.onKeyDown`/`onKeyUp`/
+  /// `onKeyMultiple`). The platform forwards a key only while an Activity is
+  /// attached *and* this side has reported the app resumed via
+  /// `startForwarding`, so a backgrounded app never receives one. The
+  /// session's own remote-volume provider is deliberately `fixed`, so Android
+  /// never routes those keys to the media session (see
+  /// [sessionVolumeControlType]).
+  static const volumeKeyChannel = MethodChannel('owntone_remote/volume_keys');
+
+  bool _volumeKeysStarted = false;
+
+  /// Whether the foreground key path is installed. Exposed for tests and for
+  /// main()'s degraded-audio path (an app without a handler must leave the
+  /// phone's volume keys entirely to the system).
+  bool get volumeKeysStarted => _volumeKeysStarted;
+
+  /// Install the foreground key path: listen on [volumeKeyChannel] and ask
+  /// the platform to forward volume keys while the app is resumed.
+  /// Idempotent. The platform is only told to forward once Dart is actually
+  /// listening, so a failed `AudioService.init` (or a handler that was never
+  /// created) can never leave the phone's volume keys swallowed.
+  Future<void> startVolumeKeys() async {
+    if (_volumeKeysStarted) return;
+    _volumeKeysStarted = true;
+    volumeKeyChannel.setMethodCallHandler(_onVolumeKeyCall);
+    await _setPlatformForwarding(_appForeground);
+  }
+
+  /// Tear the foreground key path down — the counterpart of
+  /// [startVolumeKeys], mirroring the Kotlin plugin's detach cleanup. A key
+  /// delivered afterwards is a no-op that the system keeps handling.
+  Future<void> stopVolumeKeys() async {
+    if (!_volumeKeysStarted) return;
+    _volumeKeysStarted = false;
+    await _setPlatformForwarding(false);
+    volumeKeyChannel.setMethodCallHandler(null);
+  }
+
+  Future<void> _setPlatformForwarding(bool forwarding) async {
+    try {
+      await volumeKeyChannel.invokeMethod<void>(
+        forwarding ? 'startForwarding' : 'stopForwarding',
+      );
+    } on MissingPluginException {
+      // No Android side (unit tests, another runner): the path stays a
+      // Dart-side no-op, which is the safe direction.
+    } on PlatformException {
+      // Same treatment; the keys stay with the phone.
+    }
+  }
+
+  Future<bool> _onVolumeKeyCall(MethodCall call) async {
+    if (call.method != 'volumeKey') return false;
+    final name = call.arguments;
+    if (name is! String) return false;
+    final direction = volumeDirectionForName(name);
+    if (direction == null) return false;
+    return handleVolumeKey(direction);
+  }
+
+  /// A forwarded volume key (R-06/D20). Returns whether *this app took the
+  /// key* — `true` only when it moved the server. The key-release marker and
+  /// anything delivered while the app is not resumed answer `false`.
+  ///
+  /// The Kotlin side cannot wait for this answer (`invokeMethod` is async
+  /// while Android key consumption is synchronous), so it decides from its own
+  /// gates; this return value is the Dart-side statement of the same rule and
+  /// is what the tests pin.
+  ///
+  /// The foreground check is the second layer: with no resumed Activity the
+  /// hook is not forwarding at all, but a key can still arrive for the
+  /// window Android is in the middle of deselecting, and that must never move
+  /// the server's volume.
+  Future<bool> handleVolumeKey(AndroidVolumeDirection direction) async {
+    if (!_appForeground || !_volumeKeysStarted) return false;
+    final step = rockerStepFor(direction, step: rockerStep);
+    if (step == null) return false;
+    await _player.stepVolume(step);
+    return true;
   }
 
   Future<void> start() async {
@@ -189,17 +341,32 @@ class MirrorAudioHandler extends BaseAudioHandler {
   }
 
   void _onPlayerChanged() {
+    // #81: while the boot wake is pending (no server state when `start()`
+    // gave up waiting), the first state to land IS the wake moment — the
+    // wake path publishes the real state too, so it replaces the plain
+    // sync rather than racing it. No-op once the one-shot has fired, so
+    // the already-working launch path is untouched.
+    if (_started && !_woken) {
+      unawaited(_wakeMediaSession());
+      return;
+    }
     unawaited(_sync());
   }
 
   /// Push the controller's state into the media session, then keep the
-  /// notification progress bar fresh with a 1 s ticker while the server
+  /// notification progress bar fresh with 1 s ticker while the server
   /// plays (OwnTone sends no periodic `player` events).
   Future<void> _sync() async {
     final p = _player.player;
     final item = _player.nowPlaying;
+    // Issue #83: `stop` is authoritative over the item. OwnTone keeps
+    // `item_id` set and `GET /api/queue?id=now_playing` keeps answering the
+    // track after a stop, so testing `item != null` first made the stopped
+    // branch unreachable — the tile kept the previous track's metadata and
+    // looked like a loaded, resumable card while the server was stopped.
+    final stopped = p != null && p.isStopped;
 
-    if (item != null) {
+    if (item != null && !stopped) {
       // R-03 unit 010 (device-side half): never publish an `artUri` the
       // server answers with 204 — audio_service's flutter_cache_manager
       // would fetch it and log `Invalid statusCode: 204` as an exception
@@ -213,11 +380,24 @@ class MirrorAudioHandler extends BaseAudioHandler {
       // every _nowPlaying replacement is followed by a notifyListeners →
       // _sync, so skipping here never drops metadata.
       if (!_sameNowPlaying(_player.nowPlaying, item)) return;
+      // Re-read: the await also let the server reach `stop`, and a stopped
+      // publish must not land a fresh item after the placeholder below.
+      // (The stop itself re-notifies the controller → _sync, so the
+      // placeholder always arrives; this guard only orders the two.)
+      if (_player.player?.isStopped ?? false) return;
       mediaItem.add(
         mediaItemFor(item: item, p: _player.player, hideArtwork: hideArtwork),
       );
-    } else if (p != null && p.isStopped) {
-      mediaItem.add(null);
+    } else if (stopped) {
+      // PR #87 review (blocking): a `null` publish is discarded by
+      // audio_service 0.18.19 before any platform call — `_observeMediaItem`
+      // early-returns on null (`lib/audio_service.dart:1029-1033`) — so
+      // `mediaItem.add(null)` left the previous track's title/artist/album
+      // on the tile (the Java `mediaMetadata` field is reset only in
+      // `onDestroy()`). Publishing the neutral stopped row is the only
+      // metadata-clear path the pinned plugin has: a fresh non-null id
+      // reaches `setMetadata` and `buildNotification()` re-raises it.
+      mediaItem.add(stoppedMediaItem());
     }
 
     if (p == null) return;
@@ -236,15 +416,19 @@ class MirrorAudioHandler extends BaseAudioHandler {
     }
   }
 
-  /// Remote playback info: this routes volume-rocker presses to
-  /// [androidAdjustRemoteVolume] while foregrounded (D20: `fixed` type
-  /// while backgrounded keeps the keys on the system streams).
+  /// The session's (always `fixed`) remote playback info. Publishing the type
+  /// as a constant — never `absolute` — is what keeps SystemUI's media tile /
+  /// output row from rendering a volume slider for the *server* volume, and
+  /// keeps the session out of the volume-key selection in every app state
+  /// (issue #84). `volume` still mirrors the server so the provider stays
+  /// consistent with the real state; nothing renders it while the type is
+  /// `fixed`.
   Future<void> _publishPlaybackInfo() async {
     final p = _player.player;
     if (p == null) return;
     androidPlaybackInfo.add(
       RemoteAndroidPlaybackInfo(
-        volumeControlType: volumeControlTypeFor(_appForeground),
+        volumeControlType: sessionVolumeControlType,
         maxVolume: 100,
         volume: p.volume,
       ),
@@ -277,12 +461,21 @@ class MirrorAudioHandler extends BaseAudioHandler {
 
   /// The one-shot wake described in the class docs. Skipped entirely when
   /// no server state exists yet — a disconnected app must not post a bogus
-  /// "playing" notification.
+  /// "playing" notification — and the one-shot is NOT consumed by such a
+  /// skip (#81): if `start()`'s bounded boot wait expired while the server
+  /// was still unreachable, the wake stays pending and [_onPlayerChanged]
+  /// re-attempts it when the first state lands. Consuming the flag before
+  /// the null check forfeited the wake for the life of the process, so a
+  /// slow server at launch left the session `active=false` with no
+  /// notification until a full restart. The prologue up to `_woken = true`
+  /// is synchronous, so a wake raced from `start()` and a player event can
+  /// still publish `playing: true` at most once.
   Future<void> _wakeMediaSession() async {
+    final p = _player.player;
+    if (p == null) return;
     if (_woken) return;
     _woken = true;
-    final p = _player.player;
-    if (p != null && !p.isPlaying) {
+    if (!p.isPlaying) {
       playbackState.add(
         PlaybackState(
           controls: controlsFor(p),
@@ -372,23 +565,17 @@ class MirrorAudioHandler extends BaseAudioHandler {
         AudioServiceRepeatMode.one => Repeat.single,
       });
 
-  // Volume rocker (D20, R-06): the session's remote volume provider routes
-  // rocker presses here while foregrounded (`absolute` volume-control type).
-  // Backgrounded, the session is published `fixed`, so Android leaves the
-  // keys to the system streams — and these overrides stay no-ops as a
-  // second layer against the transition window, where a key event could
-  // still arrive for a session the system was just deselecting.
+  // Volume rocker (D20, R-06): since issue #84 the media session is always
+  // published `fixed`, so Android never routes rocker presses here — the
+  // foreground key path ([handleVolumeKey]) owns that mapping. These overrides
+  // stay as a second layer: if the platform ever does deliver a remote-volume
+  // call (a future audio_service change re-advertising a volume provider, for
+  // instance), it must not move the server while the app is backgrounded, and
+  // must not move it at all for the absolute-index form the UI no longer has.
   @override
-  Future<void> androidSetRemoteVolume(int volumeIndex) {
-    if (!_appForeground) return Future.value();
-    return _player.setVolume(volumeIndex);
-  }
+  Future<void> androidSetRemoteVolume(int volumeIndex) => Future.value();
 
   @override
-  Future<void> androidAdjustRemoteVolume(AndroidVolumeDirection direction) {
-    if (!_appForeground) return Future.value();
-    final step = rockerStepFor(direction, step: rockerStep);
-    if (step == null) return Future.value();
-    return _player.stepVolume(step);
-  }
+  Future<void> androidAdjustRemoteVolume(AndroidVolumeDirection direction) =>
+      handleVolumeKey(direction).then((_) {});
 }
