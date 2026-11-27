@@ -3852,3 +3852,36 @@ play-class rows).
   compilation service available"); `retry()` reached via
   `Provider.of<ConnectionController>` on a walked `OwntoneRemoteApp`
   element (rootElement sits above the MultiProvider).
+
+## 2026-11-27 — issue #93: cold boot against a down server self-heals — error-phase recovery timer (builder, night-2026-11-27 unit 3)
+
+Unattended builder run on `fix/issue-93-error-phase-auto-retry` (off develop
+`822144e`). `ConnectionController` arms a `Timer.periodic`
+(`errorProbeInterval`, default 10 s) when entering `error` from a network-y
+(`dns`/`refused`/`timeout`) Dio failure and re-drives `retry()`; auth/http/
+client-bug errors stay inert (T4/T5 pin no hammering/no spin); timer cancelled
+on every other phase entry, in `_teardownClient`, and by `disconnect()`.
+`lib/main.dart` and all UI untouched (AC-5 diff-clean).
+
+Deviation + adjacent hardening (report ASSUMPTIONS-1): `connectTo`'s
+continuations now carry the `_probeServer`-style `_generation` guard — the
+timer makes attempts routinely in flight while the user can still disconnect,
+and the unguarded catch landed `idle → error` + re-armed the timer (T6
+"disconnect is final" non-deterministic; reproduced both ways from a /tmp
+backup restore path, never `git checkout --`). Mutation: deleting the arm
+reddens all six positive tests of the new file.
+
+Gates green (analyze 0 · format clean · `flutter test --exclude-tags live`
+670 passed · debug APK built). Device pass on the unit's own disposable AVD
+`OwnToneNight27_API_36` (created + deleted by this unit): D-1 blackhole
+192.0.2.1 → `connecting → error` at +5.05 s then `error → connecting` every
+10.00 s (logcat timestamps); D-2 airplane-isolated launch → error, network
+back → `error → connecting → connected` (+`ws: none → open`) on the timer
+tick with zero taps — the issue's no-tap recovery observed verbatim; D-3
+error screen text intact (uiautomator). Pause-checkpoints before/after:
+`pause`, `item_progress_ms=171338` unchanged across the entire pass, volume
+46, ESP-CAAC64 + Volumio Kitchen selected — untouched. Plan facts corrected
+in-report: prefs live in `FlutterSharedPreferences.xml` with `flutter.`-key
+prefix (shared_preferences_android 2.4.10), and `svc wifi disable` does not
+isolate on the emulator image (eth0 stays up) — used the plan's
+`cmd connectivity airplane-mode` fallback.
