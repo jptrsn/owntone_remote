@@ -4197,3 +4197,48 @@ the two agentic review rounds' residual minors/nits and one user fact.
 `.ai-dlc/night-2026-11-27/reports/92.md`); no code, no device, zero server
 calls beyond GETs this closeout. Server at exit: `pause` @178495, vol 46,
 outputs [ESP-CAAC64, Volumio Kitchen] — verified twice.
+
+## 2026-11-27 — v0.3.0 released (GitFlow release line, host session)
+
+**Did:** cut and published **v0.3.0+4** per AGENTS § Branching & CI:
+
+- Preflight: `origin/main` was an ancestor of `develop` (no skipped
+  back-merge); 64 commits since `v0.2.0`; keystore matched the public
+  checksum anchor. Version decision: **minor bump** — since 0.2.0 the
+  user-visible delta is features (volume toaster #92, auto-discovery-
+  primary connection flow #62, cold-boot self-heal #93) + a design
+  decision (foreground-only volume, #84) + reliability fixes (#81
+  launch wake, #82 key forwarding while paused, #83 no fake transport,
+  #64/#78 crash fixes). versionCode +3 → **+4** (`release.sh` enforces
+  the climb).
+- `release/v0.3.0` from develop `49c8ad9`; version trio on the release
+  branch (pubspec `0.3.0+4`, `kAppVersion` mirrored — test-asserted,
+  `docs/RELEASE-NOTES.md` rewritten for 0.3.0). **README corrected**: it
+  still claimed releases are *debug-signed* (false since 0.1.1 — the
+  dedicated release key + `SHA256SUMS.txt` + checksum anchor is the
+  truth) and advertised per-device volume (removed by #84); release
+  label refreshed. Signing unchanged from 0.2.0 → **no uninstall/
+  reinstall warning** needed.
+- Local gates on `709ee50`: analyze 0 · format 130/0-changed · 696/696 ·
+  debug APK. RC PR **#100 → main**: required `gates` passed (two runs:
+  branch-push RC + PR; both green) → squash-merged `6c34021`.
+- `./release.sh` from synced main (confirmation fed non-interactively —
+  user-present explicit request): gates re-ran, three per-ABI release
+  APKs built (arm64 19M / v7a 17M / x86_64 21M), **all cert-checked
+  against the release key**, SHA256SUMS generated, tag `v0.3.0` pushed,
+  GitHub release published: https://github.com/jptrsn/owntone_remote/
+  releases/tag/v0.3.0. **Tag-push gates cross-check green** (the
+  published artifact's toolchain claim holds).
+- Post-release **back-merge `main` → `develop` as a true merge commit**
+  (PR #101, merged `57fb335`) — deliberately NOT squashed: the next
+  release's preflight (`merge-base --is-ancestor origin/main
+  origin/develop`) depends on the ancestry; verified passing. Precedent:
+  PR #73 for v0.2.0.
+
+**Device/verification posture:** per-change device records are cited in
+the release notes' device-gate paragraph (host Pixel 6 passes for #62/
+#64/#78/#81/#82/#83/#84 on 2026-11-22→27; unit device records for
+#92/#93 in `.ai-dlc/night-2026-11-27/`); release-binary policy unchanged
+(UI-only deltas; dv-003/004 passes cover the runtime surface). No device
+was touched for this release; zero server calls beyond GETs; server at
+exit `pause` @178495, vol 46, outputs [ESP-CAAC64, Volumio Kitchen].
