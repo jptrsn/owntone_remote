@@ -3852,3 +3852,53 @@ play-class rows).
   compilation service available"); `retry()` reached via
   `Provider.of<ConnectionController>` on a walked `OwntoneRemoteApp`
   element (rootElement sits above the MultiProvider).
+
+## 2026-11-27 — issue #93: cold boot against a down server self-heals — error-phase recovery timer (builder, night-2026-11-27 unit 3)
+
+Unattended builder run on `fix/issue-93-error-phase-auto-retry` (off develop
+`822144e`). `ConnectionController` arms a `Timer.periodic`
+(`errorProbeInterval`, default 10 s) when entering `error` from a network-y
+(`dns`/`refused`/`timeout`) Dio failure and re-drives `retry()`; auth/http/
+client-bug errors stay inert (T4/T5 pin no hammering/no spin); timer cancelled
+on every other phase entry, in `_teardownClient`, and by `disconnect()`.
+`lib/main.dart` and all UI untouched (AC-5 diff-clean).
+
+Deviation + adjacent hardening (report ASSUMPTIONS-1): `connectTo`'s
+continuations now carry the `_probeServer`-style `_generation` guard — the
+timer makes attempts routinely in flight while the user can still disconnect,
+and an unguarded continuation landing mid-attempt lands `idle → error` +
+re-arms the timer (reproduced both ways from a /tmp backup restore path,
+never `git checkout --`). Mutation: deleting the arm reddens all six positive
+tests of the new file. **Review round 1 correction:** the race exists only
+when `disconnect()` lands mid-attempt (`_ConnectingScreen` Cancel,
+root_screen.dart:103, reachable during the 5–15 s connecting window); T6 as
+written never enters it, so the earlier "reverting the guard re-breaks T6"
+claim was wrong — the guard is now pinned by the committed race test **T9**
+(Completer-held attempt → `disconnect()` → release → `idle` + frozen request
+count + null `errorMessage`; deleting the three guards reddens T9 alone,
+`Expected: idle / Actual: error`).
+
+Gates green (analyze 0 · format clean · `flutter test --exclude-tags live`
+670 passed · debug APK built). Device pass on the unit's own disposable AVD
+`OwnToneNight27_API_36` (created + deleted by this unit): D-1 blackhole
+192.0.2.1 → `connecting → error` at +5.05 s; the timer fires **10.00 s after
+each error entry** (first tick +10.001 s) and consecutive `error → connecting`
+cycles land **15.01 s** apart = 10 s interval + 5.01 s attempt (dio
+`connectTimeout`; round-1 F2 re-derivation of the cited logcat timestamps —
+the earlier "every 10.00 s" mislabelled the cycle period); D-2
+airplane-isolated launch → error, network
+back → `error → connecting → connected` (+`ws: none → open`) on the timer
+tick with zero taps — the issue's no-tap recovery observed verbatim; D-3
+error screen text intact (uiautomator). Pause-checkpoints before/after:
+`pause`, `item_progress_ms=171338` unchanged across the entire pass, volume
+46, ESP-CAAC64 + Volumio Kitchen selected — untouched. Plan facts corrected
+in-report: prefs live in `FlutterSharedPreferences.xml` with `flutter.`-key
+prefix (shared_preferences_android 2.4.10), and `svc wifi disable` does not
+isolate on the emulator image (eth0 stays up) — used the plan's
+`cmd connectivity airplane-mode` fallback.
+
+Review round 1 (fixer, PR #95): committed T9 pinning the `connectTo`
+`_generation` guard (mutation-verified red on guard deletion, restored from
+/tmp backup — no `git checkout`); corrected the T6 claim and the D-1 "10.00 s
+cycle" figure in report/SESSION-LOG; `plans/93.md` AC-4 row now reads "all 5
+tests" (file has 5). Gates re-run green incl. `flutter build apk --debug`.
