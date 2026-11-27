@@ -10,7 +10,7 @@ OwnTone's JSON API and websocket notifications. No DACP/DAAP, no
 iTunes-specific features (radio, movies/TV, podcasts, Genius, …) — OwnTone's
 feature set is the only relevant feature set.
 
-**Current release: [v0.1.0](https://github.com/jptrsn/owntone_remote/releases/latest)**
+**Current release: [v0.3.0](https://github.com/jptrsn/owntone_remote/releases/latest)**
 · License: [GPL-3.0-only](LICENSE) · Requires Android 8.0+ (API 26) ·
 Verified against OwnTone 29.3.
 
@@ -38,20 +38,36 @@ Download the APK for your device from the
 | `armeabi-v7a` | older 32-bit ARM devices |
 | `x86_64` | emulators |
 
-Releases are **debug-signed** — accepted for this GitHub-release/Obtainium
-channel (no store distribution). If you installed the v0.1.0 build, a later
-switch to a dedicated release key will require a one-time uninstall +
-reinstall; release notes will flag it explicitly when that happens.
+Releases from **v0.1.1** onward are signed with the project's dedicated
+release key — `release.sh` refuses to publish APKs not carrying that
+certificate, and the key is anchored by its public checksum in
+[`tools/keystore/checksum.sha256`](tools/keystore/checksum.sha256); every
+release also ships a `SHA256SUMS.txt` so you can verify the bits yourself.
+Installs from 0.1.1+ update in place; a device still on the debug-signed
+v0.1.0 needs a one-time uninstall + reinstall (flagged in the release
+notes). No store distribution — this GitHub-release/Obtainium channel is
+the channel.
 
 ## What it does
 
-- Now playing, play/pause/next/previous, seek, queue management
-- Library browse (playlists / artists / albums → tracks / genres) and search
-- Volume, output selection (server-listed outputs; AirPlay + ALSA verified,
-  Chromecast depends on server-side support — see Known limitations in the release notes), per-device volume
-- Track ratings, shuffle/repeat modes, hardware volume-key routing
-- Live updates over the OwnTone websocket with resilient reconnect
-- Media notification / lock-screen controls (Android media session)
+- Now playing, play/pause/next/previous, seek; queue management with
+  drag-reorder, per-row Remove / Play Next
+- Library browse (playlists / artists / albums / songs / genres, with
+  alphabetical section headers), search, and Play All / Shuffle /
+  Play Next / Add to Up Next on detail screens
+- Server volume slider + physical volume-key routing (configurable step,
+  foreground-only by design) with a transient volume toaster; output
+  selection (server-listed outputs; AirPlay + ALSA verified, Chromecast
+  depends on server-side support — see Known limitations in the release
+  notes)
+- Track ratings, shuffle/repeat/consume modes, theme choice
+- Navigation drawer + persistent mini transport bar on every screen
+- Server auto-discovery over mDNS (manual host/port always available)
+- Live updates over the OwnTone websocket with resilient reconnect —
+  offline banner in ~1.4 s, backoff to a 30 s cap, silent-drop detection
+- Media notification / lock-screen controls (Android media session that
+  stays present while paused, so Bluetooth head-unit transport keys
+  reach the server)
 
 ## Privacy
 
