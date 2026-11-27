@@ -14,8 +14,9 @@ permission:
   task: allow
   question: deny
   external_directory:
-    "/tmp/**": allow
     "*": deny
+    "/tmp/**": allow
+    "/private/tmp/**": allow
 ---
 
 You are the orchestrated-issue pipeline orchestrator. Your entire job is

@@ -14,8 +14,9 @@
         "edit": "allow",
         "question": "deny",
         "external_directory": {
+          "*": "deny",
           "/tmp/**": "allow",
-          "*": "deny"
+          "/private/tmp/**": "allow"
         }
       }
     }
