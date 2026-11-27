@@ -3410,6 +3410,39 @@ No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
 Maintenance model host-bound carve-out). Server untouched — no HTTP call to
 `192.168.1.13` was made by this session.
 
+**Revision addendum (2026-11-26, PR #87 review round 1 — CHANGES
+REQUESTED, resolved):** the review's blocking finding was correct and
+reproduced independently before acting: in the pinned audio_service
+0.18.19, `_observeMediaItem` returns on null before any platform call,
+`AudioService.setMetadata()` (the sole writer of session metadata and of
+the Java `mediaMetadata` field) is reachable only with a non-null item,
+and `buildNotification()` sets title/subtext/subText only
+`if (mediaMetadata != null)` — so `mediaItem.add(null)` left the previous
+track's title/artist/album on the tile, and no Dart-side assertion (all
+the new tests sit above the drop) could show it. Resolution = the
+reviewer's preferred option 1: `stoppedMediaItem()` publishes the neutral
+row (fresh id `owntone:stopped` so audio_service's per-id handling cannot
+discard it; title 'Stopped' matches `now_playing_screen.dart:486`; null
+artist/album/duration blank those lines because the Java builder is
+rebuilt per notify). Honest caveat carried into SCREENS.md and the
+placeholder's doc comment: the row is *replaced, not blanked* (the title
+guard `if (mediaMetadata != null)` means only a publish changes it — which
+is what the placeholder is). Round-2 correction: the round-1 docs claimed
+a large-art residual "on API < 33"; checked against the pinned plugin
+before repeating it, `setMetadata` with an art-less item nulls `artBitmap`
+outright (`AudioService.java:795-801`), so the app-side art clear is real
+— what remains a device question is only whether SystemUI re-renders the
+icon, which is what host row 4 captures (besides the title-text check of
+rows 1-2). No PlayerController cache change: `_refreshChain` already sets
+`_nowPlaying = null` when stopped (`player_controller.dart:126`) — the
+retained item the review attributed to the cache is really the lagged
+`_player` slice, and the post-await re-read stays as the ordering guard
+(the stop's own event always re-fires `_sync`, so the placeholder always
+arrives). Two new tests pin the placeholder's field shape and its
+non-collision with real item ids; the three handler legs were rewritten
+to assert the published STREAM (track row while paused → Stopped row
+last), which is the strongest witness available below the plugin drop.
+
 ## 2026-11-25 — issue #81: media-session wake forfeited when the server is slow at launch (OpenHands factory)
 
 **Did:** fixed the one-shot wake in `lib/src/audio/mirror_handler.dart`.
@@ -3524,39 +3557,13 @@ note on this file:
   `BLOCKED-PENDING-HOST-VERIFICATION` row for the host pass. `needs-host-tools`
   is still absent from the PR labels (maintainer-created) — re-requested by
   comment on PR #88; nothing device-related was attempted here.
-
-**Revision addendum (2026-11-26, PR #87 review round 1 — CHANGES
-REQUESTED, resolved):** the review's blocking finding was correct and
-reproduced independently before acting: in the pinned audio_service
-0.18.19, `_observeMediaItem` returns on null before any platform call,
-`AudioService.setMetadata()` (the sole writer of session metadata and of
-the Java `mediaMetadata` field) is reachable only with a non-null item,
-and `buildNotification()` sets title/subtext/subText only
-`if (mediaMetadata != null)` — so `mediaItem.add(null)` left the previous
-track's title/artist/album on the tile, and no Dart-side assertion (all
-the new tests sit above the drop) could show it. Resolution = the
-reviewer's preferred option 1: `stoppedMediaItem()` publishes the neutral
-row (fresh id `owntone:stopped` so audio_service's per-id handling cannot
-discard it; title 'Stopped' matches `now_playing_screen.dart:486`; null
-artist/album/duration blank those lines because the Java builder is
-rebuilt per notify). Honest caveat carried into SCREENS.md and the
-placeholder's doc comment: the row is *replaced, not blanked* (the title
-guard `if (mediaMetadata != null)` means only a publish changes it — which
-is what the placeholder is). Round-2 correction: the round-1 docs claimed
-a large-art residual "on API < 33"; checked against the pinned plugin
-before repeating it, `setMetadata` with an art-less item nulls `artBitmap`
-outright (`AudioService.java:795-801`), so the app-side art clear is real
-— what remains a device question is only whether SystemUI re-renders the
-icon, which is what host row 4 captures (besides the title-text check of
-rows 1-2). No PlayerController cache change: `_refreshChain` already sets
-`_nowPlaying = null` when stopped (`player_controller.dart:126`) — the
-retained item the review attributed to the cache is really the lagged
-`_player` slice, and the post-await re-read stays as the ordering guard
-(the stop's own event always re-fires `_sync`, so the placeholder always
-arrives). Two new tests pin the placeholder's field shape and its
-non-collision with real item ids; the three handler legs were rewritten
-to assert the published STREAM (track row while paused → Stopped row
-last), which is the strongest witness available below the plugin drop.
+- Note (host session, 2026-11-27 — PR #88 review round 1, finding 3): the
+  blob claim above is accurate at `f2ad62d` but **stale at the merged head** —
+  `74ece2b` later re-merged `origin/develop` and brought #87's
+  `mirror_handler.dart` hunks into the branch (head blob `1f3fa1d…`, not
+  `5f41f03…`; the merged diff's index line reads `14f813a..1f3fa1d`). The
+  2026-11-26 host entry's 662/662 already supersedes this gates block;
+  docs-only note, no claim in it bears on the fix's correctness.
 
 ## 2026-11-25 — issue #83: media tile shows working transport while the server is stopped (OpenHands factory)
 
@@ -4120,3 +4127,73 @@ verification afterwards.
 
 **Corrections this entry mandates going forward:** treat `PUT /api/player/next|previous`
 as PLAY-CAPABLE on this server (verified 2026-11-27), not pause-preserving.
+
+## 2026-11-27 — host-session closeout: stale-premise corrections, review-round errata, owntone_sync handoff (host session)
+
+**Did:** post-run closeout of night-2026-11-27, user-directed, in response to
+the two agentic review rounds' residual minors/nits and one user fact.
+
+- **USER FACT correcting a load-bearing premise:** there is **no other live
+  session** on this host/server — the AGENTS.md claim that the OwnTone server
+  at 192.168.1.13 is "shared with another active session" is **stale** and
+  was corrected in AGENTS.md. Every "other session" attribution I (and prior
+  entries) made for the 2026-11-27 server transitions is retracted; the
+  measured transitions stand, their cause is recorded as a hypothesis (most
+  plausible: the autonomous **owntone_sync app on the Pixel 6**, the
+  `dumpsys media_session` button-session holder, designed to follow and drive
+  the server). The snapshot/restore + re-verify-`state` discipline stays —
+  it is sound regardless of who/what else touches the server.
+- **AGENTS.md audio-safety correction (measured, not inherited):** the claim
+  "'next/previous' while the server is paused keeps it paused in OwnTone" is
+  **wrong on this server pair** — measured 2026-11-27 (v29.3): a
+  `PUT /api/player/next` from verified `pause` resumed playback (~59 s
+  unintended audio; incident entry above). `next`/`previous` are now declared
+  **play-class** — deselect outputs first (inaudible) or take the supervision
+  gate. This was the mechanism of the day's only audio incident.
+- **PR #88 review round-1 errata** (recorded on the PR body as an
+  append-only Errata section, and here): § Design points "tests 1 and 3 …
+  suite +~25 s" → **tests 1, 3 and 5** live out the real 10 s boot wait
+  (`pump(12_000)` at `test/mirror_wake_test.dart:107, 228, 340`; timeouts
+  60/60/90 s; live-wait overhead ≈36 s ⇒ **suite +~40 s**). §
+  Mutation-verified second bullet: the naive variant **as written does not
+  compile** (`if (p == null || !p.isPlaying)` kills null promotion with
+  `controlsFor(p)` inside); the reviewer compiled the intent with a fixed
+  null-case control and it reddened **tests 1, 3 and 5** — verification
+  holds, and is stronger than claimed. The `SESSION-LOG` blob-unchanged claim
+  (`5f41f03…`) was true at `f2ad62d`, stale at head — `74ece2b` re-merged
+  develop carrying #87's hunks (head blob `1f3fa1d…`); one-line note appended
+  in-branch at that entry. The orphaned #87 **revision addendum** was
+  restored to its original position: the `## 2026-11-25` #81 entry (inserted
+  between the preceding entry's closing paragraph and that trailing addendum
+  by the factory) was moved below the addendum block, per the PR #88
+  round-1 reviewer's explicit instruction — the only non-append edit here,
+  and content-preserving.
+- **PR #96 review round-2 nit** (reports/92.md § Corrections + here): the
+  ASSUMPTIONS claim that the `object.dart:6723` crash "was reproduced with a
+  plain `MaterialApp`" overstates a minimal repro (reviewer's minimal probe
+  passed clean); the load-bearing exoneration is the **bisect** — real app
+  harness, press REMOVED, default semantics still throws the same assertion —
+  which the reviewer reproduced verbatim. Citation corrected to the bisect.
+- **owntone_sync handoff (the companion repo's AVRCP bug, its issue #11):**
+  posted the cross-repo test-knowledge transfer to **#11** (merged `click()`
+  witness from PR #89 `c17817a` = second-app witness for "keys landed on the
+  remote"; #81 `822144e` makes remote session presence at launch reliable;
+  the play-capable next/previous fact for their server-driving tests; the
+  screen-off per-uid firewall + `svc power stayon`/`deviceidle whitelist`
+  mitigation for Pixel 6 scripted passes; ESP32 harness serial-dead awaiting
+  a physical power cycle, tools preserved at `/tmp/issue82/`; answers to the
+  issue's three open triage decisions). Posted the merged implementation
+  template to **#14** (click override + pure log formatter + injectable
+  logger + debug-only `DebugMediaButtonReceiver` + mutation-verified
+  delegation tests, with the debug-build-only logcat caveat and AOSP keycode
+  corrections). Filed the tracked-unfiled **F5** as **#21** (end-of-queue
+  leaves a stale PLAYING projection; head-unit PLAY then pauses; survives
+  relaunch). Merged their clean docs PR **#16** (`f600cea`) so the host-pass
+  report is on develop; their probe PR **#20** is ready for independent
+  re-review at `6326757` (both original findings fixed, threads resolved,
+  CI green — the fail check is stale against `b629f43`).
+
+**Verification:** docs-only change (AGENTS.md, this file,
+`.ai-dlc/night-2026-11-27/reports/92.md`); no code, no device, zero server
+calls beyond GETs this closeout. Server at exit: `pause` @178495, vol 46,
+outputs [ESP-CAAC64, Volumio Kitchen] — verified twice.
