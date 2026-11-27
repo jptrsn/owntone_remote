@@ -40,6 +40,24 @@ MediaItem? mediaItemFor({
   );
 }
 
+/// The row published while the server is `stop`ped (issue #83, PR #87
+/// review): replaces the previous track's metadata on the tile with a
+/// neutral stopped row, matching what the in-app screens render
+/// (`now_playing_screen.dart` shows 'Stopped').
+///
+/// Publishing this instead of `null` is the only metadata-clear path the
+/// pinned audio_service 0.18.19 has: `_observeMediaItem` discards a null
+/// before any platform call (`lib/audio_service.dart:1029-1033`), so
+/// `mediaItem.add(null)` never reaches `MediaSessionCompat` and the shade
+/// would keep the last track's title/artist/album. A fresh non-null item
+/// does reach `setMetadata`; the Java builder is rebuilt per notify, so the
+/// null artist/album/duration blank those lines, and the art-less publish
+/// also nulls the service's `artBitmap` (`AudioService.java:795-801`),
+/// clearing the large icon — whether SystemUI re-renders it is the device
+/// question the host row answers.
+MediaItem stoppedMediaItem() =>
+    const MediaItem(id: 'owntone:stopped', title: 'Stopped');
+
 /// Same now-playing item across a refetch: `PlayerController` replaces
 /// `_nowPlaying` with a fresh instance on every `GET /api/queue`
 /// (id=now_playing), so [identical] cannot be used across an await —
@@ -56,9 +74,33 @@ bool _sameNowPlaying(NowPlayingItem? a, NowPlayingItem? b) =>
 /// Transport controls for the notification / lockscreen (SCREENS.md:
 /// play/pause · next · previous — the v1 notification has no stop or mode
 /// controls).
-List<MediaControl> controlsFor(PlayerState p) => p.isPlaying
-    ? [MediaControl.pause, MediaControl.skipToNext, MediaControl.skipToPrevious]
-    : [MediaControl.play, MediaControl.skipToNext, MediaControl.skipToPrevious];
+///
+/// Issue #83: a **stopped** server publishes `play` only. OwnTone does not
+/// honour a skip while stopped — measured on the Pixel 6 host pass, `PUT
+/// /api/player/next` answered 204 with the queue pointer frozen (a silent
+/// no-op) and `previous` answered HTTP 500 — so exposing them made the tile
+/// advertise a transport the server cannot service: taps looked accepted and
+/// did nothing visible (the 500 surfaces only as an in-app snackbar, which
+/// the shade cannot show). `play` *is* honoured from `stop` — the current
+/// item stays queued and `PUT /api/player/play` restarts it — which is also
+/// why NowPlaying keeps its play button live while stopped
+/// (`now_playing_screen.dart`) and disables previous/next there. Do not
+/// "unify" the stopped branch with the paused one: the tile mirrors what the
+/// server acts on, not what the queue contains.
+List<MediaControl> controlsFor(PlayerState p) {
+  if (p.isStopped) return const [MediaControl.play];
+  return p.isPlaying
+      ? [
+          MediaControl.pause,
+          MediaControl.skipToNext,
+          MediaControl.skipToPrevious,
+        ]
+      : [
+          MediaControl.play,
+          MediaControl.skipToNext,
+          MediaControl.skipToPrevious,
+        ];
+}
 
 /// The rocker step for a volume direction (R-06, unit 003): `null` means no
 /// volume change — `same` is Android's key-release / end-of-sequence marker,
@@ -268,13 +310,19 @@ class MirrorAudioHandler extends BaseAudioHandler {
   }
 
   /// Push the controller's state into the media session, then keep the
-  /// notification progress bar fresh with a 1 s ticker while the server
+  /// notification progress bar fresh with 1 s ticker while the server
   /// plays (OwnTone sends no periodic `player` events).
   Future<void> _sync() async {
     final p = _player.player;
     final item = _player.nowPlaying;
+    // Issue #83: `stop` is authoritative over the item. OwnTone keeps
+    // `item_id` set and `GET /api/queue?id=now_playing` keeps answering the
+    // track after a stop, so testing `item != null` first made the stopped
+    // branch unreachable — the tile kept the previous track's metadata and
+    // looked like a loaded, resumable card while the server was stopped.
+    final stopped = p != null && p.isStopped;
 
-    if (item != null) {
+    if (item != null && !stopped) {
       // R-03 unit 010 (device-side half): never publish an `artUri` the
       // server answers with 204 — audio_service's flutter_cache_manager
       // would fetch it and log `Invalid statusCode: 204` as an exception
@@ -288,11 +336,24 @@ class MirrorAudioHandler extends BaseAudioHandler {
       // every _nowPlaying replacement is followed by a notifyListeners →
       // _sync, so skipping here never drops metadata.
       if (!_sameNowPlaying(_player.nowPlaying, item)) return;
+      // Re-read: the await also let the server reach `stop`, and a stopped
+      // publish must not land a fresh item after the placeholder below.
+      // (The stop itself re-notifies the controller → _sync, so the
+      // placeholder always arrives; this guard only orders the two.)
+      if (_player.player?.isStopped ?? false) return;
       mediaItem.add(
         mediaItemFor(item: item, p: _player.player, hideArtwork: hideArtwork),
       );
-    } else if (p != null && p.isStopped) {
-      mediaItem.add(null);
+    } else if (stopped) {
+      // PR #87 review (blocking): a `null` publish is discarded by
+      // audio_service 0.18.19 before any platform call — `_observeMediaItem`
+      // early-returns on null (`lib/audio_service.dart:1029-1033`) — so
+      // `mediaItem.add(null)` left the previous track's title/artist/album
+      // on the tile (the Java `mediaMetadata` field is reset only in
+      // `onDestroy()`). Publishing the neutral stopped row is the only
+      // metadata-clear path the pinned plugin has: a fresh non-null id
+      // reaches `setMetadata` and `buildNotification()` re-raises it.
+      mediaItem.add(stoppedMediaItem());
     }
 
     if (p == null) return;
