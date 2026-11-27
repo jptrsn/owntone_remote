@@ -4003,3 +4003,27 @@ device pass is not queued until the maintainer applies it.
 `dart format --output=none --set-exit-if-changed .` → clean (116 files);
 `flutter test --exclude-tags live` → **648/648**; new file alone → 11/11.
 No product code changed this round — documentation-only evidence fixes.
+
+## 2026-11-27 — PR #89 host device pass — INCIDENT: ~59 s playback from a transport broadcast (host session)
+
+**What happened:** during the user-authorized host pass of PR #89's device rows on the
+Pixel 6 (`25071FDF600953`), the row-1 substitute leg backgrounded the app and injected
+keycode 87 (`MEDIA_NEXT`) via `DebugMediaButtonReceiver` while the server sat `pause`
+with both outputs (ESP-CAAC64 AirPlay + Volumio Kitchen) selected. The arrival logged
+correctly (`click(next) appForeground=false mirroredPlaying=false`, 09:16:36.665) and
+delegated `PUT /api/player/next` — which **started playback** (`state: pause→play`,
+progress counting). AGENTS.md §1's "next/previous while the server is paused keeps it
+paused" did not hold for this server/build pair — measured, not assumed. `PUT pause`
+issued at 09:17:39; verified `pause` with `item_progress_ms=59194` stable across two
+reads ~5 s apart. Upper bound of any audible output: **≈ 59 s**, volume 46, item 215512
+(the other session's queue item — pointer never changed; the 87/88 pair net-cancelled).
+
+**Controls:** the run config had already classified transport calls play-capable for
+this reason; the host pass's remaining legs were re-planned to run **all outputs
+deselected** before any transport-class injection (the decision-of-record pass's own
+disclosed safe pattern, issue #82 comment 7168723716: "server next/previous/play/pause
+exercised while all outputs deselected (no audio possible)"), with re-selection +
+verification afterwards.
+
+**Corrections this entry mandates going forward:** treat `PUT /api/player/next|previous`
+as PLAY-CAPABLE on this server (verified 2026-11-27), not pause-preserving.
