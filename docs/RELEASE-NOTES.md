@@ -1,15 +1,13 @@
-# Release notes — OwnTone Remote 0.2.0
+# Release notes — OwnTone Remote 0.3.0
 
-**One-time note for upgraders still on 0.1.0:** 0.1.0 was **debug-signed**;
-every release since 0.1.1 uses the project's dedicated **release signing
-key**, and Android refuses to install an APK whose signing certificate
-differs from the installed one — so if you never updated past 0.1.0 you
-must **uninstall OwnTone Remote once, then install 0.2.0** (in Obtainium:
-uninstall, then re-add / force update). Installs coming from 0.1.1 update
-in place as normal. Your server and settings are untouched either way.
+**Signing:** 0.1.0 was debug-signed; every release since **0.1.1** — including
+this one — uses the project's dedicated release key, so installs from 0.1.1
+or newer update **in place**. Only a device still on 0.1.0 must uninstall
+once and reinstall (Android refuses a certificate change). Your server and
+settings are untouched either way.
 
-Release: built from tag `v0.2.0` by `release.sh` (gates green on this
-commit: analyze 0 issues · format 0 changed · 623/623 tests;
+Release: built from tag `v0.3.0` by `release.sh` (gates green on this
+commit: analyze 0 issues · format 0 changed · 696/696 tests;
 **signed with the dedicated release keystore** — `release.sh` refuses to
 publish debug-signed or foreign-signed APKs; a generated provenance
 header with the build commit and artifact sizes is published above these
@@ -17,48 +15,49 @@ notes). Package `dev.educoder.owntone_remote`,
 minSdk 26, targetSdk 36. Verified against OwnTone **29.3**
 (JSON API `:3689`, websocket `:3688`).
 
-## Changes in 0.2.0 (since 0.1.1)
+## Changes in 0.3.0 (since 0.2.0)
 
-Eleven features from the ReTune-UX capture pass (the `retune-ux-capture`
-intent's `R-15`–`R-26`), each built and device-verified by its own
-overnight-pipeline unit (disposable AVD per unit, independent review
-records posted to the cited PRs), with the audible-playback rows closed
-in a user-present Pixel 6 session on 2026-11-20 (Server/ALSA output):
+Reliability fixes plus two user-facing features, each with its own build +
+review record (cited PRs; device rows recorded in the cited PRs and
+`.ai-dlc/` unit files):
 
-- **Navigation drawer** — a hamburger drawer on every main screen with
-  the player identity, connection state, and links to Queue, Outputs,
-  Settings and About (issue #44, `R-21`; PR #56).
-- **Persistent mini transport bar** — a bottom bar (artwork, title,
-  play/pause, next) while a track is loaded, on every screen except Now
-  Playing; it honours the bottom window insets (issue #45, `R-22`;
-  PRs #57, #65).
-- **Theme choice** — Light, Dark, or Follow-system, persisted across
-  launches (issue #43, `R-26`; PR #51).
-- **Songs browse view** — the all-tracks list joins Playlists, Artists,
-  Albums and Genres on the library home (issue #38, `R-15`; PR #55).
-- **Alphabetical section headers** on the Artists, Genres and Songs
-  lists (issue #48, `R-25`; PR #54).
-- **Outputs one tap away** — a Speakers app-bar action on every browse
-  screen for mid-browse output switching (issue #40, `R-18`; PR #52).
-- **Go to Artist / Go to Album** — Now Playing's overflow opens the
-  current track's browse context (compilations name the album artist)
-  (issue #39, `R-17`; PRs #53, #67, #69).
-- **Play All / Shuffle / Play Next / Add to Up Next** on playlist and
-  album detail screens — add-only paths never clear the queue, and
-  Shuffle shuffles client-side because the server's add-time shuffle
-  parameter writes the *global* mode (issue #41, `R-19`; PR #58).
-- **Queue drag-reorder** — tap-and-hold a row and drag; commits exactly
-  one `PUT /api/queue/items/{id}?new_position=N`, with the now-playing
-  row inert (issue #46, `R-23`; PR #59).
-- **Per-row Remove and Play Next** on queue rows (row tap still
-  advances in place); the menu re-checks which row is playing before it
-  acts, so a track advance mid-menu can't make Remove delete the
-  current track (issue #47, `R-24`; PRs #60, #67).
-- **Server auto-discovery** — the connection screen scans the LAN over
-  mDNS (OwnTone's `_http._tcp` advertisement + `ffid`/`mtd-version` TXT
-  fingerprint); one tap on a hit pre-fills host/port and connects, the
-  scan is cancellable, and manual entry is never blocked (issue #42,
-  `R-20`; PRs #61, #66).
+- **Volume toaster** — a transient level bar appears on every screen except
+  Now Playing when the physical rocker moves server volume (ReTune
+  capture-22 parity; shows the resulting level, no accessibility node,
+  auto-hides) (issue #92, PR #96).
+- **Cold boot self-heals** — launching while the server is unreachable no
+  longer strands you on a Retry tap: the error phase re-drives the connect
+  on a recovery timer and walks itself to `connected` when the server
+  returns (issue #93, PR #95).
+- **Notification survives a slow server at launch** — the now-playing
+  notification and media session are no longer permanently forfeited when
+  the server answers later than the 10 s launch window; the wake is
+  retried as soon as player state lands (issue #81, PR #88).
+- **Head-unit / notification keys reach the server while paused** — the
+  media session stays present with no local audio and no audio focus, and
+  transport keys (play-pause, next, previous) from a Bluetooth head unit
+  or the notification are forwarded to the server; debug builds also log
+  each key arrival for diagnosis (issue #82, PR #89).
+- **Connection screen: auto-discovery is the primary flow** — the mDNS
+  scan leads the screen and manual host/port sits behind an **Advanced**
+  affordance (it remains fully available) (issue #62, PR #75).
+- **No fake transport when the server is stopped** — the media tile used
+  to show working transport while the server was `stop`ped, but the
+  server no-ops *next* and 500s *previous* in that state; the mirror now
+  presents only the controls the server actually honours (issue #83,
+  PR #87).
+- **Volume control is foreground-only by design** — the session-exposed
+  (cast / output-row) volume slider was removed: Android sessions imply
+  *local* volume semantics, which this app does not own; the in-app
+  server-volume surface is the foreground slider + rocker (issue #84,
+  `R-06`/D20 decision).
+- **Drawer red screen fixed** — the widget-library assertion
+  ("Looking up a deactivated widget's ancestor is unsafe") witnessed
+  around the drawer/Settings screens is resolved: the deferred page
+  builder no longer reads providers on a popped route, and the NowPlaying
+  → Server settings pre-fill is read at press time instead of inside the
+  pushed route's builder (issues #64/#78, PRs #77, #80; device pass on
+  the Pixel 6).
 
 ## What works
 
@@ -67,16 +66,18 @@ device — a Pixel 6; full R-ID + reconnect passes by device-verification
 units 001–002, release-build pass by unit 003, real-hardware pass by
 unit 004, and per-feature device passes in the cited `remote-app`
 units — see `.ai-dlc/device-verification/units/` and
-`.ai-dlc/remote-app/units/`, plus the 0.1.1 and 0.2.0 unit passes
-above).
+`.ai-dlc/remote-app/units/`, plus the 0.1.1, 0.2.0 and 0.3.0 unit
+passes above).
 The silent-drop row was proven on-device in unit 009 (debug build; the
 release build runs the identical dart:io `pingInterval` code path):
 
-- **Connection** — host/port settings, auto-reconnect on relaunch, and
-  distinct errors for DNS failure vs refused port vs auth (`R-01`);
-  **LAN auto-discovery** over mDNS with its own loading/timeout/error
-  states and one-tap prefill into the same connect flow, cancellable so
-  a popped screen never keeps scanning (`R-20`).
+- **Connection** — auto-discovery leads the screen (LAN scan over mDNS
+  with its own loading/timeout/error states and one-tap prefill,
+  cancellable so a popped screen never keeps scanning); manual
+  host/port sits behind **Advanced** and is never blocked;
+  auto-reconnect on relaunch, and distinct errors for DNS failure vs
+  refused port vs auth (`R-01`, `R-20`). A cold boot against a down
+  server recovers on its own via the error-phase retry timer.
 - **Reconnect robustness** — offline banner in ~1.4 s of a hard network
   loss, reconnect backoff 1→2→4→8→16→30 s (capped), full refetch on
   reconnect, no notification duplication or state thrash under rapid
@@ -106,14 +107,22 @@ release build runs the identical dart:io `pingInterval` code path):
 - **Theme** — Light / Dark / Follow-system picker, persisted (`R-26`).
 - **Notification** — one persistent `mediaPlayback` foreground-service
   notification with the current track and Play/Next/Previous actions;
-  updates from websocket events; survives backgrounding (`R-07`).
+  updates from websocket events; survives backgrounding; present while
+  **paused** too — the media session stays active with no local audio and
+  no audio focus, so genuine head-unit and notification transport keys
+  forward to the server even between tracks (`R-07`; wake also survives a
+  slow server at launch).
 - **Modes** — shuffle, repeat (off/all/single), consume; changes mirror
   the server within ~2 s both directions (`R-05`).
-- **Volume** — slider (server-verified), physical volume rocker in the
-  foreground moves server volume by a configurable step (1–10, default
-  5, persisted, applies to the next press without a restart), and the
-  rocker is inert while backgrounded — it never hijacks server volume
-  from the background (`R-06`, `R-14`).
+- **Volume** — in-app server-volume slider (server-verified) plus the
+  physical rocker in the foreground, which moves server volume by a
+  configurable step (1–10, default 5, persisted, applies to the next
+  press without a restart) and now pops a transient **volume toaster** on
+  every screen except Now Playing; the rocker is inert while backgrounded
+  — it never hijacks server volume from the background; there is
+  deliberately **no session-exposed volume control** (no cast/row volume
+  slider — Android sessions imply local-volume semantics this app does
+  not own) (`R-06`/D20, `R-14`).
 - **Outputs** — speaker list matches the server; multi-deselect is
   silent, deselecting the **only** selected output warns and on confirm
   stops playback (if playing); unselected outputs render their volume
@@ -183,19 +192,6 @@ recorded at the device gate — see below.)
 
 ## Known limitations
 
-- **Red-screen crash under investigation (issue #64).** A widget-library
-  assertion ("Looking up a deactivated widget's ancestor is unsafe")
-  was witnessed **at least three times** by the project owner during the
-  2026-11-20 supervised device session on a **debug** build, always
-  around the Settings/connection screens. Cause unidentified (the
-  initial mDNS-scan suspect was exculpated by independent review); the
-  fix awaits a supervised `flutter run` stack-trace capture. It was not
-  observed in the dv-003/dv-004 release passes (0 crashes through the
-  10-min background runs there), and no crash-on-launch class is known.
-- **Release key migration (0.1.0 → 0.1.1+).** 0.1.0 was debug-signed;
-  every release since 0.1.1 uses the dedicated release key, so upgrading
-  **directly from 0.1.0** requires a one-time uninstall/reinstall (see
-  top of these notes).
 - **Chromecast outputs** fail to select server-side on OwnTone 29.3
   (server-side issue) — AirPlay and ALSA outputs work; Chromecast
   selection is untested end-to-end because of it.
@@ -224,10 +220,19 @@ were each device-verified per unit on a disposable AVD (overnight runs
 of 2026-11-19/20; the audible-playback rows closed in the supervised
 user-present Pixel 6 pass of 2026-11-20), and those records were
 adjudicated by independent retroactive reviews on 2026-11-21 (correction
-sweep in `docs/SESSION-LOG.md` + the cited PRs). The 0.2.0 release
-binary itself follows the same policy as 0.1.1's notes — UI-only deltas
-verified on debug/unit builds, with the dv-003/004 release passes quoted
-here for the unchanged runtime surface.
+sweep in `docs/SESSION-LOG.md` + the cited PRs). The **0.3.0 delta** is
+likewise record-backed per change: the auto-discovery-primary connection
+flow had a Pixel 6 host device pass (round-3 approve, PR #75); the
+drawer/settings crash fix closed with a Pixel 6 host pass; the stopped-
+server transport, foreground-only-volume, launch-wake and key-forwarding
+changes were observed on the Pixel 6 in host sessions on 2026-11-26/27
+(raw `dumpsys media_session` records, `click(...)` log lines, and
+server-side volume/item deltas on the cited PRs); the cold-boot
+self-heal and the volume toaster carry their own unit device records in
+`.ai-dlc/night-2026-11-27/`. The 0.3.0 release binary itself follows the
+same policy as the 0.1.1/0.2.0 notes — UI-only deltas verified on
+debug/unit builds, with the dv-003/004 release passes quoted here for
+the unchanged runtime surface.
 
 `device-verification/003` passed on 2026-11-13: the release APK
 (`926a6be`) on a **disposable Android 36 AOSP emulator** (created and
