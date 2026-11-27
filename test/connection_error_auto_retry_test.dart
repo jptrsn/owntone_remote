@@ -417,5 +417,66 @@ void main() {
       },
       timeout: const Timeout(Duration(seconds: 10)),
     );
+
+    test(
+      'issue #93 (guard race, T9): disconnect() landing mid-attempt is final '
+      '— the stale continuation may not land idle → error, set errorMessage, '
+      'or re-arm the timer (pins the _generation guard on connectTo '
+      'continuations; deleting the guards reddens THIS test, not T6)',
+      () async {
+        // Review round 1: the timer makes attempts routinely in flight while
+        // the user can still disconnect — `_ConnectingScreen`'s Cancel
+        // (root_screen.dart:103) is reachable during the 5–15 s dio budget.
+        // T6 never enters that window (ticks settle instantly in the fake
+        // zone, so its disconnect runs with no attempt in flight), so this
+        // Completer-gated shape is the committed pin for the guard.
+        final gate = Completer<void>();
+        final adapter = ScriptedAdapter(
+          responder: (o) async {
+            if (o.path == '/api/config') {
+              await gate.future;
+              throw networkError(o, socketFailure('Connection refused', 61));
+            }
+            return jsonResponse(o, <String, dynamic>{});
+          },
+        );
+        final channels = <FakeWsChannel>[];
+        final conn = _controller(adapter, channels);
+        addTearDown(conn.dispose);
+
+        unawaited(conn.connectTo(_goodConfig));
+        await waitUntil(
+          () => _configCount(adapter) >= 1,
+          reason: 'the first attempt must reach the adapter',
+        );
+        expect(conn.phase, ConnectionPhase.connecting);
+
+        conn.disconnect(); // lands while the attempt is in flight
+        expect(conn.phase, ConnectionPhase.idle);
+        expect(conn.errorMessage, isNull);
+
+        gate.complete(); // the held attempt settles into the old generation
+        await pump(200); // 4× interval: a re-armed timer would fire here
+
+        expect(
+          conn.phase,
+          ConnectionPhase.idle,
+          reason:
+              'the stale catch must not land idle → error '
+              '(guards deleted: Actual: error — and the timer re-arms)',
+        );
+        expect(
+          conn.errorMessage,
+          isNull,
+          reason: 'the stale catch must not re-set errorMessage',
+        );
+        expect(
+          _configCount(adapter),
+          1,
+          reason: 'an explicit disconnect is final — no re-arm, no re-attempt',
+        );
+      },
+      timeout: const Timeout(Duration(seconds: 10)),
+    );
   });
 }
