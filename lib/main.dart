@@ -126,7 +126,10 @@ Future<void> _initAudio(PlayerController player, SettingsStore store) async {
     // androidStopForegroundOnPause: false — keep the mediaPlayback FGS
     // alive while the server is paused (spike criterion 7, Finding 3).
     final handler = await AudioService.init(
-      builder: () => MirrorAudioHandler(player, settings: store),
+      // #82: share the app logger so click() key-arrival lines land in the
+      // same logcat stream as the rest of the app.
+      builder: () =>
+          MirrorAudioHandler(player, settings: store, logger: _logger),
       config: const AudioServiceConfig(
         androidStopForegroundOnPause: false,
         androidNotificationChannelName: 'OwnTone Remote',

@@ -3853,6 +3853,157 @@ play-class rows).
   `Provider.of<ConnectionController>` on a walked `OwntoneRemoteApp`
   element (rootElement sits above the MultiProvider).
 
+## 2026-11-26 — issue #82: media-key arrivals are invisible — override + log `click()` in MirrorAudioHandler (OpenHands factory)
+
+**Did:** the authorized observability half of #82, per the maintainer's
+2026-11-25 host on-device pass (the decision of record). `MirrorAudioHandler`
+now overrides `click([MediaButton])`, emits **exactly one** log line per
+arrival, and delegates to `super.click(button)` — `BaseAudioHandler.click`
+(audio_service 0.18.19 audio_service.dart:3089) is otherwise untouched, so
+`media` still routes to play/pause by `playbackState.playing` and `next`/
+`previous` to `skipToNext`/`skipToPrevious`, each still reaching the
+`PlayerController` HTTP call. `main.dart`'s `_initAudio` passes the app
+`_logger` through the new optional `logger:` ctor arg (the
+`ConnectionController` shape, defaulting to
+`Logger(printer: PrettyPrinter(methodCount: 0))`), so key arrivals land in
+the same `flutter:*` logcat stream as the rest of the app. The line is built
+by the free `clickLogMessage()` (the repo's pure-function convention) —
+`click(media) appForeground=false mirroredPlaying=true` — naming the button,
+`_appForeground`, and the mirrored playing state.
+
+**Why this half and not the session policy:** the maintainer's pass settled
+the design question — the remote's focus-free session never wins the AOSP
+`Media button session` pin (stayed `null` across two cold-start wakes and a
+sustained active+PLAYING mirror; the pin follows real per-uid audio
+playback), deactivating does **not** stop routing while another app holds
+the pin, and idle/stop teardown is R-07-violating (stock `deactivateMediaSession`
+also cancels the notification). So: no `setActive(false)`, no session
+teardown, no scoping of the `_wakeMediaSession` wake, no
+activateSessionOnly/deactivateSessionOnly plugin patch, `androidStopForegroundOnPause:
+false` and the D20 volume path left exactly as they were (that is #84's, and
+#82 lands first per the maintainer's ordering note). Read 87/88 per AOSP
+KeyEvent (87=NEXT, 88=PREVIOUS), not the swapped doc-comment (#85).
+
+**Harness fact worth keeping:** a `LogOutput` subclass that captures
+`event.origin.message` proves the log line without stdout, and
+`ProductionFilter` makes the assertion deterministic — `DevelopmentFilter`
+(the logger default) gates on `assert`, which is exactly the edge a green
+suite would miss if the line silently stopped firing. The delegation
+assertions are non-vacuous and mutation-proven both ways (from a `/tmp`
+copy, md5-checked back, never `git checkout` — AGENTS trap list): swallowing
+`super.click` → 4 tests red; deleting the `_logger.i` call → 8 red. Restored
+both; md5 matches the committed file.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7):
+`flutter analyze` → No issues found; `dart format --output=none
+--set-exit-if-changed .` → clean (116 files); `flutter test --exclude-tags
+live` → **646/646** green (637 pre-existing + the 9 new). `flutter build apk
+--debug` is the host/CI leg.
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (device-bound; `needs-host-tools`
+requested — see the PR body's rows for action → expected observation →
+substitute proof). No `adb`, AVD, Pixel 6, ESP32 harness, or supervised-audio
+step was attempted (AGENTS § host-bound carve-out); server untouched — no
+HTTP call to `192.168.1.13` was made by this session.
+
+## 2026-11-26 — #82 PR #89 review round 1: the log line now names itself honestly (OpenHands factory)
+
+**Did:** addressed both inline findings from the reviewer's `a971e856` pass
+(both non-blocking, both about the *fidelity of the witness this unit exists
+to provide*):
+
+1. `serverPlaying=` → **`mirroredPlaying=`**. The value is `playbackState`'s
+   — the same one `BaseAudioHandler.click` routes on, which is why reading it
+   there is right — but during the one-shot `_wakeMediaSession` window it is
+   the wake's synthetic `playing: true` for a paused server, and a
+   `serverPlaying=true` line in a future #11 capture would read as proof the
+   server was playing. Doc comment on `clickLogMessage` now says so.
+2. A **DEBUG-BUILD-ONLY** note at the `_logger.i` call: the injected app
+   logger is `logger` 2.8.0's default `DevelopmentFilter`, whose `shouldLog`
+   fires only inside an `assert`, so the line does not exist in a
+   `--release` build — and `release.sh` publishes
+   `flutter build apk --release --split-per-abi` (what Obtainium installs).
+   The host pass must capture on a debug build; absence in release says
+   nothing about key delivery.
+
+**Why documentation and not `ProductionFilter`/`Level.warning`:** the
+reviewer's own proportionate option, and the alternative spends the one
+signal this app has on per-key chatter in a shipping release build to serve
+a diagnostic that only a harness session reads. Kept on the maintainer's
+accepted `ConnectionController` logger shape.
+
+**New tests (2, suite 646 → 648):** the pure fn must never emit
+`serverPlaying` again; and a deterministic witness that `mirroredPlaying` is
+read from `playbackState`, not re-derived — inject the wake's synthetic
+`playing: true`, then assert `click(media)` logs `mirroredPlaying=true` AND
+routes to `PUT /api/player/pause` against the paused server. Mutation-proof
+three ways (throwaway copy + md5 check-back, never `git checkout` on
+tracked state): read the field from `PlayerController` instead of
+`playbackState` → the fidelity test alone goes red; swallow `super.click` →
+5 red; delete the `_logger.i` call → **9** of the 11 red (the 2 survivors are
+the `clickLogMessage (pure, R-04/R-07)` group, which calls the pure function
+directly and never reaches `click()`; the round-1 draft of this line said 10,
+which did not reproduce — corrected in the round-2 pass below).
+
+**Gates:** `flutter analyze` → No issues found; `dart format
+--output=none --set-exit-if-changed .` → clean (116 files); `flutter test
+--exclude-tags live` → **648/648**. The device-bound rows are unchanged and
+still `BLOCKED-PENDING-HOST-VERIFICATION` — this round added no on-device
+evidence, only the debug-build requirement the host pass now has to record.
+
+## 2026-11-26 — #82 PR #89 review round 2: two of my own evidence lines did not reproduce (OpenHands factory)
+
+**Did:** fixed two **documentation-accuracy defects I introduced in the
+round-1 pass**, both on `docs/SESSION-LOG.md`, both filed inline by the
+reviewer at head `5e856ab2` and both confirmed against my own re-measurement
+before editing:
+
+1. `docs/SESSION-LOG.md:3428` still printed the witness as
+   `… serverPlaying=true`. The field was renamed in `9c499af`, so the
+   canonical statement of "what the witness prints" contradicted the shipped
+   line — in the very document that explains why the old name was dangerous.
+   The host device pass reads this file at session start and diffs its
+   `adb logcat -s flutter:*` capture against this string, so a maintainer
+   grepping the documented form would get zero hits on a real key and could
+   conclude the key was never delivered: the exact failure mode #82 exists to
+   remove. Corrected to `mirroredPlaying=true`. (The two later
+   `serverPlaying` mentions in the round-1 entry are the rename narrative —
+   "old name → new name" — and stay.)
+2. `docs/SESSION-LOG.md:3500` claimed deleting the `_logger.i(...)` call
+   turns **10** tests red. It turns **9** of the 11 (`+2 -9`); the 2
+   survivors are the `clickLogMessage (pure, R-04/R-07)` group, which calls
+   the pure function directly and never reaches `click()`. Corrected, with
+   the survivors scoped so the claim is checkable. The PR body's Gates
+   section repeated the same inflated number and is corrected the same way.
+
+**Why this matters more than it looks:** under AGENTS quality gate 1 the
+figures in this file **are** the evidence, and the trap list exists because
+fabricated evidence once reached a commit. An inflated mutation count is
+precisely what the reviewer — not a green suite — is supposed to catch, and
+it did. Before editing I re-measured **all three** mutations at
+`5e856ab2` (throwaway copy + md5 check-back, never `git checkout` on tracked
+state): swallow `super.click` → **5** red ✔ as recorded; re-derive the field
+from `PlayerController` → **1** red (the fidelity test alone) ✔ as recorded;
+delete the `_logger.i` call → **9** red ✘ recorded as 10. Only the last was
+wrong. The round-1 dev entry's separate `4 red / 8 red` figures (line ~3451)
+are also consistent: measured on the 9-test version, and each rises by
+exactly 1 with the fidelity test added — left as recorded history.
+
+**Gate 4 is unchanged and still blocking.** This round added **no**
+on-device evidence and cannot: `adb`, the Pixel 6, the ESP32 `CarHarness` and
+the pre/post-press `dumpsys` reads are host-session-only (AGENTS host-bound
+carve-out). The four `BLOCKED-PENDING-HOST-VERIFICATION` rows stand, and the
+`needs-host-tools` label — which is what actually queues the device pass —
+exists in this repo but is **maintainer-created**, so a sandboxed agent may
+request it and may not apply it. It is requested here and in the PR body; the
+device pass is not queued until the maintainer applies it.
+
+**Gates re-run at this head** (Flutter 3.47.9 / Dart 3.13.7 = the CI pin):
+`flutter analyze` → No issues found (`analysis_options.yaml` md5 unchanged);
+`dart format --output=none --set-exit-if-changed .` → clean (116 files);
+`flutter test --exclude-tags live` → **648/648**; new file alone → 11/11.
+No product code changed this round — documentation-only evidence fixes.
+
 ## 2026-11-27 — issue #93: cold boot against a down server self-heals — error-phase recovery timer (builder, night-2026-11-27 unit 3)
 
 Unattended builder run on `fix/issue-93-error-phase-auto-retry` (off develop
@@ -3945,3 +4096,27 @@ steps pause-verified first; `item_progress_ms=171338` frozen across the
 entire pass; restore `PUT volume=46` 204 + GET verify; outputs GET unchanged
 (ESP-CAAC64 + Volumio Kitchen selected). Zero `E/flutter`/`FATAL`. Report:
 `.ai-dlc/night-2026-11-27/reports/92.md`.
+
+## 2026-11-27 — PR #89 host device pass — INCIDENT: ~59 s playback from a transport broadcast (host session)
+
+**What happened:** during the user-authorized host pass of PR #89's device rows on the
+Pixel 6 (`25071FDF600953`), the row-1 substitute leg backgrounded the app and injected
+keycode 87 (`MEDIA_NEXT`) via `DebugMediaButtonReceiver` while the server sat `pause`
+with both outputs (ESP-CAAC64 AirPlay + Volumio Kitchen) selected. The arrival logged
+correctly (`click(next) appForeground=false mirroredPlaying=false`, 09:16:36.665) and
+delegated `PUT /api/player/next` — which **started playback** (`state: pause→play`,
+progress counting). AGENTS.md §1's "next/previous while the server is paused keeps it
+paused" did not hold for this server/build pair — measured, not assumed. `PUT pause`
+issued at 09:17:39; verified `pause` with `item_progress_ms=59194` stable across two
+reads ~5 s apart. Upper bound of any audible output: **≈ 59 s**, volume 46, item 215512
+(the other session's queue item — pointer never changed; the 87/88 pair net-cancelled).
+
+**Controls:** the run config had already classified transport calls play-capable for
+this reason; the host pass's remaining legs were re-planned to run **all outputs
+deselected** before any transport-class injection (the decision-of-record pass's own
+disclosed safe pattern, issue #82 comment 7168723716: "server next/previous/play/pause
+exercised while all outputs deselected (no audio possible)"), with re-selection +
+verification afterwards.
+
+**Corrections this entry mandates going forward:** treat `PUT /api/player/next|previous`
+as PLAY-CAPABLE on this server (verified 2026-11-27), not pause-preserving.
