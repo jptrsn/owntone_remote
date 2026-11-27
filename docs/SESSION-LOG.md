@@ -3795,3 +3795,60 @@ mandates a fresh `uiautomator`/screenshot dump **before every** scripted
 `input tap`/`swipe`/`keyevent`, confirming the target is on screen at those
 coordinates. Device left clean: instrumented build removed (clean debug
 reinstalled), `svc power stayon false`, deviceidle whitelist entry removed.
+
+## 2026-11-26 — host verification pass: #91 volume (merged), #87 stopped-state (merged), #88 wake (device rows) + play-start latency discovery (opencode host session)
+
+Host-bound device verification for the OpenHands PRs carrying
+`BLOCKED-PENDING-HOST-VERIFICATION` rows, on the Pixel 6
+(`25071FDF600953`) against the shared server (192.168.1.13, outputs
+ESP-CAAC64 + Volumio Kitchen selected throughout; user approved the
+play-class rows).
+
+- **#91 (R-06/D20 volume, merged `251a8b2`)** — all six rows filled from the
+  device pass; evidence posted to PR #91 + issue #84. Rocker steps the
+  server ±5 and the system `volume_music` stays untouched (5→5 across every
+  press); the tile byte-identical across server-volume 45/26/96. Follow-up
+  **issue #92** filed: ReTune-style volume toaster (capture 22) on all
+  screens except NowPlaying (NP slider-follow itself verified).
+- **#87 (stopped-state, merged `dbe200d`)** — rows 1–4 PASS (Stopped tile,
+  action/notification deltas, debug media-key broadcast round-trip);
+  evidence on PR #87; issue #83 closed.
+- **#88 (wake-after-delayed-state, branch `openhands/issue-81`)** — the
+  three device rows ran on the merged head (662/662 tests, analyze/format
+  clean):
+  1. *Cold boot while the server is unreachable* (wifi off from t=0; the
+     10 s boot-wait in `handler.start()` expires with no state; session
+     exists, `active=false`) → wifi back → `conn.retry()` driven via the VM
+     service (the exact Retry-button call, root_screen.dart:155) →
+     `connection: error → connecting → connected` → **`active=true`,
+     `isForeground=true`, same pid** — the wake was still armed after the
+     boot-wait forfeit (the fix); develop stays `active=false` (symptom
+     witnessed live on develop 2026-11-26 ~17:26 under a server stall).
+  2. *Paused-state events must not flap the notification* — volume
+     45→46/44→46 + output:update: single record id=1124/key unchanged,
+     `notification_canceled` count for the pkg zero inside the event window
+     (the 30 in the buffer all carry uid 1000 at my `force-stop`s), no new
+     FGS start (both FGS events timestamp the wake itself).
+  3. *Cold boot while the server is already playing* — after polling
+     confirmed `play` (see below), force-stop → `am start`: session
+     `active=true`, `PlaybackState {state=PLAYING(3), position≈server
+     item_progress_ms}`, `isForeground=true` despite the `!p.isPlaying`
+     guard path. Server re-paused immediately (play window ≈ 2×30 s, user
+     watched + pre-approved).
+  Adjacent finding (pre-existing, NOT a #88 defect, candidate for its own
+  issue): cold boot while the server is unreachable lands the app in
+  `ConnectionPhase.error`, which has **no auto-retry** (only `offline` has
+  the probe timer) — recovery needs the user's Retry tap or a process
+  restart; there is no connectivity listener.
+- **Discovery — play-start latency:** `GET /api/player` keeps reporting
+  `pause` for ~2–4 s after `PUT /api/player/play` (AirPlay output connect +
+  buffer fill; audio already audible while the read still says `pause`) —
+  two harness reads were fooled before the user's observation corrected it.
+  Recorded in `docs/API.md` § Player endpoints with the safety direction:
+  a just-issued play/toggle is PLAYING from the PUT, never from the next
+  read. (Same async-commit family as the rating flow, PR #12.)
+- Harness notes: VM-service `evaluate` needs the resident compiler (run
+  under `flutter run`; a plain `am start` debug build answers "No
+  compilation service available"); `retry()` reached via
+  `Provider.of<ConnectionController>` on a walked `OwntoneRemoteApp`
+  element (rootElement sits above the MultiProvider).
