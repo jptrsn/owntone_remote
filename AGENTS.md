@@ -388,6 +388,19 @@ A unit is **done** only when ALL of:
   **`pubspec`'s `+N` is Android versionCode: it must be strictly greater
   than every release ever tagged — never reset it on a version bump**
   (`release.sh` enforces this and the guards above).
+- **Docs-only fast path in `gates` (2026-11-27).** A `pull_request` whose
+  entire merge-base diff is documentation (`docs/**`, `.ai-dlc/**`, any
+  `*.md`, `LICENSE*`) skips the heavy **steps** (setup, pub get, analyze,
+  format, test, build apk) and the `gates` job goes green in seconds — the
+  run annotation prints `gates mode=docs-only` plus the file list. Do NOT
+  "simplify" this to a workflow-level `paths:`/`paths-ignore:` or a job
+  `if:`: `gates` is the required status check, and an undelivered check
+  sticks branch protection at "Expected — never delivered" on exactly the
+  PRs being spared. push (develop/release/hotfix) and the `v*` tag
+  cross-check always run **full** — only PR events are filtered, and
+  classification errs to full on any doubt. If a docs path ever gains a
+  build role (snippets compiled by a test), remove it from the docs set in
+  `gates.yml`.
 - Branch naming: `feature/*`, `fix/*`, `release/v*`, `hotfix/*`; OpenHands
   factory automations use their configured `factory/issue-*` prefix (the
   one sanctioned exception).
