@@ -21,6 +21,7 @@ import 'package:owntone_remote/src/settings/theme_preference.dart';
 import 'package:owntone_remote/src/ui/app_drawer.dart';
 import 'package:owntone_remote/src/ui/browse_rows.dart';
 import 'package:owntone_remote/src/ui/browse_screens.dart';
+import 'package:owntone_remote/src/ui/connection_banner.dart';
 import 'package:owntone_remote/src/ui/now_playing_screen.dart';
 import 'package:owntone_remote/src/ui/outputs_screen.dart';
 import 'package:owntone_remote/src/ui/queue_screen.dart';
@@ -593,7 +594,10 @@ void main() {
             'from the semantics tree below is meaningful, not vacuous)',
       );
 
-      // The bar's own RenderObjects carry no semantics node…
+      // The bar's own RenderObjects carry no semantics node (cheap first
+      // line of defence — WEAK on its own: round-1 review measured these
+      // still reading null while a real leak was present, which is why
+      // the walk below is the contract).
       expect(
         tester.element(find.byKey(_levelKey)).renderObject!.debugSemantics,
         isNull,
@@ -604,56 +608,86 @@ void main() {
         isNull,
         reason: 'the bar container contributes no a11y node (AC-6)',
       );
-      // …but the decisive check is the WHOLE TREE a screen reader walks:
-      // nothing in it mentions the bar. Anchored on the queue row's node
-      // (public tester.getSemantics — the mini_player_test pattern),
-      // climbed to the tree root and walked down, so the negative below
-      // covers every node an assistive tech can reach — not just the bar
-      // subtree. The row label is the in-frame non-vacuity control
-      // (debugSemantics alone is weak here: merged row text also reads
-      // null in this harness, so absence from the walk is the real proof).
-      final rowNode = tester.getSemantics(find.text('Test Item').first);
-      final top = rowNode.owner?.rootSemanticsNode;
-      expect(top, isNotNull, reason: 'semantics tree is attached');
-      final texts = <String>[];
-      var nodeCount = 0;
-      bool walk(SemanticsNode node) {
-        nodeCount++;
-        final data = node.getSemanticsData();
-        texts.add('${data.label} ${data.value}');
-        node.visitChildren(walk);
-        return true; // keep descending
+      // The decisive check is the WHOLE TREE a screen reader walks, on the
+      // same oracle as device row D-3 ("62 vs 62 nodes, zero delta"):
+      // walk the tree with the bar visible, walk again after the
+      // auto-hide, and assert the two walks are IDENTICAL — the visible
+      // bar's contribution to the tree a screen reader reaches is exactly
+      // the empty set. (Round-1 review found the previous exact-entry and
+      // 'volume' probes vacuous: a leaked level node reads '80 80' via
+      // '${label} ${value}', never '80', and nothing in the bar emits the
+      // word 'volume' — removing ExcludeSemantics kept that version
+      // green. The delta walk catches the leak by construction; the
+      // blob-level negatives below are defence-in-depth. Round 1
+      // mutation-verified: ExcludeSemantics removed ⇒ THIS test reddens.)
+      // Anchored on the queue row's node (public tester.getSemantics —
+      // the mini_player_test pattern) and climbed to the root each walk,
+      // re-anchored so the second walk reads the post-hide tree freshly.
+      List<String> walkTree() {
+        final row = tester.getSemantics(find.text('Test Item').first);
+        final top = row.owner?.rootSemanticsNode;
+        expect(top, isNotNull, reason: 'semantics tree is attached');
+        final entries = <String>[];
+        var nodeCount = 0;
+        bool walk(SemanticsNode node) {
+          nodeCount++;
+          final data = node.getSemanticsData();
+          entries.add('${data.label} ${data.value}');
+          node.visitChildren(walk);
+          return true; // keep descending
+        }
+
+        walk(top!);
+        entries.add('##nodeCount $nodeCount');
+        return entries;
       }
 
-      walk(top!);
-      final blob = texts.join('\n').toLowerCase();
+      final withBar = walkTree();
       expect(
-        nodeCount,
+        withBar.length,
         greaterThanOrEqualTo(10),
         reason: 'non-vacuity: the tree is really populated',
       );
       expect(
-        blob,
+        withBar.join('\n').toLowerCase(),
         contains('test item'),
         reason:
             'positive control + AC-5 side: queue row semantics below the '
             'layer are unaffected',
       );
+
+      await tester.pump(const Duration(seconds: 2)); // the auto-hide fires
+      expect(bar(), findsNothing, reason: 'premise: the bar is gone');
+      final noBar = walkTree();
+      expect(
+        noBar,
+        equals(withBar),
+        reason:
+            'AC-6 (capture-22 pure-Toast parity): the visible bar adds '
+            'ZERO semantics nodes — the walk with the bar must be '
+            'identical to the walk without it, entries and nodeCount '
+            '(device D-3 oracle)',
+      );
+      // Blob-level (substring, not exact-entry) negatives: the level is
+      // 80 and the Queue route carries no other '80' anywhere (the NP
+      // slider that reads 80 sits OFFSTAGE under the pushed route), so a
+      // leaked level node — which measured as a '80 80' entry — cannot
+      // produce a false positive and cannot hide in merged text.
+      final blob = noBar.join('\n').toLowerCase();
+      expect(
+        blob,
+        isNot(contains('80')),
+        reason: 'the level label contributes nothing anywhere in the tree',
+      );
       expect(
         blob,
         isNot(contains('volume')),
         reason:
-            'the ExcludeSemantics bar contributes no node anywhere in '
-            'the walked tree (the Queue route carries no other volume '
-            'text — route-scoped per A-6)',
-      );
-      expect(
-        texts.map((t) => t.trim()),
-        isNot(contains('80')),
-        reason: 'the level label contributes nothing either',
+            'no volume text leaks either — defence-in-depth if a '
+            'semanticLabel is ever added to the bar (today nothing in it '
+            'emits the word, so this alone could never catch a leak)',
       );
       handle.dispose();
-      await tester.pump(const Duration(seconds: 2));
     });
 
     testWidgets(
@@ -759,6 +793,92 @@ void main() {
         );
         await tester.pump(const Duration(seconds: 2));
       },
+    );
+
+    testWidgets(
+      'the bar coexists with the offline banner — disconnect inside the '
+      'auto-hide window keeps both on tree (#92 AC-5)',
+      (tester) async {
+        // semanticsEnabled: false — this test asserts the WIDGET tree,
+        // and the default (true) makes every frame run flushSemantics,
+        // where the PRE-EXISTING framework assertion object.dart:6723
+        // (semantics child-geometry) throws on ConnectionBanner insertion
+        // under a pushed route. Measured this round with the default:
+        // same crash as T4's restructure (this file) — and it reproduces
+        // with the bar never scheduled at all (bar unmounted, same
+        // failure), i.e. the toaster layer is NOT implicated, matching
+        // the build report's 'reproduced with a plain MaterialApp'
+        // ASSUMPTION. Semantics for the toaster itself are pinned by the
+        // AC-6 test above, which opts in explicitly.
+        await tester.runAsync(wireUp);
+        await pumpApp(tester, const NowPlayingScreen());
+        await goto(tester, DrawerDestination.queue, from: NowPlayingScreen);
+
+        // Schedule the bar on the optimistic-notify frame (T3's pattern —
+        // NOT press()/pumpAndSettle: every settle spends fake-clock and
+        // the disconnect+asserts must land inside the 1500 ms auto-hide
+        // window).
+        handler.handleVolumeKey(AndroidVolumeDirection.raise);
+        await tester.pump();
+        expect(bar(), findsOneWidget, reason: 'premise: the bar is up');
+
+        // AC-5's 'must coexist with … the offline banner' half (the
+        // mini-player half is the test above; the schedule-nothing-when-
+        // offline half is the offline T4): disconnect INSIDE the 1.5 s
+        // window — the Queue scaffold gains its ConnectionBanner at the
+        // body top (browse_screen_scaffold.dart) while the already-
+        // scheduled bar is still counting down.
+        await tester.runAsync(() async => conn.disconnect());
+        await tester.pump();
+        expect(conn.isConnected, isFalse);
+        // Scoped to the Queue route: the offstage NP root builds its own
+        // ConnectionBanner (now_playing_screen.dart), so a global banner
+        // finder answers 2 — the AC-5 claim is about THIS route.
+        expect(
+          find.descendant(
+            of: find.byType(QueueScreen),
+            matching: find.byType(ConnectionBanner),
+          ),
+          findsOneWidget,
+          reason: 'the offline banner is rendered on the Queue route',
+        );
+        expect(
+          find.descendant(
+            of: find.byType(QueueScreen),
+            matching: find.text(
+              'Server unreachable — retrying. Queue disabled.',
+            ),
+          ),
+          findsOneWidget,
+          reason: 'premise: the banner is really the Queue route\'s',
+        );
+        expect(
+          bar(),
+          findsOneWidget,
+          reason:
+              'the pre-disconnect bar is still on tree WITH the banner — '
+              'the layer is the MaterialApp.builder overlay above the '
+              'Navigator, so scaffold-body banner insertion neither '
+              'displaces nor swallows it (AC-5 coexistence)',
+        );
+        expect(
+          find.byKey(_miniPlayerKey),
+          findsOneWidget,
+          reason: 'and the mini player is still there too (inert offline)',
+        );
+
+        await tester.pump(const Duration(seconds: 2)); // drain the timer
+        expect(bar(), findsNothing, reason: 'the pre-disconnect bar hid');
+        expect(
+          find.descendant(
+            of: find.byType(QueueScreen),
+            matching: find.byType(ConnectionBanner),
+          ),
+          findsOneWidget,
+          reason: 'the banner outlives the bar — they are independent',
+        );
+      },
+      semanticsEnabled: false,
     );
 
     testWidgets(
