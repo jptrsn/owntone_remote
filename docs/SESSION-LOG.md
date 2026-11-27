@@ -3410,6 +3410,121 @@ No server, emulator, `adb`, or `flutter run` step was attempted (AGENTS §
 Maintenance model host-bound carve-out). Server untouched — no HTTP call to
 `192.168.1.13` was made by this session.
 
+## 2026-11-25 — issue #81: media-session wake forfeited when the server is slow at launch (OpenHands factory)
+
+**Did:** fixed the one-shot wake in `lib/src/audio/mirror_handler.dart`.
+`_wakeMediaSession()` set `_woken = true` **before** reading
+`_player.player`, and `start()` called it after the bounded 10 s boot wait —
+so a cold start against a server that never answered inside the window (the
+Pixel 6 repro: the 5 s Dio `connectTimeout` tripping while a NAS spun up)
+published nothing AND consumed the one-shot. The session then stayed
+`active=false` with no notification/lockscreen controls for the life of the
+process — R-07's notification only ever appears via the wake transition, so
+nothing later could bring it up. The prologue is now `p == null → return`
+(flag untouched, wake stays pending) → `if (_woken) return` →
+`_woken = true` → publish, and `_onPlayerChanged()` re-attempts the wake
+while `_started && !_woken` (it *replaces* the plain `_sync()` in that state,
+since the wake path publishes the real state itself — no racing duplicate
+publishes). The prologue up to `_woken = true` is synchronous, so a wake
+raced from `start()` and a player event can still fire at most once. The
+already-working launch path (state present before `start()`) is byte-identical
+behaviour: `_woken` is true from boot, the new branch is dead.
+
+**Non-goals held (issue § Non-goals):** no `setActive(false)`, no
+audio-focus/`click()` work, no `androidStopForegroundOnPause`/notification-
+config change, the 10 s boot wait value is unchanged, no new dependencies,
+`pubspec.yaml` untouched.
+
+**Tests** (`test/mirror_wake_test.dart`, 3 new, R-07 cited per AGENTS §
+Tests; harness = the `mirror_artwork_adversarial_test.dart` shape — real
+`PlayerController` + `FakeWsChannel`, driving `handler.playbackState`):
+delayed-first-state (no wake during the boot wait; exactly one `playing:
+true` when the first state lands, real paused state last, item published;
+further paused events publish none), normal-launch single-wake, and the
+offline guarantee (endpoint never answers → `playing: true` NEVER published,
+even across repeated player/queue events after the wait). Tests 1 and 3
+live-out the real 10 s wait — they carry explicit 60 s timeouts; the wait is
+a non-goal to touch, so they are honestly slow (suite +~25 s).
+
+**Mutation-verified both ways** (from `/tmp` copies, md5-checked back, never
+`git checkout` — AGENTS trap list): the pre-fix code turns the delayed-state
+test red with `Expected: an object with length of <1> / Actual: []` — the
+#81 symptom itself (the wake never fires); a naive "wake unconditionally"
+variant turns BOTH the delayed-state and offline tests red with
+`Expected: empty / Actual: [<playing:true state>]` — so the suite cannot be
+satisfied by waking a disconnected app, which is exactly what the offline
+guarantee criterion exists to forbid. With the fix all three pass.
+
+**Gates** (container toolchain = the CI pin Flutter 3.47.9 / Dart 3.13.7,
+the arm64 bootstrap from 2026-11-24 reused from `/tmp/fl`): `flutter analyze`
+→ No issues found; `dart format --output=none --set-exit-if-changed .` →
+clean (116 files); `flutter test --exclude-tags live` → **640/640** (637 +
+the 3 new).
+
+**BLOCKED-PENDING-HOST-VERIFICATION** (device-bound criterion — requesting
+the `needs-host-tools` label; nothing device-related was attempted here, and
+no HTTP call to `192.168.1.13` was made by this session):
+
+| Action | Expected observation | Substitute proof |
+|---|---|---|
+| Cold-start the debug app on the Pixel 6 (`25071FDF600953`) with the server unreachable/slow enough to trip the 5 s Dio `connectTimeout`, then let it answer; server paused/stopped (no supervised playback needed — AGENTS hard rule 1) | `dumpsys media_session \| grep -A6 owntone_remote` shows `active=true` with a mirrored state once the server replies, and the ongoing notification appears **without restarting the process** | the delayed-state regression test reproduces the exact wire shape (`DioException [connection timeout]` through the whole boot wait, first `player` state via a WS `notify`), asserting `playing:true` publishes exactly once — the false→true transition audio_service's `enterPlayingState` needs to create the FGS/notification — followed by the real mirrored state |
+| Same cold start after the fix, then further paused-time server events | no second notification flap; state stays mirrored | the two single-wake tests pin that paused-time player events never re-publish `playing:true` |
+
+**Review round 1 (PR #88, review 6067843133 @ `c405ab38`) — response:** the
+reviewer found no code defect; the blocker is the two host-owned device rows
+(already carried as `BLOCKED-PENDING-HOST-VERIFICATION`, `needs-host-tools`
+requested by comment — a sandboxed run must not run them per AGENTS §
+Maintenance model + `.agents/skills/device-bound-work`). The inline note on
+`mirror_handler.dart:268` (already-playing launch, inherited `!p.isPlaying`
+guard) prompted two additions: **(a)** the suite now pins the
+already-playing launch, normal and after a forfeited boot wait (tests 4–5,
+`test/mirror_wake_test.dart`; mutation-verified — dropping the guard reddens
+both with the synthetic wake's `updatePosition: 0:00:00.000000` vs the real
+slice's `0:00:00.010000`), and **(b)** a source-check correction: the note's
+Dart-side measurement is right but its no-notification inference is not —
+`audio_service 0.18.19`'s edge is evaluated **natively** (`AudioService.java:280`
+inits `playing = false`; `:523`/`:559` fire `enterPlayingState()` on the first
+message carrying `playing: true`), and every `playbackState` emission is
+forwarded verbatim (`audio_service.dart:1125-1131`, `BaseAudioHandler.playbackState`
+is `BehaviorSubject.seeded(PlaybackState())` at `:2982-2983`). So on the
+already-playing launch the server's own `playing:true` slice IS the false→true
+message — the guard costs only a redundant synthetic publish, not the edge.
+The device pass should observe the notification on the already-playing cold
+start too (third BLOCKED row in the PR body); if the on-device reality
+contradicts the source-chain analysis, the guard is the suspect and belongs
+in a follow-up issue rather than being changed blind here (it is inherited
+from base, pre-#81, and #82's non-goals keep active-state work out of scope).
+Suite now **5/5**; full gates re-run below.
+
+**Review round 2 (review 6077767740 @ `f2ad62df`) — corrected counters and
+the deferred re-run.** This section supersedes the round-1 body's *counters*
+(append-only: the round-1 adjudication text above stays; the numbers in it
+were the state at `c405ab38`, not at this head) — per the round-2 inline
+note on this file:
+
+- `test/mirror_wake_test.dart` has **5** tests (not 3): the three wake
+  clauses plus tests 4–5, the already-playing launches added in `c9f9aab`.
+- **Tests 1, 3 and 5** (not "1 and 3") live-out the real 10 s boot wait —
+  `pump(12_000)` at lines 107, 228 and 340; explicit timeouts 60 s, 60 s
+  and 90 s. The test file's own docstring already said so.
+- The "full gates re-run below" the round-1 section promised is **this
+  block**, executed on this exact head (`f2ad62d`, production blob
+  `5f41f03…` unchanged since `c9f9aab` — the `origin/develop` merge of
+  #85/#90 touches no PR-owned file; blobs compared): container toolchain =
+  CI pin Flutter 3.47.9 / Dart 3.13.7; `flutter analyze` → **No issues
+  found**; `dart format --output=none --set-exit-if-changed .` → **clean
+  (116 files, 0 changed)**; `flutter test --exclude-tags live` →
+  **642/642** (637 pre-existing + the 5 new). This is the file's current
+  tail; no counters elsewhere in this entry are newer.
+- Round 2 **retracted** the round-1 inline note's "already-playing launch
+  stays headless" inference after re-deriving the native-edge chain
+  (`AudioService.java:280`/`:559` + `_observePlaybackState` verbatim
+  forwarding); the inherited `!p.isPlaying` guard therefore stays untouched
+  and the already-playing cold start remains the third
+  `BLOCKED-PENDING-HOST-VERIFICATION` row for the host pass. `needs-host-tools`
+  is still absent from the PR labels (maintainer-created) — re-requested by
+  comment on PR #88; nothing device-related was attempted here.
+
 **Revision addendum (2026-11-26, PR #87 review round 1 — CHANGES
 REQUESTED, resolved):** the review's blocking finding was correct and
 reproduced independently before acting: in the pinned audio_service
@@ -3680,3 +3795,60 @@ mandates a fresh `uiautomator`/screenshot dump **before every** scripted
 `input tap`/`swipe`/`keyevent`, confirming the target is on screen at those
 coordinates. Device left clean: instrumented build removed (clean debug
 reinstalled), `svc power stayon false`, deviceidle whitelist entry removed.
+
+## 2026-11-26 — host verification pass: #91 volume (merged), #87 stopped-state (merged), #88 wake (device rows) + play-start latency discovery (opencode host session)
+
+Host-bound device verification for the OpenHands PRs carrying
+`BLOCKED-PENDING-HOST-VERIFICATION` rows, on the Pixel 6
+(`25071FDF600953`) against the shared server (192.168.1.13, outputs
+ESP-CAAC64 + Volumio Kitchen selected throughout; user approved the
+play-class rows).
+
+- **#91 (R-06/D20 volume, merged `251a8b2`)** — all six rows filled from the
+  device pass; evidence posted to PR #91 + issue #84. Rocker steps the
+  server ±5 and the system `volume_music` stays untouched (5→5 across every
+  press); the tile byte-identical across server-volume 45/26/96. Follow-up
+  **issue #92** filed: ReTune-style volume toaster (capture 22) on all
+  screens except NowPlaying (NP slider-follow itself verified).
+- **#87 (stopped-state, merged `dbe200d`)** — rows 1–4 PASS (Stopped tile,
+  action/notification deltas, debug media-key broadcast round-trip);
+  evidence on PR #87; issue #83 closed.
+- **#88 (wake-after-delayed-state, branch `openhands/issue-81`)** — the
+  three device rows ran on the merged head (662/662 tests, analyze/format
+  clean):
+  1. *Cold boot while the server is unreachable* (wifi off from t=0; the
+     10 s boot-wait in `handler.start()` expires with no state; session
+     exists, `active=false`) → wifi back → `conn.retry()` driven via the VM
+     service (the exact Retry-button call, root_screen.dart:155) →
+     `connection: error → connecting → connected` → **`active=true`,
+     `isForeground=true`, same pid** — the wake was still armed after the
+     boot-wait forfeit (the fix); develop stays `active=false` (symptom
+     witnessed live on develop 2026-11-26 ~17:26 under a server stall).
+  2. *Paused-state events must not flap the notification* — volume
+     45→46/44→46 + output:update: single record id=1124/key unchanged,
+     `notification_canceled` count for the pkg zero inside the event window
+     (the 30 in the buffer all carry uid 1000 at my `force-stop`s), no new
+     FGS start (both FGS events timestamp the wake itself).
+  3. *Cold boot while the server is already playing* — after polling
+     confirmed `play` (see below), force-stop → `am start`: session
+     `active=true`, `PlaybackState {state=PLAYING(3), position≈server
+     item_progress_ms}`, `isForeground=true` despite the `!p.isPlaying`
+     guard path. Server re-paused immediately (play window ≈ 2×30 s, user
+     watched + pre-approved).
+  Adjacent finding (pre-existing, NOT a #88 defect, candidate for its own
+  issue): cold boot while the server is unreachable lands the app in
+  `ConnectionPhase.error`, which has **no auto-retry** (only `offline` has
+  the probe timer) — recovery needs the user's Retry tap or a process
+  restart; there is no connectivity listener.
+- **Discovery — play-start latency:** `GET /api/player` keeps reporting
+  `pause` for ~2–4 s after `PUT /api/player/play` (AirPlay output connect +
+  buffer fill; audio already audible while the read still says `pause`) —
+  two harness reads were fooled before the user's observation corrected it.
+  Recorded in `docs/API.md` § Player endpoints with the safety direction:
+  a just-issued play/toggle is PLAYING from the PUT, never from the next
+  read. (Same async-commit family as the rating flow, PR #12.)
+- Harness notes: VM-service `evaluate` needs the resident compiler (run
+  under `flutter run`; a plain `am start` debug build answers "No
+  compilation service available"); `retry()` reached via
+  `Provider.of<ConnectionController>` on a walked `OwntoneRemoteApp`
+  element (rootElement sits above the MultiProvider).
